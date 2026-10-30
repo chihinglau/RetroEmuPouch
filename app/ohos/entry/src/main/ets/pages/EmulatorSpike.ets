@@ -1192,6 +1192,8 @@ struct EmulatorSpike {
       }
       case 'MAME': {
         // CPS six-button panel in the right letterbox (0.794w ~ 0.992w), per §2.6.
+        // Column order must match Android's VirtualPadView exactly:
+        // weak->strong left to right (X Y Z / A B C) like a real CPS cabinet.
         const barTo = w * 0.992
         const barW = barTo - w * 0.794
         const edgeGap = 0.008 * w
@@ -1201,12 +1203,12 @@ struct EmulatorSpike {
         const cxR = barTo - aR
         const cyBot = h - 0.03 * ref - aR
         const cyTop = cyBot - rowGap
-        addCircle(BTN_Y, 'X', cxR, cyTop, aR)             // X -> Y
+        addCircle(BTN_Y, 'X', cxR - 2 * colGap, cyTop, aR) // X -> Y
         addCircle(BTN_X, 'Y', cxR - colGap, cyTop, aR)     // Y -> X
-        addCircle(BTN_L, 'Z', cxR - 2 * colGap, cyTop, aR) // Z -> L
-        addCircle(BTN_B, 'A', cxR, cyBot, aR)             // A -> B
+        addCircle(BTN_L, 'Z', cxR, cyTop, aR)              // Z -> L
+        addCircle(BTN_B, 'A', cxR - 2 * colGap, cyBot, aR) // A -> B
         addCircle(BTN_A, 'B', cxR - colGap, cyBot, aR)     // B -> A
-        addCircle(BTN_R, 'C', cxR - 2 * colGap, cyBot, aR) // C -> R
+        addCircle(BTN_R, 'C', cxR, cyBot, aR)              // C -> R
         break
       }
       case 'NEOGEO': {
@@ -1221,10 +1223,10 @@ struct EmulatorSpike {
         const cxL = cxR - colGap
         const cyBot = h - 0.03 * ref - aR
         const cyTop = cyBot - rowGap
-        addCircle(BTN_B, 'A', cxR, cyTop, aR)             // A -> B
-        addCircle(BTN_A, 'B', cxL, cyTop, aR)             // B -> A
-        addCircle(BTN_Y, 'C', cxR, cyBot, aR)             // C -> Y
-        addCircle(BTN_X, 'D', cxL, cyBot, aR)             // D -> X
+        addCircle(BTN_B, 'A', cxL, cyTop, aR)             // A -> B
+        addCircle(BTN_A, 'B', cxR, cyTop, aR)             // B -> A
+        addCircle(BTN_Y, 'C', cxL, cyBot, aR)             // C -> Y
+        addCircle(BTN_X, 'D', cxR, cyBot, aR)             // D -> X
         break
       }
       default: {
@@ -1450,15 +1452,12 @@ struct EmulatorSpike {
   }
 
   private playMove(script: string): void {
-    // Netplay forbids macros: Android disables nativePlayMacro entirely when
-    // npCfg != null (EmulatorActivity:393). A wall-clock timed sequence is not
-    // reproducible frame-by-frame, so replaying it here desyncs the pair.
-    if (this.netplayParams) return
-    // JS-side macro player: the OHOS libretro host does not yet expose
-    // nativePlayMacro, so we replay the parsed direction/button sequence through
-    // the same press/release path the on-screen keys use (VirtualPadView macro:
-    // ~3 frames per step, §6.7). The face/方向 keys light up amber exactly as
-    // on Android, and the input reaches the core via setInput().
+    // Netplay-safe: every macro frame is replayed through press()/release(),
+    // i.e. the SAME press path the on-screen keys use — during a netplay
+    // session that path feeds netplayLocalMask (the lockstep gate's own
+    // local slot), so the move is just ordinary local input and cannot
+    // desync the pair. (The desync risk belonged to Android's old
+    // nativePlayMacro path, which bypassed the per-frame mask entirely.)
     this.cancelMacro()
     const steps = this.parseMacro(script)
     if (steps.length === 0) return

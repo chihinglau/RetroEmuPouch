@@ -73,6 +73,8 @@ class PlayInvite {
     required this.proto,
     required this.hostUdpPort,
     required this.expiresAt,
+    this.hostIp,
+    this.hostHttpPort,
   });
 
   final String roomId;
@@ -85,6 +87,24 @@ class PlayInvite {
   final int proto;
   final int hostUdpPort;
   final DateTime expiresAt;
+
+  /// Host's reachable address, carried so the guest can answer
+  /// accept/decline without trusting its own (possibly stale) pairing
+  /// record: [hostIp] is the source IP of the invite TCP connection (the
+  /// host just proved that path works) and [hostHttpPort] is the port the
+  /// host's signalling server is listening on right now. Both may be null
+  /// when talking to an older peer that predates this field — the guest
+  /// then falls back to its scanned [PeerView.baseUrl].
+  final String? hostIp;
+  final int? hostHttpPort;
+
+  /// Signalling base URL of the host, preferring the invite-proven endpoint.
+  String? get hostBaseUrl {
+    final ip = hostIp;
+    final port = hostHttpPort;
+    if (ip == null || ip.isEmpty || port == null || port <= 0) return null;
+    return 'http://$ip:$port';
+  }
 
   Duration get ttl => expiresAt.difference(DateTime.now());
 }
@@ -252,6 +272,12 @@ class PlaySessionManager {
   /// crafted direct POST cannot bypass the hidden UI entry.
   final Future<bool> Function(String coreId, String romCrc)?
       multiplayerAllowed;
+
+  /// Port this device's own signalling server ([PeerServer]) is listening
+  /// on. Set by [PeersController] right after the server binds; sent inside
+  /// every invite so the guest can reply to a host whose HTTP port changed
+  /// since the guest last scanned.
+  int? localHttpPort;
 
   PlaySession? _current;
 
@@ -585,6 +611,11 @@ class PlaySessionManager {
       proto: proto,
       hostUdpPort: hostUdpPort,
       expiresAt: s.expiresAt,
+      // The invite TCP connection's source address is the host's live,
+      // proven-reachable IP — never trust the guest's (possibly stale)
+      // pairing record for the reply path.
+      hostIp: callerIp,
+      hostHttpPort: _port(j, 'hostHttpPort'),
     );
     _pendingInvite = inv;
     if (!_invitations.isClosed) _invitations.add(inv);
@@ -819,8 +850,9 @@ class PlaySignalingClient {
     required int proto,
     required int hostUdpPort,
     required String hostName,
+    int? hostHttpPort,
   }) async {
-    final r = await _post('/api/peer/play/invite', {
+    final payload = <String, dynamic>{
       'roomId': roomId,
       'coreId': coreId,
       'romCrc': romCrc,
@@ -829,7 +861,11 @@ class PlaySignalingClient {
       'proto': proto,
       'hostUdpPort': hostUdpPort,
       'hostName': hostName,
-    });
+    };
+    // Optional (older guests ignore it): lets the guest answer accept on
+    // this exact port instead of its possibly stale pairing record.
+    if (hostHttpPort != null) payload['hostHttpPort'] = hostHttpPort;
+    final r = await _post('/api/peer/play/invite', payload);
     return (r['ttlMs'] as num?)?.toInt() ?? 60000;
   }
 

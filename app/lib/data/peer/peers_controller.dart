@@ -193,6 +193,10 @@ class PeersController extends ChangeNotifier {
         appVersion: version, plays: playManager);
     await srv.start();
     server = srv;
+    // Publish the live signalling port to the session manager: every invite
+    // carries it, letting the guest answer accept even when its saved
+    // pairing record still points at an older IP/port of this device.
+    playManager.localHttpPort = srv.port;
 
     final r = PeerResponder();
     responderListening =

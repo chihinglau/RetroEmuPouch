@@ -303,8 +303,19 @@ class PeerServer {
       final ip = req.connectionInfo?.remoteAddress.address;
       switch (route) {
         case 'invite':
-          await _sendJson(req,
-              await plays.handleInvite(caller: caller, callerIp: ip, j: j));
+          final r =
+              await plays.handleInvite(caller: caller, callerIp: ip, j: j);
+          // Self-heal the caller's saved endpoint: the invite's source IP is
+          // this device's live address and hostHttpPort is our current
+          // signalling port. Without this a guest whose record predates a
+          // subnet change keeps probing a dead address, shows us offline and
+          // (before invites carried the host endpoint) could never answer.
+          final hport = (j['hostHttpPort'] as num?)?.toInt();
+          if (ip != null && ip.isNotEmpty) {
+            await store
+                .touch(caller.deviceId, lastIp: ip, lastHttpPort: hport);
+          }
+          await _sendJson(req, r);
         case 'accept':
           await _sendJson(req, plays.handleAccept(caller: caller, j: j));
         case 'decline':

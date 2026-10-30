@@ -362,6 +362,11 @@ class _PeerLibraryPageState extends State<PeerLibraryPage> {
         proto: PlayProtocol.netplayProtoVersion,
         hostUdpPort: hostUdpPort,
         hostName: pm.selfName,
+        // The guest answers accept to THIS port; without it a guest whose
+        // pairing record predates this page session (our HTTP port is
+        // random per page open) would post into the void and the lobby
+        // would wait for an accept that can never arrive.
+        hostHttpPort: pm.localHttpPort,
       );
     } catch (e) {
       if (session != null) pm.failLocal('invite_failed', session.roomId);

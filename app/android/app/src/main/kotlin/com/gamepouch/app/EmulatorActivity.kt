@@ -162,6 +162,16 @@ class EmulatorActivity : Activity() {
     @Volatile private var npPaused = false
     private var npPausedTotalMs = 0L
     private var npPausedSinceMs = 0L
+
+    // Netplay-safe one-button special moves: the macro is replayed frame by
+    // frame into the SAME local-mask channel the pad uses (renderer.buttonMask,
+    // pushed per frame via nativeNetplayLocalMask), so the sequence is just
+    // ordinary local input and cannot desync the pair — unlike
+    // nativePlayMacro, which bypasses the per-frame bitmask.
+    @Volatile private var npPadMask = 0
+    @Volatile private var npMacroMask = 0
+    private val npMacroHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var npMacroPending: Runnable? = null
     // Wall-clock start of the peer's current negotiated pause (0 = not
     // paused); drives the 15 s remote-pause watchdog in onNetplayStats.
     private var npRemotePausedSinceMs = 0L
@@ -382,20 +392,29 @@ class EmulatorActivity : Activity() {
                 }
             }
             pad.listener = VirtualPadView.OnButtonsChanged { mask, port ->
-                renderer.buttonMask = mask
+                npPadMask = mask
+                renderer.buttonMask = mask or npMacroMask
                 renderer.playerPort = port
             }
-            // One-button special moves (fighting games). Macros bypass the
-            // per-frame bitmask and go straight to the native runner; disabled
-            // during netplay (lockstep must stay deterministic).
+            // One-button special moves (fighting games). Solo: the frame
+            // sequence goes straight to the native macro player. Netplay: the
+            // same sequence is fed through the lockstep local-mask channel
+            // (see startNpMacro) so the move still works without desyncing.
             pad.macroListener = object : VirtualPadView.OnMacro {
                 override fun onMacro(seq: IntArray) {
-                    if (handle != 0L && npCfg == null) {
+                    if (handle == 0L) return
+                    if (npCfg == null) {
                         NativeBridge.nativePlayMacro(handle, seq)
+                    } else {
+                        startNpMacro(seq)
                     }
                 }
                 override fun onClear() {
-                    if (handle != 0L) NativeBridge.nativeClearMacro(handle)
+                    if (npCfg != null) {
+                        cancelNpMacro()
+                    } else if (handle != 0L) {
+                        NativeBridge.nativeClearMacro(handle)
+                    }
                 }
             }
             root.addView(pad, FrameLayout.LayoutParams(
@@ -1477,6 +1496,47 @@ class EmulatorActivity : Activity() {
             throw com.retroemupouch.app.netplay.BootstrapException("native timeout")
         }
         err?.let { throw it }
+    }
+
+    /**
+     * Netplay-safe macro playback: pump the compiled per-frame mask sequence
+     * into [renderer.buttonMask] (OR-ed over the live pad mask) on the same
+     * ~50 ms/step cadance VirtualPadView uses (3 frames @ 60 fps). The GL
+     * loop pushes buttonMask into nativeNetplayLocalMask every frame, so each
+     * step reaches the lockstep gate exactly like a finger press — no
+     * bypass, no desync.
+     */
+    private fun startNpMacro(seq: IntArray) {
+        cancelNpMacro()
+        val frameMs = 50L
+        var i = 0
+        val tick = object : Runnable {
+            override fun run() {
+                npMacroPending = null
+                if (npEnded || npCfg == null) {
+                    npMacroMask = 0
+                    renderer.buttonMask = npPadMask
+                    return
+                }
+                npMacroMask = if (i < seq.size) seq[i] else 0
+                i++
+                renderer.buttonMask = npPadMask or npMacroMask
+                if (i <= seq.size) {
+                    npMacroPending = this
+                    npMacroHandler.postDelayed(this, frameMs)
+                }
+            }
+        }
+        tick.run()
+    }
+
+    private fun cancelNpMacro() {
+        npMacroPending?.let { npMacroHandler.removeCallbacks(it) }
+        npMacroPending = null
+        if (npMacroMask != 0) {
+            npMacroMask = 0
+            renderer.buttonMask = npPadMask
+        }
     }
 
     private fun setNpOverlay(text: String?) {

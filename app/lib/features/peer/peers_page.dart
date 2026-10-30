@@ -97,18 +97,29 @@ class _PeersPageState extends State<PeersPage> {
       final res = await PlayInviteDialog.show(context, invite: inv);
       if (!mounted) return;
       final view = _c.byId(inv.fromDeviceId);
+      // Reply to the endpoint the invite itself proved reachable: its source
+      // IP plus the host's live signalling port. The scanned [PeerView] can
+      // be arbitrarily stale (our broadcast pings are often filtered, and
+      // the host's HTTP port rotates on every page open), which made the
+      // accept POST target a dead address and the host lobby wait forever —
+      // fatal for "OHOS host + Android guest" where only the invite
+      // direction happened to route.
+      final hostBase =
+          inv.hostBaseUrl ?? view?.baseUrl;
       if (res == null) {
         // Dismissed via system back: decline so the host stops waiting
         // instead of hanging until its 60 s invite TTL.
         try {
-          await _postToPeer(view, (c) => c.decline(inv.roomId));
+          await _postToPeer(view, (c) => c.decline(inv.roomId),
+              baseUrlOverride: hostBase);
         } catch (_) {/* best effort; local retirement below is enough */}
         if (mounted) pm.declineLocally(inv.roomId);
         return;
       }
 
       if (res == PlayInviteResult.decline) {
-        await _postToPeer(view, (c) => c.decline(inv.roomId));
+        await _postToPeer(view, (c) => c.decline(inv.roomId),
+            baseUrlOverride: hostBase);
         pm.declineLocally(inv.roomId);
         return;
       }
@@ -117,7 +128,11 @@ class _PeersPageState extends State<PeersPage> {
         return;
       }
 
-      if (view == null || view.outboundToken == null || _c.filesDir == null) {
+      final outboundToken =
+          view?.outboundToken ?? _c.store?.get(inv.fromDeviceId)?.outboundToken;
+      if (hostBase == null ||
+          outboundToken == null ||
+          _c.filesDir == null) {
         pm.declineLocally(inv.roomId);
         _snack('伙伴已离线或本机凭据缺失，无法接受邀请', error: true);
         return;
@@ -128,6 +143,7 @@ class _PeersPageState extends State<PeersPage> {
         final answer = await _postToPeer(
           view,
           (c) => c.accept(roomId: inv.roomId, guestUdpPort: guestUdpPort),
+          baseUrlOverride: hostBase,
         );
         session = pm.completeLocalAccept(
           roomId: inv.roomId,
@@ -147,10 +163,10 @@ class _PeersPageState extends State<PeersPage> {
             plays: pm,
             session: session,
             filesDir: _c.filesDir!,
-            peerBaseUrl: view.baseUrl,
-            peerToken: view.outboundToken!,
+            peerBaseUrl: hostBase,
+            peerToken: outboundToken,
             romCrc: inv.romCrc,
-            coverUrl: '${view.baseUrl}/api/peer/cover/${inv.romCrc}',
+            coverUrl: '$hostBase/api/peer/cover/${inv.romCrc}',
           ),
         ),
       );
@@ -159,16 +175,23 @@ class _PeersPageState extends State<PeersPage> {
     }
   }
 
-  /// Runs [call] against a short-lived signaling client pointed at [view].
+  /// Runs [call] against a short-lived signaling client pointed at [view],
+  /// or at [baseUrlOverride] when the invite carried a fresher endpoint
+  /// (the token still comes from [view]/the pairing record).
   Future<T> _postToPeer<T>(
     PeerView? view,
-    Future<T> Function(PlaySignalingClient) call,
-  ) async {
-    if (view == null || view.outboundToken == null) {
+    Future<T> Function(PlaySignalingClient) call, {
+    String? baseUrlOverride,
+  }) async {
+    if (view == null && baseUrlOverride == null) {
+      throw StateError('peer offline or credentials missing');
+    }
+    final token = view?.outboundToken;
+    if (token == null) {
       throw StateError('peer offline or credentials missing');
     }
     final client = PlaySignalingClient(
-        baseUrl: view.baseUrl, peerToken: view.outboundToken!);
+        baseUrl: baseUrlOverride ?? view!.baseUrl, peerToken: token);
     try {
       return await call(client);
     } finally {

@@ -1451,4 +1451,270 @@ apply(plugin = "com.huawei.agconnect")
 > 工具链仍依赖兄弟项目 **MyLangLean**（见 16.3），它不在本次清理范围内；
 > 若要完全自包含，需把 `MyLangLean\.tools` 实体化到本项目 `.tools`。
 
+---
+
+## 17. OHOS ↔ Android Netplay 确定性修复（2026-10-30，C++ 层）
+
+跨平台联机「安卓主机 + 鸿蒙客机」运行时，两侧同是 KOF97 但检查点哈希逐帧偏移。根因有三，
+全部固化到 C++ 代码（`gs_netplay.cpp` 被 Android + OHOS **共同编译**，`gpretro.cpp` 仅 OHOS）：
+
+### 17.1 OHOS EmuLoop 预跑 solo 帧 → `retro_reset()` 同步
+
+- **根因**：Android 的 pace 线程**在 `netplayStart` 之后才 spawn**，帧 0 从「刚 `retro_load_game` 的 pristine state」出发；
+  OHOS 的 `EmuLoop` 从 `OnSurfaceCreated` 就启动 `while(g_coreReady) retro_run()` solo 帧，
+  ArkTS 稍后才调 `netplayStart` → 此时 OHOS 核心已经**跑了 N 帧（KOF97 吸引模式、投币计数等）**，
+  与 Android 起点不一致 → lockstep frame 0 起状态逐帧偏移，检查点对不上。
+- **修复**（`gpretro.cpp` 的 `NativeNetplayStart`，约 L1734-1740）：
+  成功 attach `np::GsNetplay` 后，在 `g_coreMtx` 锁内调一次 `g_core.retro_reset()`，
+  把 OHOS 核心 rewind 回**与 Android 完全相同的 post-load_game state**。
+- **SRAM 顺序**：OHOS guest 的 `netplayLoadSram` 在 `retro_reset` **之前**注入（reset 清内存档），
+  但 Android 的 MAME 冷启动（`skip state0`）也是 reset 后自然进入，
+  两侧 SRAM 等效——**暂不需 re-inject SRAM**；若后续非 MAME 核心出现 SRAM 丢失，
+  才需要把 `netplayLoadSram` 移到 pace 线程 reset 之后。
+- **诊断日志**：`GPRETRO_INFO("core retro_reset() for netplay determinism")`
+  （hilog 上 `<private>` 会屏蔽数值/字符串，靠常量串过滤 `GPRETRO: core retro_reset`）。
+
+### 17.2 Host 预设 `started_=true` → 10 s 客机 bootstrap 超时
+
+- **根因**：`gs_netplay.cpp` 旧版 `started_` 对 host 初始化为 `true`，host pace 线程立刻进入
+  `beginFrame` 闸门。若客机 bootstrap（拉 `/sram`、写本地 save、冷启动 MAME）超过 10 s，
+  host 的 `beginFrame` timeout 直接 **park forever**，客机永远进不了锁步。
+- **修复**：`started_` 对**两端**都初始化为 `false`。host 开闸门的唯一路径是 `notifyStart()`
+  （在 guest POST `/ready` **之后**由 Dart 调用）；guest 在收到 CTRL_START 后开闸门。
+- **影响范围**：`gs_netplay.cpp` 被 Android + OHOS 共同编译（`libgsrunner.so` + `libgpretro.so`），
+  一处改动两端同步生效，无需分别改。
+
+### 17.3 EmuLoop 外层持有 `g_coreMtx` → 递归锁死
+
+- **根因**：OHOS `EmuLoop` pace 循环外层持有 `std::lock_guard<std::mutex> lk(g_coreMtx)`，
+  之后同一线程的 `OhosNetCheckpoint()` 内部也要 `lock(g_coreMtx)` → 非递归 `std::mutex` 递归
+  re-lock → **死锁**，表现为某个检查点帧后画面冻结。
+- **修复**：pace 循环外层**完全不持锁**；只有单次 `retro_run()` 调用被 `lock_guard` 包围；
+  `OhosNetCheckpoint()` 在内部自己加锁。`GsRunner`（Android）同构结构——
+  外层 loop 不持锁、`runFrame()` 内加锁。
+
+### 锁结构对照表（两端必须 lockstep）
+
+| 组件 | Android GsRunner | OHOS gpretro.cpp |
+|------|------------------|-------------------|
+| Pace loop 外层 | **不持锁** | **不持锁** |
+| `runFrame()` / `retro_run()` | `coreMtx_` 内加锁 | `lock_guard<g_coreMtx>` |
+| `beginFrame` / `endFrame` | lock-free | lock-free |
+| checkpoint | 内部自行加锁 | 内部自行加锁 |
+| `notifyStart` | lock-free | lock-free |
+
+---
+
+## 18. 联机一键招式（Netplay-Safe Macro，2026-10-30）
+
+### 问题
+
+格斗游戏的「一键连招」(macro) 在 **solo 模式**走 `nativePlayMacro`——
+它让 native runner 按帧序列直接写核心按键位，**绕过** Flutter 层的 `buttonMask`。
+netplay 下这是**致命的确定性行为破坏**：macro 输入不走 per-frame bitmask、
+不进 HMAC、不跟对端同步 → 对端没按同样的键、画面必 desync。
+旧版用 `npCfg != null` **直接禁用** macro，联机时连招完全失效。
+
+### 修复（`EmulatorActivity.kt`）
+
+netplay 下把 macro **改走同一条 lockstep 通道**：
+- `startNpMacro(seq)` 按 50 ms/步（VirtualPadView 约 3 帧 @ 60 fps 节奏）
+  把预编译的 per-frame mask 序列写到 `npMacroMask`；
+- `renderer.buttonMask = npPadMask or npMacroMask` —— 与 solo 模式**同一字段**，
+  GL 渲染线程每帧调 `nativeNetplayLocalMask(buttonMask)`，mask 进 HMAC、到对端、完全确定；
+- `cancelNpMacro()` / `npEnded` 时自动清除，不泄漏 mask。
+
+### 安全保证
+
+| 场景 | 通道 | 确定性 |
+|------|------|--------|
+| Solo 一键连招 | `nativePlayMacro`（native macro player） | ✓ |
+| Netplay 一键连招 | `nativeNetplayLocalMask`（lockstep bitmask） | ✓ |
+| Netplay 手指操作 | 同 `nativeNetplayLocalMask` | ✓ |
+
+---
+
+## 19. 伙伴 Endpoint 自愈（hostIp/hostHttpPort 随邀请携带，2026-10-30）
+
+### 问题
+
+Wi-Fi 环境下 DHCP 重分配 IP / 用户换路由器后，配对记录里的 `lastIp` + `lastHttpPort`
+变 stale：发现页扫到的是新 IP，但旧记录没更新 → 伙伴列表显示离线，**邀请发得出去
+但 accept/decline 回不来**（对端用旧地址回）。
+
+### 修复（Dart 信令层）
+
+1. **邀请携带 host 实时 endpoint**（`PlayInvite` 增 `hostIp` / `hostHttpPort`）：
+   - `hostIp` = 邀请 TCP 连接的 source IP（**host 刚刚证明可达的那条路径**）；
+   - `hostHttpPort` = host 的信令服务器**当前监听端口**（`PeerServer.port`，
+     由 `PeersController.start()` 后发布到 `PlaySessionManager.localHttpPort`）。
+2. **guest 优先用邀请里的 endpoint**（`hostBaseUrl` getter），
+   对端（`accept` / `decline` / `play` 入口）走这条 proven 路径，**不再信任**
+   自己的 stale pairing record。老 peer 没带这两个字段时回退到已扫 `PeerView.baseUrl`。
+3. **host 侧自愈 caller 的 endpoint**：`PeerServer._handle` 的
+   `invite` 分支，成功发邀请后把 `caller.deviceId` 的 `lastIp`/`lastHttpPort`
+   更新为 TCP 连接源地址 + host 自报端口（`peer_store.touch`）。
+
+### 涉及文件
+
+| 文件 | 改动 |
+|------|------|
+| `app/lib/data/play/play_session.dart` | `PlayInvite` 增 `hostIp/hostHttpPort/hostBaseUrl`；`PlaySessionManager.localHttpPort` |
+| `app/lib/data/peer/peers_controller.dart` | `srv.start()` 后发布 `playManager.localHttpPort` |
+| `app/lib/data/peer/peer_server.dart` | `invite` 分支自更新 caller endpoint |
+| `app/lib/features/peer/peers_page.dart` | 邀请携带 live endpoint |
+| `app/lib/features/peer/peer_library_page.dart` | 用 `hostBaseUrl` 回 accept |
+| `app/ohos/.../EmulatorSpike.ets` | 鸿蒙侧同步 invite endpoint 字段 |
+
+---
+
+## 20. 仓库结构速记（RetroEmuPouch 分叉后）
+
+### 顶层目录
+
+| 目录 | 说明 |
+|------|------|
+| `app/` | Flutter 壳 + Android / OHOS 原生层（核心代码，git track） |
+| `app/lib/` | Dart 业务层（`data/play/` 联机信令，`data/peer/` 伙伴发现与同步，`features/` UI 页面，`pal/` 平台抽象） |
+| `app/android/` | Android 原生（Kotlin + C++ netplay） |
+| `app/ohos/` | HarmonyOS NEXT 原生（ArkTS + `gpretro.cpp` NAPI + libretro host） |
+| `scripts/` | 构建/签名/部署脚本（PowerShell + bash） |
+| `tools/library/` | PC 端 Python 工具（游戏库管理 + 局域网服务 + 手机同步） |
+| `tools/chatsync/` | Python 金手指关联（索引 ↔ ROM CRC32） |
+| `docs/` | 开发文档（本 skills.md、鸿蒙 libretro 移植、UI 规格等） |
+| `third_party/CORE_PINS.txt` | 5 个 libretro core 的 commit pin（不入仓的内核源码定位） |
+| `.tools/` | junction 到兄弟项目共享 SDK（gitignore，体积数 GB） |
+| `cores/` | 预编译核心 `.so` 工作树（gitignore，本地构建产出） |
+| `build/` | MAME 源码克隆 + OHOS SDK 解包（gitignore） |
+
+### C++ netplay 层（Android + OHOS 共享）
+
+| 文件 | 说明 |
+|------|------|
+| `app/android/app/src/main/cpp/netplay/gs_netplay.h` | 主类 `np::GsNetplay`：UDP 帧/HMAC/锁步闸门/CTRL 包 |
+| `app/android/app/src/main/cpp/netplay/gs_netplay.cpp` | 实现：`start/stop/notifyStart/beginFrame/endFrame` + 自适应 D |
+| `app/android/app/src/main/cpp/netplay/gs_np_ring.{h,cpp}` | 输入环（每帧 D+2 冗余、ack 缺口重发） |
+| `app/android/app/src/main/cpp/netplay/gs_np_codec.{h,cpp}` | 帧编解码 + HMAC-SHA256 截断 tag |
+| `app/android/app/src/main/cpp/netplay/gs_np_delay.{h,cpp}` | 自适应 RTT/lead 统计 + D 切换 |
+| `app/android/app/src/main/cpp/netplay/gs_np_sha256.{h,c}` | SHA-256（纯 C，无第三方依赖） |
+| `app/android/app/src/main/cpp/netplay/gs_np_replay.{h,cpp}` | 重放窗口（rollback 预留，当前 delay-based 未启用） |
+
+> ⚠️ `gs_netplay.*` 同时被 `libgsrunner.so`（Android）和 `libgpretro.so`（OHOS）编译，
+> 一处改动两端 lockstep 生效；任何 netplay 协议改动必须**两端同步编译部署**。
+
+### OHOS 原生宿主（`app/ohos/entry/src/main/cpp/gpretro.cpp`）
+
+| 模块 | 说明 |
+|------|------|
+| NAPI 导出 | `StartEmulator` / `SetEmulatorTarget` / `SetInput` / `ResetEmulator` |
+| Netplay NAPI | `NativeNetplayStart`（含 `retro_reset()` 确定性修复）/ `Stop` / `LocalMask` / `NotifyStart` / `NotifyPaused` / `Stats` / `StateHash` / `LoadSram` |
+| EmuLoop | 主循环；netplay 模式每帧调 `beginFrame/endFrame`，外层**不持锁**、仅 `retro_run()` 内部 `lock_guard<g_coreMtx>` |
+| Checkpoint | `OhosNetCheckpoint()`（早期帧诊断）+ `NativeNetplayStateHash()`（FNV-1a64 哈希） |
+| GPRETRO 日志域 | `0xD001234`，tag `GPRETRO`；hilog 变量值被 `<private>` 屏蔽，靠常量串过滤 |
+
+### Android 原生层（`app/android/app/src/main/cpp/runner/`）
+
+| 文件 | 说明 |
+|------|------|
+| `gs_runner.{h,cpp}` | `GsRunner`（pace 线程、frame gate、`retro_run` lockstep） |
+| `gs_core.{h,cpp}` | `GsCore`（retro 符号装载 + env_callbacks + SRAM / serialize） |
+| `jni_bridge.cpp` | 全部 JNI 符号（**包名已改 `com.retroemupouch.app`，勿漏**） |
+
+### Dart 业务层关键模块
+
+| 路径 | 说明 |
+|------|------|
+| `data/play/play_session.dart` | `PlaySessionManager`：邀请/接受/拒绝状态机；含 `PlayInvite`（`hostIp/hostHttpPort` endpoint 自愈字段） |
+| `data/play/play_session_impl.dart` | **实际运行时实现**（`PlaySession` 接口 + `InviteGate`）；`PlaySessionManager` 持有引用 |
+| `data/play/netplay_capability.dart` | 联机门禁：`coreSupported` + `RejectReason` 链 |
+| `data/play/multiplayer_catalog.dart` | `multiplayer.json` 白名单解析（mame/fbalpha2012/fceumm 段） |
+| `data/peer/peer_server.dart` | **Android 端发现页存活**的 HTTP/UDP 服务端（配对 + invite/accept） |
+| `data/peer/peer_client.dart` | 伙伴 HTTP 客户端（库、ROM、金手指、BIOS、封面拉取） |
+| `data/peer/peer_discovery.dart` | UDP multicast `GP-PEER-PING/PONG` 发现 |
+| `data/peer/peers_controller.dart` | 发现页状态管理；`srv.start()` 后发布 `localHttpPort` 让 invite 携带 |
+| `data/peer/peer_store.dart` | 配对记录持久化（deviceId → lastIp/lastHttpPort） |
+| `data/peer/peer_sync.dart` | 伙伴库导入执行器（含 BIOS 同步落地） |
+| `data/peer/peer_crypto.dart` | `PeerToken`（HMAC-SHA256 配对信令鉴权） |
+| `data/play/library_search.dart` | 游戏库扫描 + `rom_index.json` 解析 |
+| `data/package/game_package.dart` | 资源包导出/导入（manifest `schemaVersion` 2 + 顶层 `bios` 段） |
+| `pal/platform_pal.dart` | 平台抽象（importBiosBatchViaSaf / exportBiosZipViaSaf / import/export PadConfig） |
+| `pal/ohos_pal.dart` | OHOS 侧 `PlatformPal`（**所有缺失插件的 `catch (_)` 兜底**） |
+| `features/library/library_page.dart` | 游戏库（含 RouteAware `didPopNext` 刷 BIOS/ROM） |
+| `features/library/missing_bios_dialog.dart` | 启动缺 BIOS 弹框（走批量 SAF import 一次补齐） |
+| `features/play/play_lobby_page.dart` | 联机大厅（邀请/接受 → 进入游戏） |
+| `features/play/play_invite_dialog.dart` | 邀请弹窗 |
+| `features/peer/peers_page.dart` | 发现 + 配对 |
+| `features/peer/peer_library_page.dart` | 伙伴游戏库 |
+| `features/settings/settings_sheet.dart` | 设置页（`_BiosManagerCard` + `_PadLayoutCard`） |
+| `main.dart` | `main()`：**所有 `AppSettings.load()`/consent 检查必须 `try/catch`**（OHOS 插件缺失会抛） |
+
+### 鸿蒙 ArkTS 层
+
+| 文件 | 说明 |
+|------|------|
+| `entry/src/main/ets/plugins/GamePouchPlugin.ets` | 4 个 MethodChannel：`gs/storage` / `gs/emulator` / `gs/updater` / `gs/netplay` |
+| `entry/src/main/ets/netplay_session.ets` | **Netplay bootstrap**（TCPSocketServer + HTTP 端点 + TCPSocket 客户端，契约与 Kotlin `PlayBootstrapServer` **逐字段同构**） |
+| `entry/src/main/ets/pages/EmulatorSpike.ets` | 模拟器页（XComponent + EGL 渲染；`onEmulatorStart` 里调 `netplaySession.startHost/startGuest`） |
+| `entry/src/main/ets/entryability/EntryAbility.ets` | `configureFlutterEngine` 注册 `GamePouchPlugin`；Netplay bootstrap 需在 `onForeground` 启动 |
+
+### Android 原生层（Kotlin）
+
+| 文件 | 说明 |
+|------|------|
+| `EmulatorActivity.kt` | 模拟器 Activity：EmuLoop pace 线程 + VirtualPadView 触摸 + Netplay 三状态（solo/host/guest） + Netplay-safe macro |
+| `NativeBridge.kt` | JNI 封装（全部 `native*` 方法） |
+| `VirtualPadView.kt` | 虚拟手柄（摇杆/十字键 + macro 序列录制） |
+| `LockedRom.kt` | 启动 BIOS 镜像（`ARCADE_BIOS_NAMES` = `[neogeo.zip, qsound.zip]`，**必须与 Dart `SystemFiles.requiredBios` lockstep**） |
+| `netplay/PlayBootstrapServer.kt` | HTTP bootstrap（`/sram` `/state0` `/ready` `/start` `/sram-final`，与鸿蒙 `netplay_session.ets` 同契约） |
+| `netplay/PlayBootstrapClient.kt` | Guest bootstrap 客户端（拉 SRAM/state0、发 ready、轮询 start） |
+| `netplay/NetplaySessionCfg.kt` | Netplay 启动配置（role/coreId/romCrc/sram/state0） |
+| `netplay/NpLog.kt` | GS-Netplay / GS-NetBoot 日志工具 |
+
+### 构建脚本（scripts/）
+
+| 脚本 | 用途 |
+|------|------|
+| `use-env.ps1` | **每终端点源**（Android：默认；鸿蒙：`-Ohos -HarmonyOS`） |
+| `setup-env.ps1` | 首次初始化（junction 共享工具链 + jdk21 实体化） |
+| `build-apk.ps1` | Android APK（`-Flavor store|community -DebugBuild -SplitPerAbi`） |
+| `build-hap.ps1` | OHOS HAP（自动走 `use-env -Ohos -HarmonyOS`） |
+| `build-mame.ps1` | Android 街机核心（WSL + NDK 交叉编译，产出 `libgs_mame.so`） |
+| `build-mame-ohos.ps1` | OHOS 街机核心（Linux 原生 OHOS SDK，产出 `cores/ohos/build/libgs_mame.so`） |
+| `build-mame-ohos-wsl.ps1` | 单一入口：封装 WSL 原生链全流程（增量构建、清 `.d`、限并发） |
+| `sign-ohos-hap.ps1` | CLI 自签 HAP（ECC P-256 CA + app/profile 证书链；与 DevEco 自动签名二选一） |
+| `make-release-keystore.ps1` | Release keystore（JKS + `keystore.properties`） |
+| `ci.ps1` | 构建门禁（check-apk-content / check-hap-content，确保零 ROM/BIOS 进产物） |
+| `check-apk-content.ps1` | APK 合规扫描（零 BIOS/ROM） |
+| `check-hap-content.ps1` | HAP 合规扫描 |
+| `mame/refresh-roms.ps1` | 街机一键刷新（归拢 BIOS → 替换 ROM → 部署设备 → 验证） |
+| `build.bat` | 顶层一键构建（Android + OHOS，供 CI / 新人） |
+
+### PC 端 Python 工具（tools/）
+
+| 工具 | 用途 |
+|------|------|
+| `library/library_manager.py` | tkinter 桌面 GUI（游戏库 / 金手指 / BIOS / 关联报告 / 联网检索金手指 / 手机同步） |
+| `library/phone_sync.py` | USB 直推手机游戏库（`adb push` → `run-as` 安装，`safe_name` 已修中文） |
+| `library/peer_host.py` | **Headless 伙伴服务端**（手机 `tools/library/run_peer_server.py` 启动，PC 模拟 peer 协议） |
+| `library/online_cheats.py` | 一键联网补金手指（libretro-database 仓库，缓存 7 天，阈值 84 分） |
+| `library/library_meta.py` | 元数据索引读取 + `name_cn`/`cover` 补全（CRC 精确匹配优先，`(平台,英文名)` 次之） |
+| `chatsync/sync_cheats.py` | ROM CRC32 → 金手指关联（街机内联 + GBA RetroArch `.cht` + NES 内联三条路径） |
+
+### 常见 gitignore 规则速查
+
+| 规则 | 说明 |
+|------|------|
+| `/.tools/` | junction 共享工具链（数 GB） |
+| `**/build/` | Android / OHOS / CMake 构建产物 |
+| `**/.cxx/` / `**/.hvigor/` | CMake / Hvigor 缓存 |
+| `**/oh_modules/` | OHOS npm 依赖 |
+| `*.log` / `*.tmp` | 日志与临时 |
+| `*.zip` | ROM 包 / SDK 压缩包 |
+| `**/*.so` | 预编译原生库（用户本地构建） |
+| `cores/` / `third_party/*` | 预编译核心 / 第三方 libretro 内核 |
+| `keystore.properties` / `*.jks` | 签名材料 |
+| `docs/GamePouch*.json` | 临时数据文件（曾 85MB 大文件） |
+| `/ui*.xml` / `/ohos*.xml` | 根目录 UI dump / 调试导出 |
+| `/android_log*.txt` / `/ohos_hilog*.txt` | 根目录临时日志 |
+
 
