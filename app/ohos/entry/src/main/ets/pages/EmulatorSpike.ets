@@ -308,6 +308,34 @@ struct EmulatorSpike {
     this.setOrientation(window.Orientation.PORTRAIT)
   }
 
+  /// Mirror Android EmulatorActivity.exitToLibrary() for OHOS: the ArkUI
+  /// router pushes EmulatorSpike ON TOP of the Flutter navigator, so
+  /// router.back() pops the ArkUI component but Flutter's PlayLobbyPage
+  /// (pushed before EmulatorSpike) is still active underneath.
+  ///
+  /// The netplay teardown MUST fire BEFORE router.back() because
+  /// aboutToDisappear (ArkUI lifecycle) fires AFTER the pop — by then
+  /// PlayLobbyPage may have already rendered its "对局已结束即将返回…"
+  /// terminal overlay (it waits 1.8 s for the Dart PlaySession to end,
+  /// but if emitPlayEnded hasn't reached Dart yet, the session never
+  /// terminates and the overlay stays forever).
+  ///
+  /// Sequence (critical):
+  ///   1. netplay.stop() → teardown() → emitNetplayPlayEnded()
+  ///      This is synchronous: the Dart broadcast StreamController.add()
+  ///      in OhosPal._playEnds fires immediately on the Dart event loop.
+  ///   2. stopEmulator()  (native, safe to call twice)
+  ///   3. router.back()    (pop ArkUI component, expose Flutter navigator)
+  exitToLibrary(): void {
+    if (this.netplay) {
+      // teardown → emitPlayEnded BEFORE the Flutter layer sees the pop.
+      this.netplay.stop()
+      this.netplay = undefined
+    }
+    stopEmulator()
+    router.back()
+  }
+
   private async setOrientation(orient: window.Orientation): Promise<void> {
     try {
       const ctx = getContext(this) as common.UIAbilityContext
@@ -1572,7 +1600,7 @@ struct EmulatorSpike {
       x: (this.layX + this.winW - this.winW * 0.017 - this.toolPillH()) + 'px',
       y: this.toolRowY() + 'px'
     })
-    .onClick(() => { stopEmulator(); router.back() })
+    .onClick(() => { this.exitToLibrary() })
   }
 
   @Builder
