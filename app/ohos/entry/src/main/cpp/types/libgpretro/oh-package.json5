@@ -1,0 +1,6 @@
+{
+  "name": "@types/libgpretro.so",
+  "types": "./index.d.ets",
+  "version": "",
+  "description": "Native emulator host for GamePouch (libretro port M0 spike)"
+}

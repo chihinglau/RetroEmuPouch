@@ -1,0 +1,128 @@
+# ===== 本地工具链（.tools 为指向共享 SDK/Flutter/JDK 的 junction，体积数 GB）=====
+/.tools/
+
+# ===== 构建产物 / IDE / 系统 =====
+**/.gradle/
+**/.kotlin/
+**/.cxx/
+**/build/
+**/local.properties
+*.iml
+*.ipr
+*.iws
+.idea/
+.vscode/
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# ===== 第三方模拟器内核（完整 git 克隆，版本锁定见 third_party/CORE_PINS.txt）=====
+/third_party/fceumm/
+/third_party/gambatte/
+/third_party/mgba/
+/third_party/picodrive/
+/third_party/stella2014/
+
+# ===== BIOS 资产（版权文件，不入仓库）=====
+/app/assets/system/
+
+# ===== 文档目录中的临时数据文件 =====
+/docs/GamePouch*.json
+/docs/agconnect-services.json
+
+# ===== app/ 根目录临时图片 =====
+/app/*.jpeg
+/app/*.jpg
+/app/layout.json
+
+# ===== 发布签名（密钥与口令绝不能入库）=====
+keystore.properties
+*.jks
+*.keystore
+*.p12
+*.p8
+*.pem
+
+# ===== 根目录调试产物（截图 / 一次性日志 / PowerShell 重定向 bug 文件）=====
+# 仅根目录匹配，docs/ 里的 PNG（文档截图）不受影响
+/*.png
+/*.jpg
+/*.jpeg
+/*.err
+/*.err.log
+/build-*.log
+/build-*.err
+/build-*.err.log
+/mame-*.log
+/dump*.xml
+/gs-diag.txt
+/\$null
+
+# 根目录 UI dump / OHOS 调试导出
+/ui*.xml
+/ui*.json
+/ohos*.xml
+/ohos*.json
+/layout.json
+/rom_index.json
+/oxf_index.json
+/a2.json
+
+# 根目录临时日志（非 *.log 后缀的）
+/android_log*.txt
+/ohos_hilog*.txt
+/ohos_netplay_log*.txt
+
+# ===== 预编译的 .so 库（不入仓，用户按需本地构建）=====
+# `libgs_mame.so` (store 街机，~78 MB) 由 `scripts/build-mame.ps1` WSL 交叉编译产出
+# `libgs_fbalpha2012.so` (community 街机) 非商业授权，README §7 明确不入 git
+# 用户首次构建时按 `docs/skills.md` §2.5 自编译 MAME 核心；fbalpha2012 需自行获取
+/app/android/app/src/*/jniLibs/**/*.so
+
+# ===== 临时导出 zip（用户对话/测试产物，docs/ 是文档目录不应含 zip）=====
+# 任何位置的 .zip 都不入仓（BIOS 在 app/assets/system 单独被 ignore，第三方内核不在仓库）
+*.zip
+
+# ===== 本次推送用的一次性脚本（不入仓）=====
+/scripts/push-to-github.ps1
+
+# ===== native 调试构建产物（.probe-build 在 cpp/ 下，不被 **/build/ 覆盖）=====
+/app/android/app/src/main/cpp/.probe-build/
+
+# ===== PC 端本地库管理工具：ROM 的 CRC32 运行时缓存（可随时重建）=====
+/tools/library/.crc_cache.json
+
+# ===== PC 端库管理工具：在线金手指索引缓存 + 局域网配对记录（均可重建）=====
+/tools/library/.cht_index/
+/tools/library/.peer_devices.json
+/tools/library/.peer_self.json
+/tools/library/smoke_result.txt
+/tools/library/scan_path_result.txt
+/tools/library/gui_*.txt
+/tools/library/peer_server.*.txt
+__pycache__/
+
+# ===== OpenHarmony / HarmonyOS NEXT 构建产物与依赖（与 third_party 内核同理，不入库）=====
+/app/ohos/**/build/
+/app/ohos/**/oh_modules/
+/app/ohos/**/.cxx/
+# 预编译核心 .so（用户本地按 docs/skills.md §2.7 自编译；含 190MB libgs_mame.so）
+/app/ohos/entry/src/main/libs/**/*.so
+# cores/ 工作树（MAME 源码克隆 + 预编译 .so），与 third_party 内核一致不入库
+/cores/
+# 调试产物（设备截图 / 抓日志 / uitest dump，非文档用图）
+/shots/
+/device_screen.jpeg
+/s3.jpeg
+/ui.json
+/gp*.txt
+/hilog*.txt
+/hilog_verify.txt
+
+# 鸿蒙目录下的调试截图 / UI 参考图（非源码）
+/app/ohos/*.jpeg
+/app/ohos/*.jpg
+/app/ohos/oxf_*
+# 鸿蒙自动签名材料（与 *.jks / *.p12 同理，绝不入库）
+/app/ohos/signing/

@@ -1,0 +1,126 @@
+--- a/src/lib/util/strformat.h
++++ b/src/lib/util/strformat.h
+@@ -611,26 +611,43 @@
+ 	}
+ #endif
+ 
+-	static void apply_signed(Stream &str, T const &value) requires (std::is_same_v<std::make_signed_t<std::remove_cv_t<T> >, std::make_signed_t<char> > || std::is_integral_v<T>)
++	// OHOS SDK libc++ (clang 15.0.4) hard-errors (instead of SFINAE-failing) on
++	// std::make_signed_t / std::make_unsigned_t of non-integral types such as
++	// std::string, which otherwise breaks the requires-clauses below.  Provide
++	// safe fallbacks that resolve to the type itself for non-integral T.
++	template <typename U, typename = void>
++	struct safe_make_signed { using type = U; };
++	template <typename U>
++	struct safe_make_signed<U, std::enable_if_t<std::is_integral_v<U> > > { using type = std::make_signed_t<U>; };
++	template <typename U, typename = void>
++	struct safe_make_unsigned { using type = U; };
++	template <typename U>
++	struct safe_make_unsigned<U, std::enable_if_t<std::is_integral_v<U> > > { using type = std::make_unsigned_t<U>; };
++	template <typename U>
++	using safe_make_signed_t = typename safe_make_signed<U>::type;
++	template <typename U>
++	using safe_make_unsigned_t = typename safe_make_unsigned<U>::type;
++
++	static void apply_signed(Stream &str, T const &value) requires (std::is_same_v<safe_make_signed_t<std::remove_cv_t<T> >, safe_make_signed_t<char> > || std::is_integral_v<T>)
+ 	{
+-		if constexpr (std::is_same_v<std::make_signed_t<std::remove_cv_t<T> >, std::make_signed_t<char> >)
+-			str << int(std::make_signed_t<T>(value));
++		if constexpr (std::is_same_v<safe_make_signed_t<std::remove_cv_t<T> >, safe_make_signed_t<char> >)
++			str << int(safe_make_signed_t<T>(value));
+ 		else if constexpr (!std::is_signed_v<T> || std::is_same_v<typename Stream::char_type, std::remove_cv_t<T> >)
+-			str << std::make_signed_t<T>(value);
++			str << safe_make_signed_t<T>(value);
+ 		else if constexpr (!std::is_invocable_v<decltype([] (auto &x, auto &y) -> decltype(x << y) { return x << y; }), Stream &, T const &>)
+-			str << std::make_signed_t<T>(value);
++			str << safe_make_signed_t<T>(value);
+ 		else
+ 			str << value;
+ 	}
+ 
+-	static void apply_unsigned(Stream &str, T const &value) requires (std::is_same_v<std::make_unsigned_t<std::remove_cv_t<T> >, std::make_unsigned_t<char> > || std::is_integral_v<T>)
++	static void apply_unsigned(Stream &str, T const &value) requires (std::is_same_v<safe_make_unsigned_t<std::remove_cv_t<T> >, safe_make_unsigned_t<char> > || std::is_integral_v<T>)
+ 	{
+-		if constexpr (std::is_same_v<std::make_unsigned_t<std::remove_cv_t<T> >, std::make_unsigned_t<char> >)
+-			str << unsigned(std::make_unsigned_t<T>(value));
++		if constexpr (std::is_same_v<safe_make_unsigned_t<std::remove_cv_t<T> >, safe_make_unsigned_t<char> >)
++			str << unsigned(safe_make_unsigned_t<T>(value));
+ 		else if constexpr (!std::is_unsigned_v<T> || std::is_same_v<typename Stream::char_type, std::remove_cv_t<T> >)
+-			str << std::make_unsigned_t<T>(value);
++			str << safe_make_unsigned_t<T>(value);
+ 		else if constexpr (!std::is_invocable_v<decltype([] (auto &x, auto &y) -> decltype(x << y) { return x << y; }), Stream &, T const &>)
+-			str << std::make_unsigned_t<T>(value);
++			str << safe_make_unsigned_t<T>(value);
+ 		else
+ 			str << value;
+ 	}
+@@ -711,10 +728,10 @@
+ 					str << std::intmax_t(value);
+ 					break;
+ 				case format_flags::length::size_type:
+-					str << std::make_signed_t<std::size_t>(value);
++					str << safe_make_signed_t<std::size_t>(value);
+ 					break;
+ 				case format_flags::length::pointer_difference:
+-					str << std::make_signed_t<std::ptrdiff_t>(value);
++					str << safe_make_signed_t<std::ptrdiff_t>(value);
+ 					break;
+ 				case format_flags::length::integer_32:
+ 					str << std::uint32_t(std::int32_t(value));
+@@ -747,10 +764,10 @@
+ 					str << std::uintmax_t(std::intmax_t(value));
+ 					break;
+ 				case format_flags::length::size_type:
+-					str << std::make_unsigned_t<std::size_t>(std::make_signed_t<std::size_t>(value));
++					str << safe_make_unsigned_t<std::size_t>(safe_make_signed_t<std::size_t>(value));
+ 					break;
+ 				case format_flags::length::pointer_difference:
+-					str << std::make_unsigned_t<std::ptrdiff_t>(std::make_signed_t<std::ptrdiff_t>(value));
++					str << safe_make_unsigned_t<std::ptrdiff_t>(safe_make_signed_t<std::ptrdiff_t>(value));
+ 					break;
+ 				case format_flags::length::integer_32:
+ 					str << std::uint32_t(std::int32_t(value));
+@@ -766,7 +783,7 @@
+ 				if (std::is_signed<typename Stream::char_type>::value)
+ 					str << typename Stream::char_type(value);
+ 				else
+-					str << typename Stream::char_type(std::make_signed_t<typename Stream::char_type>(value));
++					str << typename Stream::char_type(safe_make_signed_t<typename Stream::char_type>(value));
+ 				break;
+ 			case format_flags::conversion::pointer:
+ 				str << reinterpret_cast<void const *>(std::uintptr_t(std::intptr_t(value)));
+@@ -798,10 +815,10 @@
+ 					str << std::intmax_t(std::uintmax_t(value));
+ 					break;
+ 				case format_flags::length::size_type:
+-					str << std::make_signed_t<std::size_t>(std::make_unsigned_t<std::size_t>(value));
++					str << safe_make_signed_t<std::size_t>(safe_make_unsigned_t<std::size_t>(value));
+ 					break;
+ 				case format_flags::length::pointer_difference:
+-					str << std::make_signed_t<std::ptrdiff_t>(std::make_unsigned_t<std::ptrdiff_t>(value));
++					str << safe_make_signed_t<std::ptrdiff_t>(safe_make_unsigned_t<std::ptrdiff_t>(value));
+ 					break;
+ 				case format_flags::length::integer_32:
+ 					str << std::int32_t(std::uint32_t(value));
+@@ -834,10 +851,10 @@
+ 					str << std::uintmax_t(value);
+ 					break;
+ 				case format_flags::length::size_type:
+-					str << std::make_unsigned_t<std::size_t>(value);
++					str << safe_make_unsigned_t<std::size_t>(value);
+ 					break;
+ 				case format_flags::length::pointer_difference:
+-					str << std::make_unsigned_t<std::ptrdiff_t>(value);
++					str << safe_make_unsigned_t<std::ptrdiff_t>(value);
+ 					break;
+ 				case format_flags::length::integer_32:
+ 					str << std::uint32_t(std::int32_t(value));
+@@ -853,7 +870,7 @@
+ 				if (std::is_signed<typename Stream::char_type>::value)
+ 					str << typename Stream::char_type(value);
+ 				else
+-					str << typename Stream::char_type(std::make_signed_t<typename Stream::char_type>(value));
++					str << typename Stream::char_type(safe_make_signed_t<typename Stream::char_type>(value));
+ 				break;
+ 			case format_flags::conversion::pointer:
+ 				str << reinterpret_cast<void const *>(std::uintptr_t(value));

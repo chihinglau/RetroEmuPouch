@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "activeProfileId": "kof97",
+  "profiles": {
+    "kof97": {
+      "label": "KOF97（默认）",
+      "gameHints": ["kof97", "neogeo"],
+      "moves": [
+        { "label": "波", "script": "236+P" },
+        { "label": "升", "script": "623+P" },
+        { "label": "旋", "script": "214+K" },
+        { "label": "超", "script": "236236+PK" },
+        { "label": "避", "script": "66" },
+        { "label": "滚", "script": "44" }
+      ]
+    },
+    "kof98": {
+      "label": "KOF98（默认）",
+      "gameHints": ["kof98", "neogeo"],
+      "moves": [
+        { "label": "波", "script": "236+P" },
+        { "label": "升", "script": "623+P" },
+        { "label": "旋", "script": "214+K" },
+        { "label": "超", "script": "236236+PK" },
+        { "label": "轻", "script": "P" },
+        { "label": "重", "script": "PK" }
+      ]
+    },
+    "blank": {
+      "label": "空白模板（自定义起点）",
+      "gameHints": [],
+      "moves": [
+        { "label": "1", "script": "P" },
+        { "label": "2", "script": "K" },
+        { "label": "3", "script": "236+P" },
+        { "label": "4", "script": "623+P" },
+        { "label": "5", "script": "" },
+        { "label": "6", "script": "" }
+      ]
+    }
+  }
+}

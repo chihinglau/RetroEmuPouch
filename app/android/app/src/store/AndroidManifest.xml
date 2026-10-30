@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Compliance P0-1b / P0-8: the `store` flavour hardens the data-exfiltration
+      surface. Tokens and cloud config live in <filesDir>; disabling backup
+      stops them being extracted via `adb backup` / cloud-restore paths.
+    -->
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="false" />
+</manifest>

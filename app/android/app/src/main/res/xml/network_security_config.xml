@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Compliance P0-2 (defence in depth): the BASE config forbids cleartext
+  traffic globally. Only loopback is permitted so `adb reverse tcp:8848
+  tcp:8848` debugging still works. All production cloud / OTA traffic MUST
+  use TLS. The `community` flavour overrides this file with a permissive
+  version for private-LAN HTTP.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">::1</domain>
+    </domain-config>
+</network-security-config>

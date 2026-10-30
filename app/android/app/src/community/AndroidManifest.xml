@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Compliance P0-1b / P0-4: this manifest is merged ONLY into the
+      `community` flavour (self-signed sideload / LAN private cloud).
+      It is the only flavour that keeps the in-app APK install capability
+      (REQUEST_INSTALL_PACKAGES + GsApkProvider). Store channels must NOT
+      contain these — Google Play / 华为 / 小米 all reject in-app install.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+    <application>
+        <!-- Serves downloaded OTA APKs to the system package installer -->
+        <provider
+            android:name=".GsApkProvider"
+            android:authorities="${applicationId}.apkprovider"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+    </application>
+</manifest>

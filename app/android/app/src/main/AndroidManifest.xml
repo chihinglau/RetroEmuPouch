@@ -1,0 +1,73 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!--
+      Compliance P0-1b: this is the BASE (store) manifest.
+      `REQUEST_INSTALL_PACKAGES` and the OTA `GsApkProvider` are NOT declared
+      here — they live in src/community/AndroidManifest.xml so the store
+      flavour has no self-update capability at all (Google Play / 华为 / 小米
+      all reject in-app APK installation).
+    -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- 「发现伙伴」: receive UDP discovery broadcasts and detect Wi-Fi state -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+
+    <application
+        android:label="趣玩匣"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:networkSecurityConfig="@xml/network_security_config">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@style/LaunchTheme"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:windowSoftInputMode="adjustResize">
+            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN"/>
+                <category android:name="android.intent.category.LAUNCHER"/>
+            </intent-filter>
+        </activity>
+
+        <!-- Standard launch + empty affinity keeps the emulator in the SAME
+             task as MainActivity when launched from the library (no
+             FLAG_ACTIVITY_NEW_TASK is used), so finishing it always returns
+             to the library. Exported for the adb bench contract; bench runs
+             come in via `am start` (NEW_TASK) and finish back to the shell.
+
+             screenOrientation=sensorLandscape (not plain landscape): both
+             reverse-landscape orientations are accepted. Android VM
+             containers such as Zhuoyitong on HarmonyOS NEXT sometimes report
+             the opposite landscape rotation, which left a fixed-landscape
+             activity rendered upside-down / offset; following the sensor
+             keeps the picture upright whichever way the container rotates. -->
+        <activity
+            android:name=".EmulatorActivity"
+            android:exported="true"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+            android:hardwareAccelerated="true"
+            android:theme="@style/NormalTheme" />
+
+        <meta-data
+            android:name="flutterEmbedding"
+            android:value="2" />
+        <!-- OTA provider (GsApkProvider) is declared in src/community only. -->
+    </application>
+
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.PROCESS_TEXT"/>
+            <data android:mimeType="text/plain"/>
+        </intent>
+    </queries>
+</manifest>

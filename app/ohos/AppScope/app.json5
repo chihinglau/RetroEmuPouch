@@ -1,0 +1,10 @@
+{
+  "app": {
+    "bundleName": "com.gamepouch.gamepouch",
+    "vendor": "RetroEmuPouch",
+    "versionCode": 49,
+    "versionName": "1.8.4",
+    "icon": "$media:app_icon",
+    "label": "$string:app_name"
+  }
+}

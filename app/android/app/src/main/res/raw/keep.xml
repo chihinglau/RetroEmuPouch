@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Resource-shrinking keep rules.
+
+  The Huawei AppGallery Connect gradle plugin injects the contents of
+  agconnect-services.json as generated string resources named `agc_<hash>`.
+  Nothing in our code references them statically - the AGC SDK resolves them at
+  runtime via getIdentifier - so the release resource pipeline silently drops
+  them, which leaves the published APK with no AGC config at all.
+
+  Verified symptom: debug APK's resources.arsc contains `agc_` (344 KB), while
+  the release one did not (108 KB). Keep them explicitly.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/agc_*" />

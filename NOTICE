@@ -1,0 +1,37 @@
+GamePouch / 趣玩匣 — Open Source Notices
+========================================
+
+This product includes software developed by third parties and distributed
+under the following open-source licenses. The corresponding source code is
+vendored under `third_party/` in this repository and is also available from
+the upstream repositories listed below.
+
+  * FCEUmm     — GPL-2.0-or-later                (libretro-fceumm)
+  * Gambatte   — GPL-2.0-or-later                (libretro-gambatte)
+  * mGBA       — MPL-2.0                          (libretro-mgba)
+  * PicoDrive  — MIT (+ some GPL-2.0 components)  (libretro-picodrive)
+  * Stella2014 — GPL-2.0-or-later                (libretro-stella2014)
+
+Arcade core (community distribution only):
+  * FBA-2012   — FB Alpha / FinalBurn Neo license. NON-COMMERCIAL: may not be
+                 used in a commercial product or activity (this includes
+                 ad-supported or in-app-purchase builds). Packaged in the
+                 `community` flavour only; never in store builds.
+
+Planned for store builds:
+  * MAME (>= 0.197) — dual-licensed BSD-3-Clause / GPL-2.0-or-later.
+                 Commercially usable under the BSD-3-Clause option.
+                 Source: https://github.com/libretro/mame
+                 Upstream: https://github.com/mamedev/mame (latest tag mame0289)
+                 Note: MAME 0.172-0.196 is GPL-2.0-or-later only, and the
+                 libretro mame2000/2003/2010/2015 cores use the older
+                 NON-COMMERCIAL MAME license.
+
+Full details, commit pins, and source locations are in:
+  - `app/assets/OSS_LICENSES.md` (in-app, under Settings → 开源许可)
+  - Upstream COPYING/Copying files under `third_party/<core>/`
+
+The application's own code is distributed under the MIT License; see LICENSE.
+
+This product is not affiliated with or endorsed by any console manufacturer
+or game publisher.
