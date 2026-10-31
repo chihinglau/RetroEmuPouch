@@ -1,5 +1,6 @@
 import { startEmulator, stopEmulator, setEmulatorTarget, setInput, setPlayerPort, resetEmu, setSpeed, setAudioMuted, getLoadError, saveState, loadState, getFps, getFilesDir, saveStateSlot, loadStateSlot, listSaves, getCheats, setCheats, isCoreReady, netplayFreeze } from 'libgpretro.so'
 import { NetplaySession, NetplayCfg, NetplayStatus } from '../netplay_session'
+import { GamePouchPlugin } from '../plugins/GamePouchPlugin'
 import router from '@ohos.router';
 import { window, display } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
@@ -161,6 +162,9 @@ struct EmulatorSpike {
   // session object. Started after the core finishes loading (§16.4).
   private netplayParams?: Record<string, Object>
   private netplay?: NetplaySession
+  // Set once a clean/auto teardown has been initiated (manual ✕ or peer-exit),
+  // so the per-poll status callback does not fire exitToLibrary() repeatedly.
+  private ending: boolean = false
   @State loadDialog: boolean = false
   @State saveList: SaveSlotInfo[] = []
   // Cheats: openCheatsDialog loads cheats.json by ROM CRC; rows mirror the
@@ -291,11 +295,16 @@ struct EmulatorSpike {
   }
 
   aboutToDisappear(): void {
-    stopEmulator()
+    console.warn('[EmulatorSpike] aboutToDisappear — netplay? ' + (this.netplay ? 'yes' : 'no'))
+    // netplay.stop() FIRST (NativeNetplayStop sets running_=false then joins the
+    // pace thread) — calling stopEmulator() before it deadlocks the UI thread on
+    // a peer drop. stopEmulator() is only a fallback if netplay is already gone.
     if (this.netplay) {
       this.netplay.stop()
       this.netplay = undefined
+      GamePouchPlugin.setNetplayRef(undefined)
     }
+    stopEmulator()
     if (this.fpsTimer >= 0) {
       clearInterval(this.fpsTimer)
       this.fpsTimer = -1
@@ -306,6 +315,18 @@ struct EmulatorSpike {
       this.win = undefined
     }
     this.setOrientation(window.Orientation.PORTRAIT)
+  }
+
+  // Intercepts both the on-screen ✕ button AND the system back gesture/
+  // hardware back key. Returns `true` to consume the event so the router
+  // does NOT pop this component before we've sent the netplay teardown.
+  // Without this guard, a system-back swipe calls router.pop() BEFORE
+  // aboutToDisappear even runs, leaving Dart PlaySession stuck in the
+  // "对局已结束即将返回…" terminal overlay forever.
+  onBackPress(): boolean {
+    console.warn('[EmulatorSpike] onBackPress → exitToLibrary')
+    this.exitToLibrary()
+    return true
   }
 
   /// Mirror Android EmulatorActivity.exitToLibrary() for OHOS: the ArkUI
@@ -320,20 +341,41 @@ struct EmulatorSpike {
   /// but if emitPlayEnded hasn't reached Dart yet, the session never
   /// terminates and the overlay stays forever).
   ///
-  /// Sequence (critical):
-  ///   1. netplay.stop() → teardown() → emitNetplayPlayEnded()
-  ///      This is synchronous: the Dart broadcast StreamController.add()
-  ///      in OhosPal._playEnds fires immediately on the Dart event loop.
-  ///   2. stopEmulator()  (native, safe to call twice)
+  /// Sequence (critical — DO NOT reorder):
+  ///   1. netplay.stop()  → teardown() → emitNetplayPlayEnded().
+  ///      This is synchronous (NAPI). NativeNetplayStop FIRST sets the netplay
+  ///      `running_` flag false (so the emulator pace thread's beginFrame()
+  ///      returns Dead immediately instead of blocking on the dropped peer),
+  ///      THEN joins the pace thread, and only THEN frees g_net. This ordering
+  ///      is what makes the teardown safe: the pace thread is dead before the
+  ///      object is freed (no use-after-free SIGSEGV) and it is never joined
+  ///      while still blocked waiting for the dead peer (no UI-thread deadlock).
+  ///   2. stopEmulator()  — idempotent fallback. NativeNetplayStop already
+  ///      stopped the emulator; this is a no-op unless netplay was absent.
   ///   3. router.back()    (pop ArkUI component, expose Flutter navigator)
+  ///
+  /// NOTE: calling stopEmulator() BEFORE netplay.stop() deadlocks the UI thread
+  /// — stopEmulator() joins the pace thread while netplay is still "running" and
+  /// that thread is blocked in beginFrame() waiting for the gone peer, so the
+  /// join never returns until netplay.stop() runs (which it can't, because the
+  /// UI thread is stuck in the join). Observed as a permanent freeze on peer exit.
   exitToLibrary(): void {
+    if (this.ending) {
+      // Already tearing down (manual ✕ and a peer-exit poll can race); only the
+      // first call must actually dismiss the page.
+      return
+    }
+    this.ending = true
+    // 1) Tear netplay down FIRST — NativeNetplayStop stops the pace thread
+    //    safely (see sequence note above). Do NOT call stopEmulator() before this.
     if (this.netplay) {
-      // teardown → emitPlayEnded BEFORE the Flutter layer sees the pop.
       this.netplay.stop()
       this.netplay = undefined
+      GamePouchPlugin.setNetplayRef(undefined)
     }
+    // 2) Fallback stop (no-op once netplay path already stopped the emulator).
     stopEmulator()
-    router.back()
+    try { router.back() } catch (e) { /* page may already be gone */ }
   }
 
   private async setOrientation(orient: window.Orientation): Promise<void> {
@@ -653,6 +695,7 @@ struct EmulatorSpike {
       coreId: this.core
     }
     this.netplay = new NetplaySession(cfg, (s) => this.onNetplayStatus(s))
+    GamePouchPlugin.setNetplayRef(this.netplay)
     console.info(`[EmulatorSpike] netplay cfg role=${cfg.role} peerIp=${cfg.peerIp} peerPort=${cfg.peerPort} ` +
       `localPort=${cfg.localPort} bootPort=${cfg.bootstrapPort} sessionKeyLen=${cfg.sessionKey.length} ` +
       `coreId=${cfg.coreId} coldBoot=${cfg.coreId === 'mame'}`)
@@ -664,10 +707,26 @@ struct EmulatorSpike {
   private onNetplayStatus(s: NetplayStatus): void {
     if (s.state === 4 || s.state === 5) {
       this.netplayHud = `NET ${s.text}`
-      // Terminal: the session tears itself down via the stats poll; nothing else
-      // to do here.
     } else {
       this.netplayHud = `NET ${s.text} rtt=${s.rttMs.toFixed(0)}ms drop=${s.dropped}`
+    }
+    // Terminal (3=Dropped ≥10s no packet, 4=Ended/BYE): the peer — e.g. the
+    // Android host/guest — exited/dropped, or the session ended for any reason.
+    // The stats poll already tore the netplay session down (netplayStop +
+    // emitPlayEnded), but the ArkUI emulator page is STILL on top of the Flutter
+    // navigator and the native emulator is STILL rendering frames against the
+    // now-freed netplay C++ lockstep buffers. Left alone it dereferences freed
+    // state on the very next retro_run tick and force-closes the app (闪退).
+    // Android's EmulatorActivity finishes itself on peer-disconnect; mirror that
+    // here by programmatically returning to the library instead of waiting for a
+    // ✕ tap that the user — mid-game, peer gone — may never press.
+    if ((s.state === 3 || s.state === 4) && !this.ending) {
+      console.warn('[EmulatorSpike] netplay terminal (peer gone) → auto exitToLibrary');
+      // Do NOT set this.ending here: exitToLibrary() guards with
+      // `if (this.ending) return` and sets it itself. Setting it first would make
+      // exitToLibrary() a no-op, so netplay.stop()/stopEmulator()/router.back()
+      // never run and the app freezes on the game screen (its ✕/back also dead).
+      this.exitToLibrary()
     }
   }
 

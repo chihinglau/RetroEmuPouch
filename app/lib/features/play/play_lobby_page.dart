@@ -110,7 +110,17 @@ class _PlayLobbyPageState extends State<PlayLobbyPage> {
   void _onChange(PlaySession sess) {
     if (!mounted || sess.roomId != s.roomId) return;
     if (sess.isTerminal) {
-      setState(() {});
+      // Release the launch guard FIRST. While it is armed [PopScope.canPop] is
+      // false, so neither [Navigator.maybePop] nor the system back gesture can
+      // leave this page — the lobby froze on its 「对局已结束 / 即将返回…」
+      // overlay forever. That is the normal case, not an accident: the lobby is
+      // intentionally kept on the navigator stack while the native emulator is
+      // running (it is what the emulator returns to), so the guard is still
+      // armed at the moment the session ends.
+      setState(() {
+        _launching = false;
+        _busy = false;
+      });
       _schedulePop();
       return;
     }
@@ -144,7 +154,19 @@ class _PlayLobbyPageState extends State<PlayLobbyPage> {
     if (_popping) return;
     _popping = true;
     await Future<void>.delayed(const Duration(milliseconds: 1800));
-    if (mounted) Navigator.of(context).maybePop();
+    if (!mounted) return;
+    _popNow();
+  }
+
+  /// Leaves the lobby page. A direct [NavigatorState.pop] is used instead of
+  /// [NavigatorState.maybePop]: the latter asks the [PopScope] guard for
+  /// permission and is silently swallowed when the guard is still armed, which
+  /// left the terminal overlay on screen with no way out (no 取消 button either,
+  /// because that one is hidden while `terminal` is true).
+  void _popNow() {
+    if (!mounted) return;
+    final nav = Navigator.of(context);
+    if (nav.canPop()) nav.pop();
   }
 
   // -------------------------------------------------------------- actions
@@ -292,13 +314,25 @@ class _PlayLobbyPageState extends State<PlayLobbyPage> {
     final isHost = s.role == PlayRole.host;
     final terminal = s.isTerminal;
     return PopScope(
-      canPop: !_launching,
+      // The guard only exists to stop the user from walking out of the lobby
+      // while the emulator is being launched. Once the session is over (or the
+      // page has not started launching at all) the route must be poppable,
+      // otherwise the terminal overlay traps the user on this page.
+      canPop: !_launching || terminal,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('联机大厅'),
           automaticallyImplyLeading: false,
           actions: [
-            if (!terminal && !_launching)
+            if (terminal)
+              // The overlay is the last thing the user sees; give it an
+              // explicit way out that does not depend on the pop guard being
+              // rebuilt in time.
+              TextButton(
+                onPressed: _popNow,
+                child: const Text('返回'),
+              )
+            else if (!_launching)
               TextButton(
                 onPressed: _busy ? null : _cancel,
                 child: const Text('取消'),

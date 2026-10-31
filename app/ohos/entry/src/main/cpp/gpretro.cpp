@@ -1917,7 +1917,22 @@ static napi_value NativeNetplayStart(napi_env env, napi_callback_info info) {
 
 // Args: none. Sends CTRL_BYE and tears the session down (idempotent).
 static napi_value NativeNetplayStop(napi_env, napi_callback_info) {
-  if (g_net) { g_net->shutdown(); delete g_net; g_net = nullptr; }
+  // Tear the netplay object down and stop the emulator BEFORE freeing g_net.
+  // The emulator pace thread (g_renderThread, reported as "pouch.gamepouch")
+  // calls g_net->beginFrame()/endFrame() every frame; if g_net is deleted while
+  // it is still alive it dereferences freed memory and SIGSEGVs the process
+  // when the peer (e.g. Android) drops. Order:
+  //   1. g_net->shutdown() -> sets running_=false, joins the gs-net recv thread
+  //   2. StopEmulator()     -> sets g_running=false, joins the pace thread.
+  //      With running_ already false the pace thread's beginFrame() returns
+  //      Dead immediately, so the join never blocks up to the 10s drop timer.
+  //   3. delete g_net
+  if (g_net) {
+    g_net->shutdown();
+    StopEmulator();
+    delete g_net;
+    g_net = nullptr;
+  }
   g_netState0.clear();
   return nullptr;
 }

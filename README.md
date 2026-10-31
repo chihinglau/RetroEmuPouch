@@ -331,6 +331,12 @@ powershell -ExecutionPolicy Bypass -File scripts\make-release-keystore.ps1
 
 ---
 
+## 📝 更新日志 / Changelog
+
+- **OHOS netplay 对端退出自动返回（2026-10-31）**：修复联机中对端（如安卓主机）退出/掉线后，鸿蒙端卡死在游戏界面不返回的问题。原生 `NativeNetplayStop`（`app/ohos/entry/src/main/cpp/gpretro.cpp`）改为先停渲染线程再释放 netplay 对象，消除 use-after-free SIGSEGV；`EmulatorSpike.ets` 的退出路径改为 `netplay.stop()` 先执行、`exitToLibrary()` 守卫标志由函数自身置位，确保退出能真正 `router.back()` 回游戏库。详见 [`docs/skills.md`](./docs/skills.md)「已知问题与修复记录」。
+
+---
+
 ## 📜 License
 
 [MIT](./LICENSE) © 2026 GamePouch / 趣玩匣 contributors

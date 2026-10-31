@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 
 import '../../pal/platform_pal.dart';
 import '../play/multiplayer_catalog.dart';
@@ -38,7 +40,7 @@ class PeerView {
 /// sockets closed, timers cancelled, multicast lock released. The class is
 /// plain Dart (Flutter `ChangeNotifier` only) so start/stop symmetry is
 /// unit-testable with a fake [PlatformPal].
-class PeersController extends ChangeNotifier {
+class PeersController extends ChangeNotifier with WidgetsBindingObserver {
   PeersController({
     required this.pal,
     PeerScanner? scanner,
@@ -78,6 +80,11 @@ class PeersController extends ChangeNotifier {
   /// while no peers page owns this controller (Task 9).
   StreamSubscription<NetplayPlayEnd>? _playEndSub;
   StreamSubscription<PlaySession>? _playChangesSub;
+
+  /// Tracks the last known app lifecycle state so we can detect the
+  /// paused → resumed transition that fires when EmulatorSpike (ArkUI)
+  /// covers then uncovers the Flutter engine.
+  AppLifecycleState? _lastLifecycle;
 
   /// App-global chain serializing start/stop across controller instances.
   /// PeersPage builds a new controller per visit and its dispose does not
@@ -178,6 +185,7 @@ class PeersController extends ChangeNotifier {
     // ending always frees the one-session slot (Task 9, TR-9.2).
     await _playEndSub?.cancel();
     _playEndSub = pal.netplayPlayEnds.listen((e) {
+      debugPrint('[PeersController] netplayPlayEnds fired roomId32=${e.roomId32} clean=${e.clean}');
       playManager.notifyNativePlayEnded(roomId32: e.roomId32, clean: e.clean);
     });
     await _playChangesSub?.cancel();
@@ -188,6 +196,14 @@ class PeersController extends ChangeNotifier {
       if (s.isTerminal && !active) unawaited(_releaseOrphanedSession());
     });
     plays = playManager;
+    // Lifecycle guard for OHOS: EmulatorSpike (ArkUI) covers the Flutter
+    // engine while the game runs, causing FlutterEngine → paused. When the
+    // user exits, EmulatorSpike is popped and FlutterEngine → resumed.
+    // On OHOS the native→Dart MethodChannel reverse callback (`playEnded`)
+    // is silently dropped by FlutterNapi, so we must detect the resume
+    // ourselves and proactively terminate any stale PlaySession that did
+    // not receive the native teardown event.
+    WidgetsBinding.instance.addObserver(this);
 
     final srv = PeerServer(filesDir: dir, identity: id, store: st,
         appVersion: version, plays: playManager);
@@ -217,6 +233,7 @@ class PeersController extends ChangeNotifier {
   Future<void> _stopLocked() async {
     if (!active) return;
     active = false;
+    WidgetsBinding.instance.removeObserver(this);
     _generation++;
     _refreshTimer?.cancel();
     _refreshTimer = null;
@@ -283,7 +300,61 @@ class PeersController extends ChangeNotifier {
         scanning = false;
       });
 
-  /// One discovery cycle: UDP broadcast + unicast probes at every saved
+  /// React to Flutter engine lifecycle changes. On OHOS the ArkUI
+  /// EmulatorSpike page covers the Flutter engine (→ paused) while the game
+  /// runs; router.back() pops it and the engine resumes. The native teardown →
+  /// dart callback chain is lossy on OHOS (a MethodChannel invokeMethod from
+  /// ArkTS can be dropped while the engine is hidden), so this transition is
+  /// used as the dependable "the emulator is gone" signal that releases the
+  /// session. On Android the emulator is a separate Activity whose teardown
+  /// event is reliable, and `pal.emulatorCoversFlutter` is false, so the whole
+  /// path is a no-op there.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final prev = _lastLifecycle;
+    _lastLifecycle = state;
+    debugPrint('[PeersController] lifecycle $prev → $state');
+    // Any transition *into* resumed (paused / hidden / inactive → resumed),
+    // not just paused → resumed: the OHOS fork does not necessarily report the
+    // covered state as `paused`, and missing the transition leaves the session
+    // (and with it the lobby page) stuck.
+    if (state != AppLifecycleState.resumed ||
+        prev == AppLifecycleState.resumed) {
+      return;
+    }
+    if (!pal.emulatorCoversFlutter) return;
+    final pm = plays;
+    final s = pm?.current;
+    if (s == null || s.isTerminal) return;
+    // The lobby flips the session to `starting` right before it launches the
+    // emulator and nothing ever moves it on to `playing` (`beginPlay` has no
+    // caller), so a strict `playing` check never fired and the session stayed
+    // live after the game was gone. Anything past the lobby means "the
+    // emulator was launched", which is exactly what this transition ends.
+    if (s.state != PlayState.starting && s.state != PlayState.playing) return;
+    debugPrint('[PeersController] Resumed from emulator — releasing PlaySession roomId=${s.roomId} state=${s.state.name}');
+    unawaited(_releaseSessionAfterEmulatorExit(pm!, s.roomId));
+  }
+
+  /// Ends a session whose emulator has just been dismissed.
+  ///
+  /// The native side is asked to tear down first (Dart → native is the
+  /// dependable direction on OHOS): that makes it emit its own `playEnded`,
+  /// which ends the Dart session with the *real* reason (clean bye vs drop)
+  /// and frees the single-session slot. When that reverse event does not make
+  /// it back, the local [PlaySessionManager.finish] call ends the session
+  /// anyway — otherwise the lobby would hang on 「正在启动模拟器…」 or on its
+  /// terminal overlay with no way out.
+  Future<void> _releaseSessionAfterEmulatorExit(
+      PlaySessionManager pm, String roomId) async {
+    try {
+      await pal.stopNetplay();
+    } catch (_) {/* best effort */}
+    final s = pm.current;
+    if (s == null || s.isTerminal || s.roomId != roomId) return;
+    pm.finish(roomId);
+  }
+
   /// partner's last address, plus a TCP /info probe of the saved endpoint
   /// (same session only — peer HTTP ports are random per page open).
   Future<void> refresh() async {

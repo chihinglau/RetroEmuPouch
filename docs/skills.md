@@ -308,6 +308,21 @@ Pura70（SN `2MN0224730027764`）是**开发者模式 + 指纹/密码锁**。锁
    `GP_OHOS_SELFTEST` 探针自动化（build-hap.ps1 -DartDefine），报告在
    `<filesDir>/selftest.txt`，用 `hdc shell -b com.gamepouch.gamepouch cat /data/app/el2/100/base/com.gamepouch.gamepouch/files/selftest.txt` 读取。
 
+#### 已知问题与修复记录（netplay 对端退出卡死，2026-10-31）
+
+**现象**：OHOS 客机联机中，安卓端（或任一对端）退出/掉线后，鸿蒙端**不闪退但卡死在游戏界面**（UI 线程冻结、按 ✕/返回也无反应，只能强杀进程）。日志里有 `netplay terminal (peer gone) → auto exitToLibrary` 与 `teardown(clean=false)`、且 Flutter 收到 `emitNetplayPlayEnded`，但页面始终不弹回游戏库。
+
+**根因（两层）**：
+1. **原生 use-after-free 隐患**（`app/ohos/entry/src/main/cpp/gpretro.cpp` 的 `NativeNetplayStop`）：旧实现 `g_net->shutdown(); delete g_net;` 只 join 了 `gs-net` 接收线程，**没有先停渲染/步进线程** `g_renderThread`（OHOS 上显示为 `pouch.gamepouch`，每帧调 `g_net->beginFrame()/endFrame()`）。对端掉线后 `g_net` 被释放，该线程仍在 100ms 睡眠/步进后访问已释放对象 → SIGSEGV 闪退。
+2. **ArkTS 逻辑 bug**（`app/ohos/entry/src/main/ets/pages/EmulatorSpike.ets`）：`onNetplayStatus` 在调用 `exitToLibrary()` **之前**就 `this.ending = true`，而 `exitToLibrary()` 第一行就是 `if (this.ending) return` —— 于是 `exitToLibrary()` 直接 no-op，`netplay.stop()` / `stopEmulator()` / `router.back()` 全不执行，**页面永远弹不掉**（这才是「卡死」主因；上面的 SIGSEGV 修复只是消除了崩溃，但 no-op 让页面卡住）。
+
+**修复**：
+- `NativeNetplayStop` 改为自洽顺序：`g_net->shutdown()`（置 `running_=false`、join 接收线程）→ `StopEmulator()`（置 `g_running=false`、join 渲染线程；因 `running_` 已 false，`beginFrame` 立即返回 `Dead`，join 不会卡到 10s 掉线计时）→ `delete g_net`。无论 ArkTS 调用顺序如何，原生 teardown 都先把线程 join 再释放，杜绝 use-after-free。
+- `exitToLibrary()` 的调用顺序：`netplay.stop()`（内部走上面的 `NativeNetplayStop`）**先**跑，`stopEmulator()` 仅作兜底（netplay 已停时为 no-op），最后 `router.back()`。绝不能先 `stopEmulator()` 再 `netplay.stop()` —— 否则 `stopEmulator()` 的 join 会卡在 `beginFrame` 等已掉线对端，造成 UI 线程死锁。
+- `onNetplayStatus` **不再**提前 `this.ending = true`，改由 `exitToLibrary()` 自己置位（否则守卫让函数变 no-op）。
+
+**验证**：安卓主机选同一联机游戏发「联机玩」，鸿蒙客机接受 → 开始，安卓端退出 → 鸿蒙端自动返回游戏库、无闪退/无卡死。日志应出现 `netplay terminal (peer gone) → auto exitToLibrary`，且 `teardown(clean=true)`（来自 `exitToLibrary` 的 `netplay.stop()`），**无 SIGSEGV / 无 JANK 卡死 / 进程正常回到库页**。
+
 ### P3：OHOS 原生 handler（ArkTS 插件）
 
 `OhosPal` 的 4 个通道（`gs/storage`/`gs/emulator`/`gs/updater`/`gs/netplay`）由

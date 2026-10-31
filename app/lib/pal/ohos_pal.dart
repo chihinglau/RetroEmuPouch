@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 import '../features/settings/app_settings.dart';
@@ -32,8 +33,17 @@ class OhosPal implements PlatformPal {
 
   OhosPal() {
     _netplay.setMethodCallHandler((call) async {
+      debugPrint('[OhosPal] gs/netplay received method=${call.method} args=${call.arguments}');
       if (call.method == 'playEnded' && call.arguments is Map) {
-        _playEnds.add(NetplayPlayEnd.fromMap(call.arguments as Map));
+        try {
+          final event = NetplayPlayEnd.fromMap(call.arguments as Map);
+          debugPrint('[OhosPal] playEnded parsed roomId32=${event.roomId32} clean=${event.clean}');
+          _playEnds.add(event);
+        } catch (e) {
+          debugPrint('[OhosPal] playEnded PARSE ERROR: $e');
+        }
+      } else {
+        debugPrint('[OhosPal] playEnded DROPPED: method mismatch or args type=${call.arguments.runtimeType}');
       }
       return null;
     });
@@ -41,6 +51,19 @@ class OhosPal implements PlatformPal {
 
   @override
   Stream<NetplayPlayEnd> get netplayPlayEnds => _playEnds.stream;
+
+  @override
+  Future<void> stopNetplay() async {
+    try {
+      await _netplay.invokeMethod('stop');
+      debugPrint('[OhosPal] stopNetplay → native ok');
+    } catch (e) {
+      debugPrint('[OhosPal] stopNetplay native error: $e');
+    }
+  }
+
+  @override
+  bool get emulatorCoversFlutter => true;
 
   @override
   Future<String> filesDir() async {

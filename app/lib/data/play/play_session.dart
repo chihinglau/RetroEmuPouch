@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import '../peer/peer_client.dart';
 import '../peer/peer_crypto.dart';
 import '../peer/peer_store.dart';
@@ -511,7 +513,11 @@ class PlaySessionManager {
   /// (Task 9). A mismatched/stale room id or a terminal session is a no-op.
   void notifyNativePlayEnded({required int roomId32, required bool clean}) {
     final s = _current;
-    if (s == null || s.isTerminal || s.roomId32 != roomId32) return;
+    debugPrint('[PlayManager] notifyNativePlayEnded roomId32=$roomId32 clean=$clean current=${s?.roomId32} terminal=${s?.isTerminal}');
+    if (s == null || s.isTerminal || s.roomId32 != roomId32) {
+      debugPrint('[PlayManager] notifyNativePlayEnded SKIPPED (guard hit)');
+      return;
+    }
     _terminate(
         s, clean ? PlayEndReason.finished : PlayEndReason.cancelled);
   }

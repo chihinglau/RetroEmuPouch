@@ -151,6 +151,24 @@ abstract interface class PlatformPal {
   /// "session in progress" can not block the next invite (Task 9).
   Stream<NetplayPlayEnd> get netplayPlayEnds;
 
+  /// Requests the native layer to tear down any active netplay session.
+  /// Dart→native direction (MethodChannel invokeMethod) is always reliable,
+  /// so this is safe to call as a fallback when the reverse native→Dart
+  /// `netplayPlayEnds` event fails to arrive (OHOS FlutterNapi silently
+  /// drops MethodChannel invokeMethod messages from ArkTS). Returns once
+  /// the native teardown has been initiated; does not wait for completion.
+  Future<void> stopNetplay();
+
+  /// True when the native emulator surface is pushed *inside* this app's own UI
+  /// stack and therefore covers the Flutter engine (OpenHarmony: `router.pushUrl`
+  /// puts the ArkUI `EmulatorSpike` page on top of the Flutter page).
+  ///
+  /// In that configuration the Flutter engine goes `paused → resumed` exactly
+  /// when the emulator page is dismissed, so the Dart side can use that
+  /// transition as a reliable "the emulator is gone" signal — the fallback that
+  /// matters when the native → Dart `playEnded` event never arrives.
+  bool get emulatorCoversFlutter => false;
+
   Future<String> filesDir();
 
   /// Manufacturer + model, used as the default 「发现伙伴」 display name.
@@ -297,6 +315,16 @@ class AndroidPal implements PlatformPal {
 
   @override
   Stream<NetplayPlayEnd> get netplayPlayEnds => _playEnds.stream;
+
+  @override
+  Future<void> stopNetplay() async {
+    // Android native→Dart reverse callback works correctly (EmulatorActivity
+    // calls notifyDartPlayEnded via the cached engine), so this is a no-op.
+    // The method exists only to satisfy the PlatformPal interface.
+  }
+
+  @override
+  bool get emulatorCoversFlutter => false;
 
   @override
   Future<String> filesDir() async {

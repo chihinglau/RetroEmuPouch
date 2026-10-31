@@ -15,6 +15,7 @@ import statfs from '@ohos.file.statvfs';
 import zlib from '@ohos.zlib';
 import router from '@ohos.router';
 import { setEmulatorTarget, getRomCrc } from 'libgpretro.so';
+import type { NetplaySession } from '../netplay_session';
 
 /// Return shapes mirrored from the Dart side (`ImportedRom`, `ImportedPackage`,
 /// `ImportedMovesConfig`/`ImportedPadConfig`). ArkTS strict mode forbids inline
@@ -150,6 +151,9 @@ export class GamePouchPlugin implements FlutterPlugin {
   private netplayCh?: MethodChannel;
   // Singleton handle so EmulatorSpike can fire the reverse netplay callback.
   private static instance?: GamePouchPlugin;
+  // NetplaySession reference set by EmulatorSpike on init and cleared on
+  // exit. Allows the Dart→ArkTS 'stop' method to trigger a real teardown.
+  private static netplayRef?: NetplaySession;
 
   constructor(uiCtx?: common.UIAbilityContext) {
     this.uiCtx = uiCtx;
@@ -208,11 +212,43 @@ export class GamePouchPlugin implements FlutterPlugin {
       this.onStorage(method, args, result);
     } else if (channel === 'gs/updater') {
       this.onUpdater(method, args, result);
+    } else if (channel === 'gs/netplay') {
+      this.onNetplay(method, args, result);
     } else {
-      // gs/netplay: native -> Dart `playEnded` callback is dormant until a real
-      // OHOS emulator exists; nothing native invokes it yet.
       result.notImplemented();
     }
+  }
+
+  /// gs/netplay (Dart -> native). The reverse direction (native -> Dart
+  /// `playEnded`) is invoked by [emitPlayEnded] on the very same channel.
+  private onNetplay(method: string, args: CallArgs, result: MethodResult): void {
+    if (method === 'stop') {
+      // Dart asks for a teardown when it observes that the emulator page was
+      // dismissed (PeersController treats the Flutter engine's paused ->
+      // resumed transition as "the emulator is gone"), because the native ->
+      // Dart `playEnded` invoke can be dropped while the ArkUI page still
+      // covers the engine. Without this handler the call used to fall through
+      // to notImplemented() and the Dart session was never released.
+      this.stopNetplaySession();
+      result.success(true);
+      return;
+    }
+    result.notImplemented();
+  }
+
+  /// Tears down any live netplay session. `NetplaySession.stop()` runs the full
+  /// teardown (UDP sockets closed, BYE to the peer, SRAM flushed) and emits the
+  /// real `playEnded` with the session's roomId — that event is what frees the
+  /// Dart-side single-session slot.
+  private stopNetplaySession(): void {
+    const n = GamePouchPlugin.netplayRef;
+    if (n) {
+      try { n.stop() } catch (e) { console.warn('[GamePouchPlugin] netplay.stop() threw: ' + JSON.stringify(e)) }
+      return;
+    }
+    // No live session: still emit, with a room id that matches nothing, so a
+    // Dart caller waiting on this channel gets an answer instead of silence.
+    this.emitPlayEnded(0, true);
   }
 
   // --------------------------------------------------------------------------
@@ -448,10 +484,7 @@ export class GamePouchPlugin implements FlutterPlugin {
       return;
     }
     if (method === 'stop') {
-      // Netplay teardown / emulator exit: notify Dart via the reverse channel so
-      // the active PlaySession ends. No-op when no netplay session is active (no
-      // listener is registered on the Dart side in that case).
-      this.emitPlayEnded(0, true);
+      this.stopNetplaySession();
       result.success(true);
       return;
     }
@@ -477,6 +510,13 @@ export class GamePouchPlugin implements FlutterPlugin {
   /// (native -> Dart) netplay `playEnded` callback when a session drops/ends.
   public static emitNetplayPlayEnded(roomId32: number, clean: boolean): void {
     GamePouchPlugin.instance?.emitPlayEnded(roomId32, clean);
+  }
+
+  /// EmulatorSpike registers its NetplaySession here so the Dart→ArkTS
+  /// `stop` handler can trigger a real teardown (closing UDP sockets,
+  /// sending BYE to peer, flushing SRAM). Pass `undefined` on exit.
+  public static setNetplayRef(netplay: NetplaySession | undefined): void {
+    GamePouchPlugin.netplayRef = netplay;
   }
 
   // --------------------------------------------------------------------------
