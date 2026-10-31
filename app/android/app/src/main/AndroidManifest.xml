@@ -61,6 +61,10 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- AdMob (test app id; swap for the real one from the AdMob console before release). -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="ca-app-pub-3940256099942544~3347511713" />
         <!-- OTA provider (GsApkProvider) is declared in src/community only. -->
     </application>
 

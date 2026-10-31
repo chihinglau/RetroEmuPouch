@@ -55,6 +55,11 @@ dependencies:
   # broadcast discovery as the dependable fallback.
   multicast_dns: ^0.3.2
 
+  # Android AdMob (interstitial + banner) for the free-tier / self-hosted ad path.
+  # OHOS uses HUAWEI/Petals Ads via a separate native channel (pending HMS
+  # signing + ad-slot IDs), so this plugin only affects the Android build.
+  google_mobile_ads: ^5.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

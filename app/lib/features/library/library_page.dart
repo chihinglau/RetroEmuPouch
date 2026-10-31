@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -12,6 +14,7 @@ import '../../pal/platform_pal.dart';
 import '../../system_files.dart';
 import '../account/account_page.dart';
 import '../settings/settings_sheet.dart';
+import '../membership/membership.dart';
 import 'missing_bios_dialog.dart';
 
 enum _SortBy { title, releaseDate, size, recent }
@@ -55,6 +58,12 @@ class _LibraryPageState extends State<LibraryPage>
   /// so the subscribe in [didChangeDependencies] runs exactly once.
   bool _routeSubscribed = false;
 
+  /// True between launching an emulator and returning to the library, marking the
+  /// resume after a game session as the safe breakpoint for an interstitial.
+  bool _gameActive = false;
+  /// Membership singleton (holds [AdService] + entitlement), loaded once.
+  Membership? _membership;
+
   /// Library display order for platform sections (playable platforms first).
   static const _platformOrder = <PlatformKind>[
     PlatformKind.nes,
@@ -83,6 +92,9 @@ class _LibraryPageState extends State<LibraryPage>
     ];
   }
 
+  /// Banner ad widget (null when unsupported or the user is ad-free).
+  Widget? get _banner => _membership?.ad.bannerWidget();
+
   @override
   void initState() {
     super.initState();
@@ -90,6 +102,9 @@ class _LibraryPageState extends State<LibraryPage>
     _searchCtl = TextEditingController();
     _searchCtl.addListener(_onSearchChanged);
     _bootstrap();
+    Membership.instance.then((m) {
+      if (mounted) setState(() => _membership = m);
+    });
   }
 
   @override
@@ -120,7 +135,21 @@ class _LibraryPageState extends State<LibraryPage>
   /// `launchEmulator` awaits.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refreshOnVisible();
+    if (state == AppLifecycleState.resumed) {
+      _refreshOnVisible();
+      _maybeShowExitAd();
+    }
+  }
+
+  /// Safe breakpoint (design doc §二.3): after a game session ends and we return
+  /// to the library, show an interstitial. Gated by [AdService] on ad-free +
+  /// daily cap + cooldown. On OHOS the [AdPal] is a no-op, so this is inert.
+  void _maybeShowExitAd() {
+    if (!_gameActive) return;
+    _gameActive = false;
+    final m = _membership;
+    if (m == null) return;
+    unawaited(m.ad.maybeShowInterstitial());
   }
 
   /// A route pushed above us (设置 / 账号 / 发现·伙伴 / 模拟器 …) was popped, so
@@ -454,22 +483,37 @@ class _LibraryPageState extends State<LibraryPage>
       );
       if (!mounted) return;
       if (ok) {
+        // Only discard the sandbox copy once the user has saved it elsewhere.
+        try {
+          if (tmp != null && tmp.existsSync()) await tmp.delete();
+        } catch (_) {/* best effort */}
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('已导出资源包（${_selected.length} 个游戏），'
                 '可通过文件管理器 / USB / 蓝牙拷贝分享')));
       } else {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('导出已取消')));
+        // Keep the temp package so we can inspect it / the user can pull it.
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('导出未保存：已取消，或系统保存框失败。'
+                '临时包保留在：${tmp?.path ?? "(无)"}')));
       }
-    } catch (e) {
+    } catch (e, st) {
+      // Persist the real error so a device-side failure is diagnosable without
+      // relying on a transient snackbar the user might miss.
+      try {
+        final fd = _filesDir;
+        if (fd != null) {
+          final err = File('$fd/export_cache/_export_error.txt');
+          await err.parent.create(recursive: true);
+          await err.writeAsString(
+              '${DateTime.now().toIso8601String()}\n$e\n$st');
+        }
+      } catch (_) {/* best effort */}
       if (!mounted) return;
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('导出失败：$e')));
+      // ignore: use_build_context_synchronously
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('导出失败：$e（详见 export_cache/_export_error.txt）')));
     } finally {
       if (navigator.canPop()) navigator.pop();
-      try {
-        if (tmp != null && tmp.existsSync()) await tmp.delete();
-      } catch (_) {/* best effort */}
       _exitSelection();
     }
   }
@@ -571,11 +615,17 @@ class _LibraryPageState extends State<LibraryPage>
       // never block the user on a storage-access error.
       debugPrint('BIOS pre-check failed: $e');
     }
-    await widget.pal.launchEmulator(
-      relativePath: entry.relativePath,
-      coreId: core,
-      platform: entry.platform.name,
-    );
+    _gameActive = true;
+    try {
+      await widget.pal.launchEmulator(
+        relativePath: entry.relativePath,
+        coreId: core,
+        platform: entry.platform.name,
+      );
+    } catch (e) {
+      _gameActive = false;
+      rethrow;
+    }
     setState(() => entry.lastPlayedAt = DateTime.now());
     await _library?.save(_entries);
   }
@@ -740,7 +790,16 @@ class _LibraryPageState extends State<LibraryPage>
               label: Text('导出资源包（${_selected.length}）'),
             )
           : null,
-      body: _buildBody(genres, categories),
+      body: Column(
+        children: [
+          Expanded(child: _buildBody(genres, categories)),
+          if (_banner != null)
+            SafeArea(
+              top: false,
+              child: _banner!,
+            ),
+        ],
+      ),
     );
   }
 

@@ -336,6 +336,7 @@ powershell -ExecutionPolicy Bypass -File scripts\make-release-keystore.ps1
 - **OHOS netplay 对端退出自动返回（2026-10-31）**：修复联机中对端（如安卓主机）退出/掉线后，鸿蒙端卡死在游戏界面不返回的问题。原生 `NativeNetplayStop`（`app/ohos/entry/src/main/cpp/gpretro.cpp`）改为先停渲染线程再释放 netplay 对象，消除 use-after-free SIGSEGV；`EmulatorSpike.ets` 的退出路径改为 `netplay.stop()` 先执行、`exitToLibrary()` 守卫标志由函数自身置位，确保退出能真正 `router.back()` 回文件库。详见 [`docs/skills.md`](./docs/skills.md)「已知问题与修复记录」。
 - **OHOS 资源包导出 / 导入 SAF 修复（2026-10-31）**：修复鸿蒙端「导出资源包 / 导入 ROM / BIOS」保存框或选择框**弹不出来**（Android 端正常）。根因是 OHOS `MethodChannel` 不解码 Dart `Map` 参数（原生取到空 `sourcePath` 直接 `return false`），以及 `@ohos.file.picker` 需要 `UIAbilityContext` 而插件生命周期只给了 `ApplicationContext`。改为跨端传参统一走 `jsonEncode` 字符串 + `JSON.parse`，并在 `EntryAbility` 注入 ability context。251MB 资源包已真机验证为合法 ZIP、中文名零乱码、CRC 全通过。详见 [`docs/skills.md` §21](./docs/skills.md)。
 - **PC 端「我的电脑」伙伴服务一键启动（2026-11-01）**：新增 `start_peer.bat` 双击即可启动 PC 伙伴服务（headless，另开窗口常驻 + `tools/library/peer_server.log` 日志，自动确认配对）；并补 [`docs/skills.md` §22](./docs/skills.md) 记录完整启动命令、手机端连法、防火墙与 AP 隔离常见坑。服务端仅依赖 Python 3 标准库，mDNS 发现为可选（`pip install zeroconf`，未装自动降级为纯 UDP 43801 广播）。
+- **Phase 2 广告接入：Android AdMob（2026-11-01）**：`lib/pal/ad_pal.dart` 新增 `GoogleMobileAdsAdPal`（`google_mobile_ads`，默认 Google **测试广告位 ID**，发布前替换为真实 ID），`createAdPal()` 按平台分流——Android 走 AdMob、OHOS 暂 `NoOpAdPal`（华为/Petals 广告待 HMS 签名+广告位 ID）；`AdService` 频控升级为「每日≤3 + 冷却 1min + 跨会话按日重置」。`LibraryPage` 在「退出游戏回库页」安全断点弹插屏，并在库页底部挂横幅。设计见 [`docs/design-account-cloud-ads-membership.md`](./docs/design-account-cloud-ads-membership.md)。
 
 ---
 

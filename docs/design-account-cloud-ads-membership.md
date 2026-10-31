@@ -160,13 +160,13 @@
 | 子项 | 说明 | 状态 | 备注 |
 |---|---|---|---|
 | 1 总体架构 | 上述拓扑 | 已采纳-进行中（骨架） | |
-| 2 AdPal 分平台 | Android AdMob / OHOS 华为广告 | 未开始 | **OHOS 不可用 AdMob** |
-| 3 广告位与频控 | Banner/Interstitial/Rewarded + 频控 | 未开始 | 不在模拟中插广告 |
+| 2 AdPal 分平台 | Android AdMob / OHOS 华为广告 | 进行中（Android AdMob 测试ID已接；OHOS 待 HMS 签名+广告位ID） | **OHOS 不可用 AdMob**，走华为/Petals Ads（原生通道，待接入） |
+| 3 广告位与频控 | Banner/Interstitial/Rewarded + 频控 | 进行中（Interstitial+退出游戏断点已接；Banner 已接；频控=每日≤3+冷却1min；Rewarded 未做） | 不在模拟运行中插广告 |
 | 4 会员模型 | 免费/7天试用/月/年/终身 | 未开始 | |
 | 5 BillingPal 分平台 | Play Billing / 华为 IAP | 未开始 | |
 | 6 收据服务端校验 | 防作弊 | 未开始 | |
 | 7 试用/过期/终身逻辑 | trialStart 权威 | 未开始 | |
-| 8 entitlement 容错 | 失败回退显示广告 | 未开始 | 不锁死 App |
+| 8 entitlement 容错 | 失败回退显示广告 | 已接（AdService 按 isAdFree 门控 + 失败默认显示广告不锁死；后端校验待 Phase 3） | 不锁死 App |
 | 9 隐私与商店合规 | 隐私政策/同意/非个性化 | 未开始 | |
 | 10 UI 与代码映射 | AccountPage/exitToLibrary 接入 | 未开始 | |
 
@@ -181,7 +181,7 @@
 | 期 | 内容 | 状态 | 依赖 | 备注 |
 |---|---|---|---|---|
 | Phase 1 | 账号 + PC 配对 + 存档/设置同步（不含 ROM 分发） | 已采纳-进行中（骨架） | 无 | 先把"云"做扎实 |
-| Phase 2 | 广告接入（AdPal 分平台 + 频控 + 退出游戏断点插广告） | 已采纳-进行中（骨架） | Phase 1 账号体系 | |
+| Phase 2 | 广告接入（AdPal 分平台 + 频控 + 退出游戏断点插广告） | 进行中（Android AdMob 测试ID+退出断点+频控已接；OHOS 待华为广告） | Phase 1 账号体系 | |
 | Phase 3 | 会员/计费（BillingPal 分平台 + 7天试用 + 月/年/终身 + 服务端校验） | 已采纳-进行中（骨架） | Phase 1 + Phase 2 | |
 
 ---
@@ -203,8 +203,9 @@
 - **导出游戏资源包：OOM 闪退 + 中文乱码修复（2026-10-31）**：根因为 `archive` 3.6.1 的 `ZipEncoder.addFile` 会把整份 ROM `bytes.toUint8List()` + `Deflate().getBytes()` **全量读入内存**，大 ROM 直接 OOM 被系统杀进程（闪退）；原代码注释误称"流式"并不成立。改为自研真正流式 ZIP 写出（`_streamZip`，位于 `data/package/game_package.dart`）：分块读源文件、增量算 CRC32、`ZLibCodec(raw:true)` 分块原始 deflate 直接落盘，峰值内存≈一个 chunk（~64KB），与 ROM 大小无关；ZIP 条目名/内容均 UTF-8 且置 UTF-8 标志位，避免中文乱码（同类 Latin-1-over-UTF-8 在导入侧用 `repairJsonMojibake` 兜底）。新增 `test/features/library/game_package_test.dart`（2MB 中文名 ROM+存档 导出→导入 往返，断言无乱码、可解包、字节一致）绿；`flutter analyze` 无新增 issue，原 8/8 单测仍绿。端到端实测：服务端同步逻辑 + Dart 客户端解析/就绪判定均绿，App 真机启动正常；应用内「我的PC」同步按钮需在手机「发现伙伴」与该 PC 配对后手动点按（hdc 无法可靠点 Flutter，步骤见下）。
 
 - **Phase 1 收尾：LAN mDNS 发现（2026-11-01）**：在 `tools/library/peer_host.py` 的 `PeerHost` 新增 mDNS 广播（`_retroemupouch._tcp.local`，zeroconf，缺依赖自动降级为仅 UDP），并加 `run_peer_server.py --no-mdns` 开关；App 侧新建 `lib/pal/pairing_pal.dart`（`PairingPal` 接口 + `MdnsPairingPal` 纯 Dart 实现 + `NoOpPairingPal`），在 `PeersController.refresh()` 合并 mDNS 发现的 PC（与现有 UDP 广播并存，互为兜底）；新增依赖 `multicast_dns`。设备端 E2E 需在手机「发现伙伴」连同一 Wi-Fi 的真机验证（当前设备离线，未跑）。
+- **Phase 2 广告接入：Android AdMob（2026-11-01）**：`lib/pal/ad_pal.dart` 新增 `GoogleMobileAdsAdPal`（`google_mobile_ads`，默认 **Google 测试广告位 ID**，真实 ID 待发布时替换），`createAdPal()` 按 `Platform.operatingSystem` 在 Android 走 AdMob、OHOS 走 `NoOpAdPal`（华为/Petals Ads 待 HMS 签名+广告位 ID）；`AdService` 频控升级为「每日≤3 + 冷却 1min + 跨会话按日重置」。`LibraryPage` 接入**安全断点**：退出游戏回库页（`didChangeAppLifecycleState.resumed`）经 `AdService.maybeShowInterstitial()` 弹插屏（绝不在模拟运行中插广告），并在库页底部挂载 `bannerWidget()` 横幅。新增依赖 `google_mobile_ads`；AndroidManifest 加 AdMob APP_ID（测试 ID）。OHOS 因 NoOp 对该平台完全无副作用；真机 E2E（Android 调试 + OHOS 华为广告）待凭证与设备。
 
-**待办（下一阶段）**：接 Android AdMob / OHOS 华为广告、Play Billing / 华为 IAP、后端账号与收据校验。
+**待办（下一阶段）**：OHOS 华为/Petals 广告原生通道、Play Billing / 华为 IAP、后端账号与收据校验（Android AdMob 已接测试 ID，待真实广告位 ID + OHOS HMS 签名）。
 
 ## 决策记录（供跟踪）
 
@@ -212,6 +213,7 @@
 |---|---|---|---|
 | 2026-10-31 | 实施者 | 已采纳并开始实施 | 方案采纳；账号/广告/会员骨架已实现（NoOp 默认，待接原生广告/计费与后端校验） |
 | 2026-11-01 | 实施者 | Phase 1 收尾：LAN mDNS 发现 | 新增 PC 端 mDNS 广播 + App 侧 `PairingPal`(multicast_dns)；自托管配对闭环打通（UDP/mDNS 双通道） |
+| 2026-11-01 | 实施者 | Phase 2 广告接入：Android AdMob | `google_mobile_ads` + Google 测试广告位 ID 接 Android 插屏/横幅；`createAdPal()` 按平台分流，OHOS 暂 NoOp（华为广告待 HMS）；退出游戏断点 + 频控（每日≤3+冷却1min） |
 
 ---
 
