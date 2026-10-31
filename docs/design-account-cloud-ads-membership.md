@@ -214,6 +214,7 @@
 | 2026-10-31 | 实施者 | 已采纳并开始实施 | 方案采纳；账号/广告/会员骨架已实现（NoOp 默认，待接原生广告/计费与后端校验） |
 | 2026-11-01 | 实施者 | Phase 1 收尾：LAN mDNS 发现 | 新增 PC 端 mDNS 广播 + App 侧 `PairingPal`(multicast_dns)；自托管配对闭环打通（UDP/mDNS 双通道） |
 | 2026-11-01 | 实施者 | Phase 2 广告接入：Android AdMob | `google_mobile_ads` + Google 测试广告位 ID 接 Android 插屏/横幅；`createAdPal()` 按平台分流，OHOS 暂 NoOp（华为广告待 HMS）；退出游戏断点 + 频控（每日≤3+冷却1min） |
+| 2026-11-01 | 实施者 | Bug 修复：OHOS 金手指无法启用 | `gpretro.cpp` `GetCheats` 原读 `g_filesDir(=appRoot/roms)/library/cheats.json`（路径错，应为 `g_appDir(=appRoot)/library/`），且只读 `cheats.json` 不读 `cloud_cheats.json`；PC 下载的金手指落在 `cloud_cheats.json` 故永远「本游戏暂无金手指」。改为用 `g_appDir` 并合并 `cloud_cheats.json` 兜底（Android `CheatStore.load` 同语义）。Switch/Choice 两类均经此路径修复。 |
 
 ---
 

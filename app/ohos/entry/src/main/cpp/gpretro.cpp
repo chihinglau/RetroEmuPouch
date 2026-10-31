@@ -2338,44 +2338,47 @@ static napi_value GetRomCrc(napi_env env, napi_callback_info info) {
 // Return the cheats.json array for the loaded ROM's CRC as a JSON string (or "[]").
 // Keeps the dynamic-key lookup on the C++ side so ArkTS only parses a concrete
 // CheatInfo[] (ArkTS forbids index signatures / ESObject for JSON dicts).
-static napi_value GetCheats(napi_env env, napi_callback_info info) {
-  const char* empty = "[]";
-  napi_value out = nullptr;
-  std::string path = g_filesDir + "/library/cheats.json";
+//
+// Cheats live in <appRoot>/library/ (sibling of /roms/), but g_filesDir is the
+// roms dir, so the old path (<appRoot>/roms/library/cheats.json) never matched the
+// Dart/PC-written store. Use g_appDir (the true app root) instead. Mirror Android
+// CheatStore.load: the local `cheats.json` wins, and the LAN-sync
+// `cloud_cheats.json` snapshot is the fallback — so PC-downloaded cheats (which
+// land in cloud_cheats.json) actually show up. Fixes the OHOS "无法启用金手指" /
+// "本游戏暂无金手指" regression (switch + choice cheats both flow through here).
+static std::string CheatsForCrc(const std::string& path, const char* key) {
   FILE* f = fopen(path.c_str(), "rb");
-  if (!f) {
-    napi_create_string_utf8(env, empty, 2, &out);
-    return out;
-  }
+  if (!f) return std::string();
   std::string content;
   char buf[65536];
   size_t n;
   while ((n = fread(buf, 1, sizeof(buf), f)) > 0) content.append(buf, n);
   fclose(f);
-  char key[16];
-  snprintf(key, sizeof(key), "\"%08X\"", Crc32File(g_romPath));
   size_t pos = content.find(key);
-  if (pos == std::string::npos) {
-    napi_create_string_utf8(env, empty, 2, &out);
-    return out;
-  }
+  if (pos == std::string::npos) return std::string();
   size_t b = content.find('[', pos);
-  if (b == std::string::npos) {
-    napi_create_string_utf8(env, empty, 2, &out);
-    return out;
-  }
+  if (b == std::string::npos) return std::string();
   int depth = 0;
   size_t e = b;
   for (; e < content.size(); e++) {
     if (content[e] == '[') depth++;
     else if (content[e] == ']') { depth--; if (depth == 0) break; }
   }
-  if (e >= content.size()) {
-    napi_create_string_utf8(env, empty, 2, &out);
-    return out;
-  }
-  std::string arr = content.substr(b, e - b + 1);
-  napi_create_string_utf8(env, arr.c_str(), NAPI_AUTO_LENGTH, &out);
+  if (e >= content.size()) return std::string();
+  return content.substr(b, e - b + 1);
+}
+
+static napi_value GetCheats(napi_env env, napi_callback_info info) {
+  const char* empty = "[]";
+  napi_value out = nullptr;
+  char key[16];
+  snprintf(key, sizeof(key), "\"%08X\"", Crc32File(g_romPath));
+  std::string base = g_appDir + "/library/";
+  // Local store wins; cloud sync snapshot is the fallback (Android parity).
+  std::string arr = CheatsForCrc(base + "cheats.json", key);
+  if (arr.empty()) arr = CheatsForCrc(base + "cloud_cheats.json", key);
+  napi_create_string_utf8(env, arr.empty() ? empty : arr.c_str(),
+                          NAPI_AUTO_LENGTH, &out);
   return out;
 }
 
