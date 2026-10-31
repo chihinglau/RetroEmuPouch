@@ -1766,4 +1766,40 @@ Wi-Fi 环境下 DHCP 重分配 IP / 用户换路由器后，配对记录里的 `
 - 失败详情（异常+堆栈）同理落盘到 `export_cache/_export_error.txt`，由 `library_page.dart` 的 catch 写入。
 - 临时包（成功分支才删）保留在 `export_cache/` 可 `hdc file recv` 拉回本地用 `python -c "import zipfile; zipfile.ZipFile(...).testzip()"` 验证 CRC，确认中文名无乱码、零损坏。
 
+---
+
+## 22. PC 端「我的电脑」伙伴服务启动（自托管同步，2026-11-01）
+
+手机「发现伙伴 / 我的电脑」能把本地库拉进 App，靠的是局域网里一台**伙伴服务端**。PC 这端用纯 Python 实现（`tools/library/peer_host.py`），无需 GUI、无需 Flask，标准库即可跑；mDNS 广播（让手机在 AP 隔离 / 广播被过滤时也能发现）是可选依赖 `zeroconf`。与 `app/lib/data/peer/*.dart` 协议严格对齐（设计见 `docs/design-account-cloud-ads-membership.md`）。
+
+### 22.1 启动命令
+
+```powershell
+cd D:\ai\prj\trae\HuaWei\RetroEmuPouch
+# 最简：用仓库内置测试库 .tools/gstest
+python tools/library/run_peer_server.py
+
+# 用你自己的库（根目录下要有 roms/ chats/ bios/）
+python tools/library/run_peer_server.py --root "D:\你的库路径" --name "客厅电脑"
+
+# 关掉 mDNS，只走 UDP 43801 广播发现
+python tools/library/run_peer_server.py --no-mdns
+```
+
+- 启动后：绑定 **UDP 43801** 应答发现广播；起 **HTTP 服务**（端口自动分配，控制台打印 `服务地址: http://<PC的IP>:<端口>`，PONG 里带 `httpPort`）；日志同时写 `tools/library/peer_server.log`。
+- **自动确认**收到的配对请求（联调用，省得在 PC 上点确认）。`Ctrl+C` 停止。
+- 依赖：仅 Python 3 + 标准库。mDNS 广播才需要 `pip install zeroconf`（没装会自动降级为仅 UDP 发现，不影响现有功能）。
+
+### 22.2 手机端连法
+
+1. **PC 与手机连同一 Wi-Fi**。
+2. App：**我的 → 发现伙伴**（或「我的电脑」区块）→ 看到 PC（名默认 `GamePouch 库管理(PC)`，或 `--name` 设的名字）。
+3. 点**配对**（PC 自动确认，秒过）→ 点**导入**库。
+
+### 22.3 常见坑
+
+- **Windows 防火墙**：放行 Python 入站（UDP 43801 + 那个 HTTP 端口），否则手机发现不了也连不上。
+- **发现不到**：先查防火墙 / 是否同一网段（AP 隔离会让广播失效 → 装 `zeroconf` 走 mDNS 通常能救）；再看控制台和 `peer_server.log` 的 `服务地址` 行。
+- PC 端能起、控制台打印出 `服务地址` 即视为服务正常；真机「发现伙伴」这一步需手机实际连上同一 Wi-Fi 后验证。
+
 
