@@ -1790,6 +1790,19 @@ python tools/library/run_peer_server.py --no-mdns
 - **自动确认**收到的配对请求（联调用，省得在 PC 上点确认）。`Ctrl+C` 停止。
 - 依赖：仅 Python 3 + 标准库。mDNS 广播才需要 `pip install zeroconf`（没装会自动降级为仅 UDP 发现，不影响现有功能）。
 
+### 22.1.1 一键启动（start_peer.bat）
+
+仓库根目录已提供 `start_peer.bat`，**双击即可启动**：另开一个「GamePouch 伙伴服务」窗口常驻服务、本窗口立即返回；日志仍写 `tools/library/peer_server.log`。`start_peer.bat` 的参数会原样透传给 `run_peer_server.py`：
+
+```powershell
+# 双击 start_peer.bat 即用内置测试库；命令行也可带参：
+start_peer.bat --root "D:\你的库路径" --name "客厅电脑"
+start_peer.bat --no-mdns
+```
+
+- 停止：关闭「GamePouch 伙伴服务」窗口，或在该窗口按 `Ctrl+C`。
+- 把 `start_peer.bat` 放在仓库根目录（`RetroEmuPouch\`）下双击才有效；脚本会先校验 `tools\library\run_peer_server.py` 是否存在。
+
 ### 22.2 手机端连法
 
 1. **PC 与手机连同一 Wi-Fi**。
