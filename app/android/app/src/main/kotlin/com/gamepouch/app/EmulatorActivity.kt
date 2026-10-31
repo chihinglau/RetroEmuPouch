@@ -320,7 +320,7 @@ class EmulatorActivity : Activity() {
                 .setTitle("游戏无法启动")
                 .setMessage(msg)
                 .setCancelable(false)
-                .setPositiveButton("返回游戏库") { _, _ -> finish() }
+                .setPositiveButton("返回文件库") { _, _ -> finish() }
                 .show()
         } }
 
@@ -965,7 +965,7 @@ class EmulatorActivity : Activity() {
         // library" affordance distinct from the neutral controls.
         val exitIcon = pill("✕", Color.rgb(0xEF, 0x9A, 0x9A)) { exitToLibrary() }
         exitIcon.layoutParams = android.widget.FrameLayout.LayoutParams(pillHpx, pillHpx)
-        exitIcon.contentDescription = "退出到游戏库"
+        exitIcon.contentDescription = "退出到文件库"
         menuIcon.contentDescription = "功能菜单"
 
         panel.visibility = View.GONE
@@ -1344,7 +1344,7 @@ class EmulatorActivity : Activity() {
             if (list.isEmpty()) {
                 listBox.addView(TextView(ctx).apply {
                     text = "暂无金手指命令。\n\n" +
-                        "请在电脑端游戏库为本游戏添加命令（如「无限生命」开关、" +
+                        "请在电脑端文件库为本游戏添加命令（如「无限生命」开关、" +
                         "「武力值」选 10/50/100、「装备」选 剑/枪），同步后即可在此直接开关。"
                     textSize = 13f
                     setPadding(0, padPx / 2, 0, padPx / 2)
@@ -1759,7 +1759,7 @@ class EmulatorActivity : Activity() {
                 .setTitle("连接中断")
                 .setMessage(msg)
                 .setCancelable(false)
-                .setPositiveButton("返回游戏库") { _, _ ->
+                .setPositiveButton("返回文件库") { _, _ ->
                     // Pull the host's converged SRAM only after a clean BYE;
                     // timeout / force-kill / network loss keep the guest's old
                     // save per spec AC-9.
@@ -1781,7 +1781,7 @@ class EmulatorActivity : Activity() {
                 .setTitle("联机无法开始")
                 .setMessage(msg)
                 .setCancelable(false)
-                .setPositiveButton("返回游戏库") { _, _ -> endNetplay(clean = false) }
+                .setPositiveButton("返回文件库") { _, _ -> endNetplay(clean = false) }
                 .show()
         }
     }
@@ -1846,7 +1846,7 @@ class EmulatorActivity : Activity() {
                     if (handle != 0L) NativeBridge.nativeNetplayStop(handle)
                     if (clean && srv != null) {
                         // Grace window for the guest's sram-final pull after BYE.
-                        // The guest only pulls after the user taps "返回游戏库"
+                        // The guest only pulls after the user taps "返回文件库"
                         // on the drop dialog: a slow reader can take well over
                         // 30 s, so keep the tiny server for 90 s, and close the
                         // moment the final SRAM has actually been delivered.

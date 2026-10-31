@@ -434,7 +434,7 @@ class _PeerLibraryPageState extends State<PeerLibraryPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.peerName} 的游戏库'),
+        title: Text('${widget.peerName} 的文件库'),
         actions: [
           if (!_loading && !_authFailed && _error == null && _games.isNotEmpty)
             TextButton(
@@ -476,7 +476,7 @@ class _PeerLibraryPageState extends State<PeerLibraryPage> {
             children: [
               CircularProgressIndicator(),
               SizedBox(height: 16),
-              Text('正在读取伙伴的游戏库…', textAlign: TextAlign.center),
+              Text('正在读取伙伴的文件库…', textAlign: TextAlign.center),
               SizedBox(height: 6),
               Text('伙伴游戏较多时，首次加载可能需要几十秒，请稍候',
                   textAlign: TextAlign.center,
@@ -504,14 +504,14 @@ class _PeerLibraryPageState extends State<PeerLibraryPage> {
     if (_error != null) {
       return _hint(
         icon: Icons.cloud_off,
-        title: '无法读取对方游戏库',
+        title: '无法读取对方文件库',
         body: '$_error\n\n请确认双方仍在同一 Wi-Fi / 热点且停留在发现伙伴页面。',
       );
     }
     if (_games.isEmpty) {
       return _hint(
         icon: Icons.inbox_outlined,
-        title: '对方的游戏库是空的',
+        title: '对方的文件库是空的',
         body: '伙伴还没有导入任何游戏。',
       );
     }

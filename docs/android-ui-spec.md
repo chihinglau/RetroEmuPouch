@@ -12,7 +12,7 @@
 >
 > 说明：本文档分两部分。**原生绘制部分**（模拟器页 EmulatorActivity + 虚拟手柄
 > VirtualPadView + 顶部工具栏 + HUD + 原生对话框）见 §0–§14。**Flutter/Dart 应用层**
-> （游戏库 / 设置 / 账号云 / 伙伴联机 / 招式编辑 / 法律）见 §15，业务流（导入 / 备份恢复 /
+> （文件库 / 设置 / 账号云 / 伙伴联机 / 招式编辑 / 法律）见 §15，业务流（导入 / 备份恢复 /
 > 更新 / 联机 / 设置持久化 / 原生桥）见 §16，业务测试验收清单见 §17。Flutter 代码跨端共用，
 > 1:1 复刻时整段搬运即可。
 
@@ -66,7 +66,7 @@ class Sizing(wPx, hPx) {
 
 | 页面 | 承载技术 | 方向 | 是否原生 UI |
 |---|---|---|---|
-| 启动 / 游戏库 / 设置 / 金手指编辑 | Flutter（Dart，跨端共用） | 跟随系统 | 否 |
+| 启动 / 文件库 / 设置 / 金手指编辑 | Flutter（Dart，跨端共用） | 跟随系统 | 否 |
 | **模拟器页 EmulatorActivity** | 原生 Kotlin | `sensorLandscape`（双向横屏） | **是（本文档主体）** |
 
 - `MainActivity` = 纯 `FlutterActivity`，**零原生视图、零状态栏染色、零 EdgeToEdge**
@@ -350,7 +350,7 @@ menuCx  = exitLeft − hGap − pillW/2
 
 - `功能` 与面板的 accent 为白色 `Color.WHITE`；`✕` 为 `rgb(239,154,154)`（`#EF9A9A`），
   描边 alpha 210（非白色 accent 时的取值），文字同色；无障碍描述分别为
-  「功能菜单」/「退出到游戏库」。
+  「功能菜单」/「退出到文件库」。
 - 面板**无底板、无 padding**（`background = null`），5 个命令是自由浮动的独立药丸。
 - `chrome 行下沿 = topMargin + 0.077·ref`，通过 `notifyPadChromeBottom` 传给手柄，
   作为 SELECT/START 立柱的上边界（见 §2.5）。
@@ -421,7 +421,7 @@ menuCx  = exitLeft − hGap − pillW/2
 - 标题「金手指」，正向按钮「关闭」；窗口 **高度上限 = 0.62·h**（`MATCH_PARENT × 0.62h`）。
 - 容器内距 `padPx = 0.033·ref`（左/右 `padPx`，上 `padPx/2`，下 0）。
 - 空态文案（13sp，上下各 `padPx/2`）：
-  「暂无金手指命令。\n\n请在电脑端游戏库为本游戏添加命令（如「无限生命」开关、「武力值」选 10/50/100、「装备」选 剑/枪），同步后即可在此直接开关。」
+  「暂无金手指命令。\n\n请在电脑端文件库为本游戏添加命令（如「无限生命」开关、「武力值」选 10/50/100、「装备」选 剑/枪），同步后即可在此直接开关。」
 - `Switch` 行：`CheckBox`，15sp，文案 = 命令名，勾选态持久化。
 - `Choice` 行：横向布局，名称 TextView 15sp（占满剩余宽），右侧取值 Button 13sp，
   `minimumWidth = 0.267·w`；未选中显示「关」；点击弹单选列表 `["关闭"] + options.labels`，
@@ -1197,7 +1197,7 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 | 金手指数据（cheats.json → Switch/Choice 列表） | ✅（原生 `getCheats` 按 ROM CRC 取数组 + `setCheats` 经 `retro_set_cheat` 下发；对话框每招 Switch 开关、多选招式 Choice 药丸；`flutter build hap` 通过） |
 | 街机 profile（MAME 六键 / NEOGEO 四键 / 招式 / 菜单 / 1P2P） | ⏳（依赖 OHOS libretro 主机支持街机核心；当前 `EmulatorSpike` 仅 fceumm/NES 实跑，profile 仅驱动按键布局，街机核心未接入） |
 | 手势排除区、联机统计与遮罩 | 手势排除 ✅（OpenHarmony 26 无「逐区域排除」API，改用 `setGestureBackEnabled(false)` 关闭窗口返回手势，Pura70 日志确认 `SetGestureBackEnabled ... enable 0`）；联机统计/遮罩 ⏳（无 netplay 数据源） |
-| 游戏库中文名乱码（OHOS SAF 导入） | ✅（根因：ArkTS `fileNameFromUri` 未对 SAF document URI 末段做 URL 解码，中文名以 `%E6%8B%B3…` 落库。已在 `GamePouchPlugin.ets` 加 `decodeURIComponent` 解码；并在 `RomEntry.displayTitle` 增加显示期百分号解码，治愈历史已落库的乱码条目（幂等）。自测：`flutter test test/rom_library_test.dart` 11/11 绿；`build-hap.ps1` 签名构建通过；Pura70 `hdc install -r` 成功） |
+| 文件库中文名乱码（OHOS SAF 导入） | ✅（根因：ArkTS `fileNameFromUri` 未对 SAF document URI 末段做 URL 解码，中文名以 `%E6%8B%B3…` 落库。已在 `GamePouchPlugin.ets` 加 `decodeURIComponent` 解码；并在 `RomEntry.displayTitle` 增加显示期百分号解码，治愈历史已落库的乱码条目（幂等）。自测：`flutter test test/rom_library_test.dart` 11/11 绿；`build-hap.ps1` 签名构建通过；Pura70 `hdc install -r` 成功） |
 
 > 进度核对方式：在仓库根执行
 > `powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1 -NoCodesign`
@@ -1215,11 +1215,11 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 
 ---
 
-# 第二部分：Flutter / Dart 应用层（游戏库 · 设置 · 账号云 · 伙伴联机 · 招式 · 法律）
+# 第二部分：Flutter / Dart 应用层（文件库 · 设置 · 账号云 · 伙伴联机 · 招式 · 法律）
 
 > 数据来源（全部为代码事实，行号可回溯）：
 > - `app/lib/main.dart`（路由 / 主题 / 同意门）
-> - `app/lib/features/library/library_page.dart`（游戏库首页 + 详情 + 导入/导出/删除）
+> - `app/lib/features/library/library_page.dart`（文件库首页 + 详情 + 导入/导出/删除）
 > - `app/lib/features/library/missing_bios_dialog.dart`
 > - `app/lib/features/settings/settings_sheet.dart`、`special_moves_editor.dart`
 > - `app/lib/features/account/account_page.dart`
@@ -1255,22 +1255,22 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 
 | 页面 | 文件 | 打开方式 | 用途 |
 |---|---|---|---|
-| LibraryPage 游戏库 | `features/library/library_page.dart` | 首页 | ROM 网格 / 搜索筛选排序 / 选择导出 / 详情 / 导入 / 启动 |
+| LibraryPage 文件库 | `features/library/library_page.dart` | 首页 | ROM 网格 / 搜索筛选排序 / 选择导出 / 详情 / 导入 / 启动 |
 | MissingBiosDialog | `features/library/missing_bios_dialog.dart` | 启动街机前 BIOS 缺失 | 提示缺 BIOS + 批量导入 |
-| SettingsSheet 设置 | `features/settings/settings_sheet.dart` | 游戏库右上「设置」→ 半屏底部弹层 | 关于 / 体验 / 控制 / BIOS / 应用 |
+| SettingsSheet 设置 | `features/settings/settings_sheet.dart` | 文件库右上「设置」→ 半屏底部弹层 | 关于 / 体验 / 控制 / BIOS / 应用 |
 | SpecialMovesEditorPage | `features/settings/special_moves_editor.dart` | 设置内「招式按键」→ push | 6 槽格斗招式脚本编辑 |
-| AccountPage 账号云 | `features/account/account_page.dart` | 游戏库右上云图标 → push | 登录 / 云库 / 同步 / 发现伙伴 / OTA |
+| AccountPage 账号云 | `features/account/account_page.dart` | 文件库右上云图标 → push | 登录 / 云库 / 同步 / 发现伙伴 / OTA |
 | CloudSync 弹窗 | `features/cloud/cloud_actions.dart` | 账号页「立即网络同步」 | 同步进度 |
-| CloudLibraryPage 云游戏库 | `features/cloud/cloud_library_page.dart` | 账号页 → push | 浏览/订阅服务端游戏 |
+| CloudLibraryPage 云文件库 | `features/cloud/cloud_library_page.dart` | 账号页 → push | 浏览/订阅服务端游戏 |
 | PeersPage 发现伙伴 | `features/peer/peers_page.dart` | 账号页「发现伙伴」→ push | 局域网发现/配对/联机邀请 |
 | PairDialog 配对 | `features/peer/pair_dialog.dart` | PeersPage 配对 | 6 位分组码确认配对 |
-| PeerLibraryPage 伙伴库 | `features/peer/peer_library_page.dart` | PeersPage 点「游戏库」→ push | 浏览对方库 + 4 步导入 |
+| PeerLibraryPage 伙伴库 | `features/peer/peer_library_page.dart` | PeersPage 点「文件库」→ push | 浏览对方库 + 4 步导入 |
 | PlayInviteDialog 联机邀请 | `features/play/play_invite_dialog.dart` | 收到邀请 | 接受/拒绝（60s TTL） |
 | PlayLobbyPage 联机大厅 | `features/play/play_lobby_page.dart` | 接受邀请 / 发起主机 | 双人槽位 / RTT 探测 / 开始 |
 | ConsentGate 同意门 | `features/legal/consent_gate.dart` | 首次启动 | 隐私政策 + 用户协议 |
 | PrivacyPolicyPage / EulaPage | `features/legal/*` | 同意门 / 设置内 | 模板正文 |
 
-### 15.3 LibraryPage（游戏库首页）
+### 15.3 LibraryPage（文件库首页）
 
 **文件**：`features/library/library_page.dart:19-1202`
 
@@ -1278,7 +1278,7 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 
 | 状态 | 标题 | leading | actions |
 |---|---|---|---|
-| 非选择 | `趣玩匣游戏库` | `null` | ① 云图标（`tooltip 账号 / 云服务 / 升级`）→ push AccountPage；② `more_vert` 弹出菜单（见下）；③ 设置图标（`tooltip 设置`）→ `SettingsSheet.show` |
+| 非选择 | `趣玩匣文件库` | `null` | ① 云图标（`tooltip 账号 / 云服务 / 升级`）→ push AccountPage；② `more_vert` 弹出菜单（见下）；③ 设置图标（`tooltip 设置`）→ `SettingsSheet.show` |
 | 选择 | `已选 ${_selected.length} 个` | `close` 图标（`tooltip 退出选择`） | `select_all` 图标（`tooltip 全选 / 取消全选`） |
 
 - 弹出菜单项：`导入 ROM（单文件）` / `导入游戏资源包 / ZIP（自动识别）` / `选择游戏并导出资源包`（`702-723`）。
@@ -1293,7 +1293,7 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 - 类型/分类筛选：`category_outlined` / `folder_outlined` 两个下拉。
 - 「继续游戏」卡片 `_ContinueCard`（`1577-1659`）：`继续游戏` + `上次游玩 … · 进入即恢复进度` → `_launch`。
 - 游戏网格 `_GameCard`（`1406-1494`）/ 横屏行 `_GameRow`（`1662-1759`）：点按 → `_openDetail`。
-- 空状态 `_buildEmptyState`（`1010-1057`）：`游戏库为空` + `导入 ROM（单文件）`/`导入资源包 / ZIP` 按钮 + 提示「也可在 PC 端游戏库管理器一键同步游戏到手机」。
+- 空状态 `_buildEmptyState`（`1010-1057`）：`文件库为空` + `导入 ROM（单文件）`/`导入资源包 / ZIP` 按钮 + 提示「也可在 PC 端文件库管理器一键同步游戏到手机」。
 
 **选择态 FAB**：`FloatingActionButton.extended`（`archive_outlined`，`导出资源包（${_selected.length}）`）→ `_exportSelected`（`731-737`）。
 
@@ -1323,7 +1323,7 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 - `barrierDismissible:false`；标题 `缺少系统文件（BIOS）`（`83`）。
 - 正文：`运行「${gameTitle}」需要以下系统/BIOS 文件…本应用不内置任何受版权保护的文件…` + 缺失文件名列表（warning 图标，`89-92`）。
 - actions：`TextButton`(`取消`)（`120-123`）；`FilledButton.icon`(`file_open`，`批量选择`) → `pal.importBiosBatchViaSaf`（`124-136`）。
-- **设计要求**：必须阻断启动；批量选择后回到游戏库应刷新 BIOS 横幅。
+- **设计要求**：必须阻断启动；批量选择后回到文件库应刷新 BIOS 横幅。
 
 ### 15.5 SettingsSheet（设置 · 半屏底部弹层）
 
@@ -1359,7 +1359,7 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 - 未登录 `_buildLogin`（`728-846`）：`TextField`(`服务器地址`, hint `http://192.168.1.10:8848`, `dns_outlined`, 后缀 `travel_explore` 探测)；`TextButton.icon`(`travel_explore`,`不知道地址？自动探测`)；`SegmentedButton` `登录`/`注册`；`TextField`(`用户名`,`person_outline`)/`密码（6~64 位）`(obscure)；`OutlinedButton.icon`(`connect_without_contact`,`发现伙伴：手机面对面互传游戏`)→`_openPeers`；`FilledButton.icon`(`login`,`登录`/`注册并登录`)→`_submitAuth`；编辑服务器 `TextButton` `仅保存服务器地址`；hint `adb reverse tcp:8848…`。
 - 已登录 `_buildProfile`（`533-709`）5 个 section 卡：
   1. **当前账号**：头像 + 用户名 + `管理员`/`普通用户` chip + 服务器 URL chip。
-  2. **云游戏库**（`573-603`）：`浏览 / 订阅游戏库`(`video_library_outlined`)→ push `CloudLibraryPage`；`立即网络同步`(`cloud_sync`)→ `_doSync`(CloudSync 弹窗)；`上次同步目录版本：r${lastRevision}`。
+  2. **云文件库**（`573-603`）：`浏览 / 订阅文件库`(`video_library_outlined`)→ push `CloudLibraryPage`；`立即网络同步`(`cloud_sync`)→ `_doSync`(CloudSync 弹窗)；`上次同步目录版本：r${lastRevision}`。
   3. **发现伙伴**（`604-620`）：`发现伙伴`(`connect_without_contact`)→ `_openPeers`。
   4. **应用升级（OTA）**（`621-659`）：`ChoiceChip` `稳定版`/`测试版`；`canSelfUpdate` 时 `检查更新`(`download_outlined`)→ `_checkUpdate`，否则 `前往应用商店`(`store_outlined`)→ `_openStorePage`。
   5. **服务器与登录**（`661-702`）：`重新探测服务器`/`更换服务器地址`/`修改密码`(`key_outlined`)→ `_changePassword`/`退出登录`(`logout`)。
@@ -1369,12 +1369,12 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 ### 15.8 CloudSync 进度弹窗 / 15.9 CloudLibraryPage
 
 - `cloud_actions.runCloudSync`（`cloud_actions.dart:9-96`）：`showDialog(barrierDismissible:false)`，`Dialog` 标题 `网络同步`（`cloud_sync`），`Text(stage)`(`准备中…`) + `LinearProgressIndicator`；失败 `同步失败：$error` + `关闭`（`72-85`）。
-- `CloudLibraryPage`（`cloud_library_page.dart:10-294`）：AppBar 标题 `云游戏库`，actions `cloud_sync`(`保存订阅并立即同步`, 仅 dirty) / `refresh`；FAB `bookmark_added`(`保存订阅（${_pending.length}）`)；搜索 `搜索云游戏库 / 双人 / 金手指 / 存档…`；计数 `共 ${items} 款，已订阅 ${_pending} 款`；`CheckboxListTile`(`videogame_asset_outlined`)：title=游戏名，subtitle=`平台 · 类型 · 发行日期 · 金手指 n`；空态 `服务器还没有发布任何游戏…`；保存后 `SnackBar` `订阅已保存（${crcs} 款游戏）`（`88-90`）。
+- `CloudLibraryPage`（`cloud_library_page.dart:10-294`）：AppBar 标题 `云文件库`，actions `cloud_sync`(`保存订阅并立即同步`, 仅 dirty) / `refresh`；FAB `bookmark_added`(`保存订阅（${_pending.length}）`)；搜索 `搜索云文件库 / 双人 / 金手指 / 存档…`；计数 `共 ${items} 款，已订阅 ${_pending} 款`；`CheckboxListTile`(`videogame_asset_outlined`)：title=游戏名，subtitle=`平台 · 类型 · 发行日期 · 金手指 n`；空态 `服务器还没有发布任何游戏…`；保存后 `SnackBar` `订阅已保存（${crcs} 款游戏）`（`88-90`）。
 - **设计要求**：订阅是「元数据 + 按需同步」模型；勾选订阅后由 `CloudSyncer.sync()` 落地到 `filesDir`。
 
 ### 15.10 PeersPage（发现伙伴）/ 15.11 PairDialog
 
-- `PeersPage`（`peers_page.dart:20-574`）：AppBar 标题 `发现伙伴`，`refresh`(`重新扫描`)。「本机」卡 `_selfCard`（`本机：${selfName}` + 状态 + `edit_outlined` 改名）；端口占用警告横幅；在线 `在线伙伴（n）`/离线 `已配对 · 当前离线（n）`；`_peerTile`：已配对 → `TextButton` `游戏库`→ push `PeerLibraryPage` + `PopupMenuButton` `解除伙伴`；未配对 → `FilledButton` `配对连接`→ `InitiatorPairDialog`；`_offlineTile` `解除`。弹窗：`解除伙伴` `AlertDialog` `解除伙伴`；`修改本机设备名` `AlertDialog` `修改本机设备名`(`maxLength 24`)；收到配对 → `ResponderPairDialog.show`；发起 → `InitiatorPairDialog.show`；收到联机邀请 → `PlayInviteDialog.show` → 接受 push `PlayLobbyPage`。
+- `PeersPage`（`peers_page.dart:20-574`）：AppBar 标题 `发现伙伴`，`refresh`(`重新扫描`)。「本机」卡 `_selfCard`（`本机：${selfName}` + 状态 + `edit_outlined` 改名）；端口占用警告横幅；在线 `在线伙伴（n）`/离线 `已配对 · 当前离线（n）`；`_peerTile`：已配对 → `TextButton` `文件库`→ push `PeerLibraryPage` + `PopupMenuButton` `解除伙伴`；未配对 → `FilledButton` `配对连接`→ `InitiatorPairDialog`；`_offlineTile` `解除`。弹窗：`解除伙伴` `AlertDialog` `解除伙伴`；`修改本机设备名` `AlertDialog` `修改本机设备名`(`maxLength 24`)；收到配对 → `ResponderPairDialog.show`；发起 → `InitiatorPairDialog.show`；收到联机邀请 → `PlayInviteDialog.show` → 接受 push `PlayLobbyPage`。
 - `PairDialog`（`pair_dialog.dart:42-444`）：
   - **Initiator（A）**：`Dialog`(`PopScope(canPop:false)`) 标题 `与「${peerName}」配对`；阶段 starting/error/code/waiting；code 阶段：`请与对方核对两台手机上的 6 位数字完全一致：` + 大号分组码 `${_groupCode(code)}`（如 `042 917`）+ `FilledButton.icon`(`check_circle_outline`,`码一致，确认连接`) + `OutlinedButton` `取消`；waiting 阶段转圈 + `正在等待对方确认…`；错误 `对方取消了配对`/`配对已超时，请重新发起`/`错误次数过多…`/`配对失败（${code}）`/`等待对方确认超时，请靠近后重试`。
   - **Responder（B）**：标题 `${initiatorName} 请求配对`；`FilledButton.icon`(`check_circle_outline`,`码一致，确认连接`) / `OutlinedButton` `拒绝`；waiting `已确认，正在等待对方点击确认…`。
@@ -1383,8 +1383,8 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 ### 15.12 PeerLibraryPage + _ImportFlowPage（4 步导入）
 
 **文件**：`features/peer/peer_library_page.dart:24-683`（+ 内嵌 `_ImportFlowPage 969-1916`）
-- AppBar 标题 `${peerName} 的游戏库`；actions `TextButton` `全选`/`清除选择`。
-- 正文：`正在读取伙伴的游戏库…`；凭据失效 `_hint`(`no_encryption_outlined`,`伙伴凭据已失效`) + `解除本地伙伴记录`；空态；搜索 `搜索对方游戏名 / 双人 / 金手指 / 存档…`；平台 `ChoiceChip`；网格 `_RemoteGameCard`：封面/标题/徽章（`双人合作`/`双人对战`/`轮流上场`/`金手指`/`存档`/`本机已有`）+ 联机 chip（`联机玩`/`暂不可联机`+ Tooltip）；点卡片切换选择。
+- AppBar 标题 `${peerName} 的文件库`；actions `TextButton` `全选`/`清除选择`。
+- 正文：`正在读取伙伴的文件库…`；凭据失效 `_hint`(`no_encryption_outlined`,`伙伴凭据已失效`) + `解除本地伙伴记录`；空态；搜索 `搜索对方游戏名 / 双人 / 金手指 / 存档…`；平台 `ChoiceChip`；网格 `_RemoteGameCard`：封面/标题/徽章（`双人合作`/`双人对战`/`轮流上场`/`金手指`/`存档`/`本机已有`）+ 联机 chip（`联机玩`/`暂不可联机`+ Tooltip）；点卡片切换选择。
 - `bottomNavigationBar`：`导入所选（${n}）`(`download_outlined`)→ push `_ImportFlowPage`。
 - **`_ImportFlowPage` 4 阶段（`_Stage`=configure/conflicts/progress/summary）**：
   - **configure**：合规提示条；`街机 BIOS 同步` 卡（`CheckboxListTile`，本机已有显示 `本机已有，将自动跳过`）；每游戏 `_gameConfigCard`：`CheckboxListTile` `ROM（本机已有相同游戏）`/`ROM（含封面与游戏资料）`/`金手指`/`电池存档（.sav）`/`自动快照`/`手动槽位 n（含缩略图）`（运行中游戏显示 `该游戏正在模拟器中运行，请先退出游戏后才能导入存档`）；底部 `已选 n 款游戏 · 预计 xxx（另保留 16MB 安全余量）`。
@@ -1506,8 +1506,8 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 
 > 覆盖「功能正确性 + 1:1 复刻」双目标。每项给出触发路径与预期。
 
-**游戏库 / 导入**
-- [ ] 冷启动进入 `趣玩匣游戏库`；深色主题、浅蓝主色。
+**文件库 / 导入**
+- [ ] 冷启动进入 `趣玩匣文件库`；深色主题、浅蓝主色。
 - [ ] 右上云图标→`账号与云服务`；`more_vert`→三项导入菜单文案精确。
 - [ ] `导入 ROM（单文件）`→ SAF 选文件 → 网格出现新卡，CRC32 正确，落 `filesDir/roms/`。
 - [ ] `导入游戏资源包 / ZIP`→ 自动识别 gamepouch 包 / 纯 ROM zip。
@@ -1526,12 +1526,12 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 
 **账号云 / 同步 / OTA**
 - [ ] 未登录显示服务器地址 + 自动探测 + 登录/注册 + 发现伙伴。
-- [ ] 登录后 5 段卡齐全；`浏览/订阅游戏库`→ 勾选订阅→ `保存订阅`→ `立即网络同步` 进度条→ 库新增。
+- [ ] 登录后 5 段卡齐全；`浏览/订阅文件库`→ 勾选订阅→ `保存订阅`→ `立即网络同步` 进度条→ 库新增。
 - [ ] `检查更新`→ 有更新弹 `发现新版本`(含强制标记)→ 下载进度→ `installApk`；`store` 渠道走应用商店。
 
 **伙伴 / 联机**
 - [ ] `发现伙伴`→ 局域网扫描出在线伙伴；`配对连接`→ 6 位分组码双端一致确认。
-- [ ] 已配对→`游戏库`→ 多选→ `_ImportFlowPage` 四阶段（configure 合规提示/conflicts 默认跳过/进度/summary）；CRC 校验、冲突不覆盖、已传不重传。
+- [ ] 已配对→`文件库`→ 多选→ `_ImportFlowPage` 四阶段（configure 合规提示/conflicts 默认跳过/进度/summary）；CRC 校验、冲突不覆盖、已传不重传。
 - [ ] 从伙伴库对联机游戏 `联机玩`→ 对方收 `联机游戏邀请`(60s TTL)→ 接受→ `联机大厅`（RTT 探测 + 槽位 + 准备/开始）→ `pal.launchEmulator(netplay)`；联机下金手指/宏禁用。
 
 **法律**

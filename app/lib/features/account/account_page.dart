@@ -571,7 +571,7 @@ class _AccountPageState extends State<AccountPage> {
         ),
         _section(
           icon: Icons.cloud_outlined,
-          title: '云游戏库',
+          title: '云文件库',
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -583,7 +583,7 @@ class _AccountPageState extends State<AccountPage> {
                   FilledButton.icon(
                     onPressed: _busy ? null : _openCloudLibrary,
                     icon: const Icon(Icons.video_library_outlined),
-                    label: const Text('浏览 / 订阅游戏库'),
+                    label: const Text('浏览 / 订阅文件库'),
                   ),
                   OutlinedButton.icon(
                     onPressed: _busy ? null : () => _doSync(),
@@ -741,7 +741,7 @@ class _AccountPageState extends State<AccountPage> {
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 4),
-              Text('请输入 PC 端游戏库服务的地址（手机需与电脑同一局域网）',
+              Text('请输入 PC 端文件库服务的地址（手机需与电脑同一局域网）',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall),
               const SizedBox(height: 18),
@@ -833,9 +833,7 @@ class _AccountPageState extends State<AccountPage> {
               ],
               const SizedBox(height: 14),
               Text(
-                '提示：使用 adb 调试时，可先执行\n'
-                'adb reverse tcp:8848 tcp:8848\n'
-                '然后服务器地址填写 http://127.0.0.1:8848',
+                '拾忆，重拾欢喜',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ],

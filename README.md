@@ -42,7 +42,7 @@ CI 通过 `scripts/check-apk-content.ps1` 门禁强制保证 APK 内零 BIOS/ROM
 | 🎛️ **虚拟手柄布局** | 摇杆/十字键 + 右侧 ABXY 支持整体缩放与上下左右平移，适配屏幕与握持习惯；配置可导入导出 |
 | 💾 **存档管理** | 电池档 / 即时存档 / 倒带；多槽位缩略图 |
 | 🌐 **局域网联机** | 同 Wi-Fi 双人锁步对战，HMAC 防伪，**严格不猜输入**（详见 [netplay](#-局域网联机netplay)） |
-| 👥 **伙伴导入** | 同 Wi-Fi 一键导入伙伴游戏库 + 所需 BIOS（白名单限定） |
+| 👥 **伙伴导入** | 同 Wi-Fi 一键导入伙伴文件库 + 所需 BIOS（白名单限定） |
 | 📦 **资源包导出** | 多选 ROM + 存档 + 金手指 + **BIOS** 打成单 zip，跨设备离线分享（街机开箱即用） |
 | 🎨 **深色主题** | Material 3 配色自适应 |
 | 🇨🇳 **完全中文化** | 设置/帮助/联机大厅全中文 |
@@ -85,7 +85,7 @@ CI 通过 `scripts/check-apk-content.ps1` 门禁强制保证 APK 内零 BIOS/ROM
 - **存档**（运行锁：游戏运行中存档区置灰 + 提示；存档互传为手机↔手机特性）
 - **BIOS**（仅白名单 `neogeo.zip` / `qsound.zip`，服务端 400 非法名防路径穿越）
 
-浏览伙伴游戏库时，平台筛选标签会显示各类型当前数量（`全部 (N)` / `GBA (n)` / `MAME (n)` …），
+浏览伙伴文件库时，平台筛选标签会显示各类型当前数量（`全部 (N)` / `GBA (n)` / `MAME (n)` …），
 并优先展示中文名（若伙伴提供）。
 
 详见 [`docs/skills.md` §10](./docs/skills.md) 与 [§14](./docs/skills.md)。
@@ -96,7 +96,7 @@ CI 通过 `scripts/check-apk-content.ps1` 门禁强制保证 APK 内零 BIOS/ROM
 面向开发者/进阶用户，**不含任何 BIOS/ROM**：
 
 - **本地库管理**：ROM / 金手指 / BIOS / 关联报告 / 联网检索金手指 / 手机同步 六个页签；
-  游戏库表格含 **中文名** 与 **游戏图标（封面）** 两列——从仓库内置的元数据索引
+  文件库表格含 **中文名** 与 **游戏图标（封面）** 两列——从仓库内置的元数据索引
   （按 CRC32 优先、平台+英文名次之）自动补全，缺失项留空可另行网络检索。
 - **局域网 peer 服务端**（`tools/library/peer_host.py` + `run_peer_server.py`）：手机端零改动，
   PC 直接实现伙伴协议服务端（UDP 43801 发现 + HTTP 随机端口），下发 ROM / 封面 / 金手指 / BIOS，
@@ -118,7 +118,7 @@ GamePouch 的鸿蒙版与 Android 版**共享同一套 Flutter UI 与 libretro �
   - 单屏手柄只驱动被选中端口（`setPlayerPort`），避免 1P/2P 同时误触发街机服务菜单；
   - NEOGEO 四键面板 + 「格斗辅助键」招式面板（`波/升/旋/超/避/滚`，脚本语法与 Android `ScriptCompiler` 对齐：数字 1-9 小键盘方向 + `P/H/L/K` 按键，超级杀 `+PK` 和弦）。
   - **功能菜单「摇杆」切换（双端一致）**：安卓 `EmulatorActivity` 功能面板新增「摇杆」按钮，循环 模拟摇杆 → 十字键(八向) → 十字键(四向)，与鸿蒙 `EmulatorSpike` 行为一致；`VirtualPadView` 的屏上控件与触摸命中同步按 `stickMode` 切换。
-  - **退出稳定性**：鸿蒙端进 neogeo/mame 游戏后点 ✕ 可平稳返回游戏库（已修复 `libgs_mame.so` 退出时 `dlclose` 导致的整 app 崩溃）；启动图标已同步安卓 `ic_launcher` 设计。
+  - **退出稳定性**：鸿蒙端进 neogeo/mame 游戏后点 ✕ 可平稳返回文件库（已修复 `libgs_mame.so` 退出时 `dlclose` 导致的整 app 崩溃）；启动图标已同步安卓 `ic_launcher` 设计。
 - **真机联调**：`hdc` 取代 `adb`，`scripts/build-hap.ps1` 一键构建签名 HAP，`hilog` 抓核日志。
 
 ### 构建与运行
@@ -333,7 +333,7 @@ powershell -ExecutionPolicy Bypass -File scripts\make-release-keystore.ps1
 
 ## 📝 更新日志 / Changelog
 
-- **OHOS netplay 对端退出自动返回（2026-10-31）**：修复联机中对端（如安卓主机）退出/掉线后，鸿蒙端卡死在游戏界面不返回的问题。原生 `NativeNetplayStop`（`app/ohos/entry/src/main/cpp/gpretro.cpp`）改为先停渲染线程再释放 netplay 对象，消除 use-after-free SIGSEGV；`EmulatorSpike.ets` 的退出路径改为 `netplay.stop()` 先执行、`exitToLibrary()` 守卫标志由函数自身置位，确保退出能真正 `router.back()` 回游戏库。详见 [`docs/skills.md`](./docs/skills.md)「已知问题与修复记录」。
+- **OHOS netplay 对端退出自动返回（2026-10-31）**：修复联机中对端（如安卓主机）退出/掉线后，鸿蒙端卡死在游戏界面不返回的问题。原生 `NativeNetplayStop`（`app/ohos/entry/src/main/cpp/gpretro.cpp`）改为先停渲染线程再释放 netplay 对象，消除 use-after-free SIGSEGV；`EmulatorSpike.ets` 的退出路径改为 `netplay.stop()` 先执行、`exitToLibrary()` 守卫标志由函数自身置位，确保退出能真正 `router.back()` 回文件库。详见 [`docs/skills.md`](./docs/skills.md)「已知问题与修复记录」。
 
 ---
 

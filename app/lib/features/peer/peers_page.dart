@@ -501,7 +501,7 @@ class _PeersPageState extends State<PeersPage> {
                 children: [
                   TextButton(
                     onPressed: _busy ? null : () => _openLibrary(v),
-                    child: const Text('游戏库'),
+                    child: const Text('文件库'),
                   ),
                   PopupMenuButton<String>(
                     onSelected: (v2) {

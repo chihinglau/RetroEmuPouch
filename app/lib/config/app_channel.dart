@@ -26,7 +26,7 @@ extension AppChannelX on AppChannel {
   /// R1: store channels forbid cloud ROM download; users import locally.
   bool get canCloudRom => isCommunity;
 
-  /// Point-to-point partner ROM transfer (「发现伙伴」→ 导入伙伴游戏库).
+  /// Point-to-point partner ROM transfer (「发现伙伴」→ 导入伙伴文件库).
   ///
   /// Deliberately kept separate from [canCloudRom]: R1 bans fetching ROMs from
   /// the *cloud* (server-mediated distribution), whereas this is a direct LAN

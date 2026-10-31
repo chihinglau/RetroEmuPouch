@@ -682,7 +682,7 @@ class _LibraryPageState extends State<LibraryPage>
       appBar: AppBar(
         title: _selecting
             ? Text('已选 ${_selected.length} 个')
-            : const Text('趣玩匣游戏库'),
+            : const Text('趣玩匣文件库'),
         leading: _selecting
             ? IconButton(
                 tooltip: '退出选择',
@@ -1094,7 +1094,7 @@ class _LibraryPageState extends State<LibraryPage>
           children: [
             Icon(Icons.folder_open_outlined, size: 72, color: theme.hintColor),
             const SizedBox(height: 16),
-            Text('游戏库为空',
+            Text('文件库为空',
                 style: theme.textTheme.titleMedium
                     ?.copyWith(fontWeight: FontWeight.w800)),
             const SizedBox(height: 10),
@@ -1124,7 +1124,7 @@ class _LibraryPageState extends State<LibraryPage>
               ],
             ),
             const SizedBox(height: 14),
-            Text('也可在 PC 端游戏库管理器一键同步游戏到手机',
+            Text('也可在 PC 端文件库管理器一键同步游戏到手机',
                 style: theme.textTheme.labelSmall
                     ?.copyWith(color: theme.hintColor)),
           ],

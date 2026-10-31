@@ -203,7 +203,7 @@ hdc uninstall com.gamepouch.gamepouch
 **3. 启动 App**
 ```powershell
 hdc shell aa start -a EntryAbility -b com.gamepouch.gamepouch
-# 默认进 pages/EmulatorSpike（横屏）；回游戏库点右上角 ✕（横屏 2844×1260 下约 (2742,186)）
+# 默认进 pages/EmulatorSpike（横屏）；回文件库点右上角 ✕（横屏 2844×1260 下约 (2742,186)）
 ```
 
 **4. 抓日志（hilog）**——OHOS 等价 Android logcat：
@@ -278,7 +278,7 @@ Pura70（SN `2MN0224730027764`）是**开发者模式 + 指纹/密码锁**。锁
   ```
   成功后分别返回 `Override screen off time to 1800000` 与 `Set Mode Success!`。此后**只要屏幕不熄灭就不会再自动锁**，
   后续 `aa start`、`uitest` 点按、`snapshot_display` 截图都能稳定进行（注意：30 分钟一到仍会锁，长会话请用上面的「充电时保持唤醒」）。
-- **`aa start` 成功后的页面导航**：App 默认进入 `pages/EmulatorSpike`（横屏）。要回到**游戏库**，点右上角 **✕**
+- **`aa start` 成功后的页面导航**：App 默认进入 `pages/EmulatorSpike`（横屏）。要回到**文件库**，点右上角 **✕**
   （`EmulatorSpike.ets` 中 `onClick(() => router.back())`）；Pura70 横向 2844×1260 下约在 `(2742, 186)`，
   可用 `uitest uiInput click 2742 186` 命中。库页是**竖屏** 1260×2844。
 - **截图**：`hdc shell snapshot_display -f /data/local/tmp/x.jpeg` → `hdc file recv /data/local/tmp/x.jpeg ./x.jpeg`。
@@ -310,7 +310,7 @@ Pura70（SN `2MN0224730027764`）是**开发者模式 + 指纹/密码锁**。锁
 
 #### 已知问题与修复记录（netplay 对端退出卡死，2026-10-31）
 
-**现象**：OHOS 客机联机中，安卓端（或任一对端）退出/掉线后，鸿蒙端**不闪退但卡死在游戏界面**（UI 线程冻结、按 ✕/返回也无反应，只能强杀进程）。日志里有 `netplay terminal (peer gone) → auto exitToLibrary` 与 `teardown(clean=false)`、且 Flutter 收到 `emitNetplayPlayEnded`，但页面始终不弹回游戏库。
+**现象**：OHOS 客机联机中，安卓端（或任一对端）退出/掉线后，鸿蒙端**不闪退但卡死在游戏界面**（UI 线程冻结、按 ✕/返回也无反应，只能强杀进程）。日志里有 `netplay terminal (peer gone) → auto exitToLibrary` 与 `teardown(clean=false)`、且 Flutter 收到 `emitNetplayPlayEnded`，但页面始终不弹回文件库。
 
 **根因（两层）**：
 1. **原生 use-after-free 隐患**（`app/ohos/entry/src/main/cpp/gpretro.cpp` 的 `NativeNetplayStop`）：旧实现 `g_net->shutdown(); delete g_net;` 只 join 了 `gs-net` 接收线程，**没有先停渲染/步进线程** `g_renderThread`（OHOS 上显示为 `pouch.gamepouch`，每帧调 `g_net->beginFrame()/endFrame()`）。对端掉线后 `g_net` 被释放，该线程仍在 100ms 睡眠/步进后访问已释放对象 → SIGSEGV 闪退。
@@ -321,7 +321,7 @@ Pura70（SN `2MN0224730027764`）是**开发者模式 + 指纹/密码锁**。锁
 - `exitToLibrary()` 的调用顺序：`netplay.stop()`（内部走上面的 `NativeNetplayStop`）**先**跑，`stopEmulator()` 仅作兜底（netplay 已停时为 no-op），最后 `router.back()`。绝不能先 `stopEmulator()` 再 `netplay.stop()` —— 否则 `stopEmulator()` 的 join 会卡在 `beginFrame` 等已掉线对端，造成 UI 线程死锁。
 - `onNetplayStatus` **不再**提前 `this.ending = true`，改由 `exitToLibrary()` 自己置位（否则守卫让函数变 no-op）。
 
-**验证**：安卓主机选同一联机游戏发「联机玩」，鸿蒙客机接受 → 开始，安卓端退出 → 鸿蒙端自动返回游戏库、无闪退/无卡死。日志应出现 `netplay terminal (peer gone) → auto exitToLibrary`，且 `teardown(clean=true)`（来自 `exitToLibrary` 的 `netplay.stop()`），**无 SIGSEGV / 无 JANK 卡死 / 进程正常回到库页**。
+**验证**：安卓主机选同一联机游戏发「联机玩」，鸿蒙客机接受 → 开始，安卓端退出 → 鸿蒙端自动返回文件库、无闪退/无卡死。日志应出现 `netplay terminal (peer gone) → auto exitToLibrary`，且 `teardown(clean=true)`（来自 `exitToLibrary` 的 `netplay.stop()`），**无 SIGSEGV / 无 JANK 卡死 / 进程正常回到库页**。
 
 ### P3：OHOS 原生 handler（ArkTS 插件）
 
@@ -735,7 +735,7 @@ UI 三个分组（`_BiosManagerCard`，`app/lib/features/settings/settings_sheet
 #### ⚠️ BIOS/ROM 状态刷新：外部变更要能及时反映（2026-10 修）
 历史坑：`LibraryPage` 是**根路由**，`initState`/`_scanBios()` 只在冷启动跑一次；而
 `didChangeAppLifecycleState(resumed)` 当时**只刷 `_scanSaves()`、不刷 BIOS**，又没有
-`RouteAware`。于是**经 PC「手机同步」(adb) 推入 BIOS 后切回游戏库，"缺少系统文件" 横幅仍
+`RouteAware`。于是**经 PC「手机同步」(adb) 推入 BIOS 后切回文件库，"缺少系统文件" 横幅仍
 显示**（游戏其实能跑），新推的 ROM 也不见——直到冷重启才更新。
 修复（`app/lib/features/library/library_page.dart` + `app/lib/main.dart`）：
 - `main.dart` 注册全局 `appRouteObserver`（`MaterialApp.navigatorObservers`）；
@@ -838,7 +838,7 @@ flutter test
 
 ## 10. 伙伴导入：BIOS 同步（新增）
 
-在「导入伙伴游戏库」流程里，**自动**为所需 BIOS 增加同步选项：按已勾选 ROM 的核心推断需要哪些 BIOS
+在「导入伙伴文件库」流程里，**自动**为所需 BIOS 增加同步选项：按已勾选 ROM 的核心推断需要哪些 BIOS
 （街机 neogeo/mame → `mame` 核心 → `neogeo.zip` + `qsound.zip`），只列出伙伴端确实拥有、且**本机缺失**的项并默认勾选，
 本机已有的显示"本机已有，将自动跳过"。随游戏一起导入并落到 `system/`，按 `SystemFiles.syncToNeededLocations`
 镜像到各核心读取位置（store 的 `mame` 核心读 `system/mame/roms`），确保导入即可玩。
@@ -922,7 +922,7 @@ flutter test
 - **0 装机就位**：`scripts\build-apk.ps1 -Flavor store -DebugBuild`（或 release）→ OXF 走安全流程 / EBG `install -r` → 双机启动进发现页 → 互见在线卡片。
 - **1 生命周期**：任一方反复 返回→重进发现页并刷新；期望互见恢复、配对不丢、HTTP 端口换新。
 - **2 配对/重配**：一方「配对连接」→ 双机截图核对 6 位码一致 → 双方确认 → 变「已配对」并自动打开对方库。**stale 重配回归**：A 解除后 B 保留旧记录，由 A 重发，B 的邀请框必须稳定不秒关（watchdog 曾被 stale 记录误判成功）。
-- **3 解除与 401**：A 解除后 B 点该伙伴「游戏库」→ 期望「伙伴凭据已失效」页带「解除本地伙伴记录」→ 确认后回发现页变未配对。
+- **3 解除与 401**：A 解除后 B 点该伙伴「文件库」→ 期望「伙伴凭据已失效」页带「解除本地伙伴记录」→ 确认后回发现页变未配对。
 - **4 大库首拉**：小库机打开大库机库，loading 后正常列出、无 20s 超时；可搜索验证角标（金手指/存档/本机已有）。
 - **5 运行锁导入**：一端启动游戏后回 Flutter 进伙伴库勾该游戏进导入页 → 期望存档区红字「正在运行…请先退出」、自动快照+手动槽位置灰，ROM/金手指仍可选；`force-stop` 后重走红字消失、存档恢复可选。
 - **6 冷启动读档弹框**：`force-stop` → `logcat -c` → 启动立即继续游戏 → 展开功能条立刻点「读档」，应列出 `.slotN.state`（含缩略图/时间），不得误报「还没有手动存档」。
@@ -931,7 +931,7 @@ flutter test
 
 ### 本轮（2026-10-28）双机回归结论（store-debug v1.8.4+49，OXF+EBG）
 - **0/2/4/8/5 全部通过**：互见配对（6 位码一致）、伙伴库首拉（10 游戏、平台页签、搜索框、联机玩/双人合作/本机已有徽标）、**netplay 全流程**（邀请→接受→准备→开始，双机 ~57-59 fps，RTT 6-7ms，D=2）。- **检查点哈希一致性（核心验收）**：f=600 `181d278967c4f164`、f=1200 `680a9ce13773ba07`、f=1800 `dfef69b4fa1d4cae` **双机逐字节一致**，dUp=0 dDown=0 rejTag=0 foreign=0，无串键。
-- **断线语义**：主机 ✕/BACK 退出 → `session dead at frame N; emulation parked` + `np session ended: cleanBye=true`，客机弹「连接中断 — 主机已结束联机」→ 返回游戏库，双机均无崩溃。
+- **断线语义**：主机 ✕/BACK 退出 → `session dead at frame N; emulation parked` + `np session ended: cleanBye=true`，客机弹「连接中断 — 主机已结束联机」→ 返回文件库，双机均无崩溃。
 - **6/7 未自动化**：模拟器覆盖层按钮不吃合成点击（铁律 8），无法自动写 `.slotN.state`。替代证据：netplay 客机启动引导即 host state0 → `nativeLoadState`，检查点哈希一致已证明跨端 serialize/unserialize 正确；`files/saves/24D7C9E0.state` 双机同为 1029356 字节（kof97 检查点确定性旁证）。
 - **坑：19xx.zip 是不完整 dump**（缺 `19xx.key`/`19xe.0*b`，核心报 `Fatal error: Required files are missing`）——街机联机测试用 kof97/mslug/sf2ce 等完整集。
 - **坑：BIOS 不齐会导致 netplay「核心启动超时」**：`.tools/gstest/install_bios.sh` 旧版只装 neogeo 且用 `cd + 相对路径`（CRLF 下 cd 静默失败）。已重写为**绝对路径 + 全部 4 个 BIOS**（neogeo/qsound/qsound_hle/pgm → `files/system/`，启动时 LockedRom 镜像步骤自动分发给 `system/mame/roms/`）。报错特征：模拟器错误卡「缺少或不完整的 Q-Sound 系统 BIOS」+ 联机弹「核心启动超时」。
@@ -944,7 +944,7 @@ flutter test
 - **hilog 链路**：`GamePouchPlugin router.pushUrl(EmulatorSpike)` → `loadSettings dir=/data/storage/el2/base/files`
   → `loadMoves profile=selftest n=1` → 高刷 no-op 提示，全部按预期。
 - **NES 全链路**：模拟器实跑（三國演義标题画面，虚拟手柄渲染正常）→ ✕（uitest dumpLayout 定位
-  `[2163,336][2205,411]`）退回游戏库，进程存活、无 SIGSEGV——退出崩溃修复回归通过。
+  `[2163,336][2205,411]`）退回文件库，进程存活、无 SIGSEGV——退出崩溃修复回归通过。
 - **MAME 街机探针轮未完成**：HAP 已构建（GP_PROBE_ROM=roms/kof97.zip, CORE=mame, PLATFORM=mame），
   安装时遇 USB 半开（见铁律 3），**待重插后 `hdc install -r app\ohos\entry\build\default\outputs\default\entry-default-signed.hap` + `aa start` 重跑**。
 - **BIOS 门控前提已满足**：`files/system/` 有 neogeo/qsound/qsound_hle/pgm 全集（2026-10-22 部署）。
@@ -999,7 +999,7 @@ python tools\chatsync\verify_cheats.py          # 产出校验报告
 python tools\library\library_manager.py
 ```
 
-六个标签页：**游戏库 / 金手指 / BIOS / 关联报告 / 联网检索金手指 / 手机同步**。
+六个标签页：**文件库 / 金手指 / BIOS / 关联报告 / 联网检索金手指 / 手机同步**。
 
 **界面配色（模块一眼可辨）**
 - 顶部深色品牌条 + **六张统计卡片**（游戏总数 / 有金手指 / 缺金手指 / 命令数 / BIOS /
@@ -1011,7 +1011,7 @@ python tools\library\library_manager.py
 - 金手指页「孤立」项用橙底；BIOS 页用橙底；关联报告用彩色 tag（绿=已有、红=缺失、
   橙=BIOS/孤立、平台色=分平台行）；日志区用深色终端配色（绿✔ / 红✘ / 黄!）。
 
-**游戏库页**
+**文件库页**
 - 任选根目录扫描，自动识别 `roms/`（含 GBA/NES/NeoGeo/CPS1/CPS2 子目录或扁平目录）、
   `bios/`、`chats/`；
 - 游戏列表列：名称 / 平台 / 分类 / 大小 / CRC32 / 金手指数 / **内部标题**（GBA 英文原名，
@@ -1084,7 +1084,7 @@ python tools\library\probe_coverage.py                               # 全库命
 > 街机因 `FBNeo - Arcade Games` 只有 71 个 .cht、NES 因 ROM 是中文名而无内部名源，
 > 命中很少——这是数据源的客观上限，不是匹配缺陷。
 
-## 14. PC 游戏库：中文名 + 游戏图标（内置元数据索引补全）；手机端库标签计数
+## 14. PC 文件库：中文名 + 游戏图标（内置元数据索引补全）；手机端库标签计数
 
 > ⚠️ **数据源已内联进仓库**：历史数据源是同级的 MyGameSim 项目（已移除），索引现已
 > 随仓库分发在 `tools/library/metadata/game_index.json`（1002 条，1.7MB）。
@@ -1093,7 +1093,7 @@ python tools\library\probe_coverage.py                               # 全库命
 > 封面图(`covers/*.png`)属第三方版权图片，**未随仓库分发**，故默认布局下 `icon` 为空；
 > 需要封面时自备 `covers/` 并用 `GAMEPOUCH_META_DIR` 指向该目录。
 
-### PC 端「游戏库」表格新增两列（`tools/library`）
+### PC 端「文件库」表格新增两列（`tools/library`）
 - **中文名**：`library_meta.py` 从内置索引（1002 条，含中文 `title` 与 `cover`）补全。
   匹配：**CRC32（精确）优先，`(平台, 英文名)` 次之**
   （`_norm` 去非字母数字后小写比对，能救回 CRC 因 dump 不同而不一致的同名游戏）。
@@ -1118,7 +1118,7 @@ python tools\library\probe_coverage.py                               # 全库命
 - 每条 entry 增加 `name_cn` 与 `hasCover`；`covers` 字典填 `{CRC: 封面绝对路径}`，
   `GET /api/peer/cover/{crc}` 据此下发 PNG（`_send_cover`），路径穿越仍被挡（实测 `../` 404）。
 
-### 手机端「伙伴游戏库」（`peer_library_page.dart`）
+### 手机端「伙伴文件库」（`peer_library_page.dart`）
 - **筛选标签带数量**：`全部 (N)` + `GBA (n)` / `MAME (n)` / `NEOGEO (n)`…；
   数量按**搜索后**的结果算（新增 `_searchFiltered` getter，只按搜索词过滤、不按平台）。
 - **显示中文名**：`RemoteGame.nameCn`（读 `raw['name_cn']`），`title` getter 改为优先中文名；
@@ -1133,7 +1133,7 @@ python tools\library\probe_coverage.py                               # 全库命
   `GET /api/peer/bios/{name}` 下载返 200 ZIP，`../` 穿越 404；手机 `files/system/` 已有
   `neogeo.zip`/`qsound.zip` 且按 `SystemFiles.syncToNeededLocations` 镜像到 `files/system/mame/roms/`。
   本机已有时「BIOS 同步区」自动不显示（设计如此，只列缺失项）。
-- **存档 ⚠️ 非 PC→手机场景**：PC 是「游戏库」peer，本身没有存档文件，`peer_host` **无 save 端点**，
+- **存档 ⚠️ 非 PC→手机场景**：PC 是「文件库」peer，本身没有存档文件，`peer_host` **无 save 端点**，
   故 PC→手机不下发存档；存档互传是**手机↔手机**特性（两端各自有 `saves/`）。手机端对 PC 游戏
   不显示「存档」徽标（payload 无 `hasBattery/hasAuto/slots`），UI 不破。
 
@@ -1162,7 +1162,7 @@ NES/GBA，**中文名 NES ROM 必然落空**——于是这类游戏在手机端
 > 全链路，并验证 CRC 键对齐（手机端 crcKey 直接采用 PC 下发的 CRC，必一致）。
 
 ### 手机同步：把 ROM / 金手指 / BIOS 送到手机 App
-手机端 **不会扫描目录**，游戏库只认 `files/rom_index.json`（顶层 JSON **数组**，字段见
+手机端 **不会扫描目录**，文件库只认 `files/rom_index.json`（顶层 JSON **数组**，字段见
 `RomEntry.toJson`：`name/originalName/relativePath/size/crc32/platform/...`，`crc32`
 为无符号 32 位整数），金手指认 `files/library/cheats.json`（`byCrc[8位大写CRC]`），
 BIOS 认 `files/system/`（`neogeo.zip` / `qsound.zip`，`system/mame/roms/` 由 App 自己镜像）。
@@ -1181,13 +1181,13 @@ adb shell run-as com.retroemupouch.app sh /data/local/tmp/gpsync_<ts>/install.sh
   `ANDROID_HOME` → 仓库 `.tools/android-sdk` → PATH，也可手工选。
 - 去重：先 `run-as cat files/rom_index.json` 读出已有条目，按 **CRC32** 跳过手机已有的 ROM。
 - 金手指：拉旧 → 合并 `byCrc`（默认不覆盖手机已有条目，可勾选「覆盖同名金手指」）→ 回写。
-- 勾选推送范围 = **「游戏库」页当前的筛选结果**，可先按平台/搜索筛好再推。
+- 勾选推送范围 = **「文件库」页当前的筛选结果**，可先按平台/搜索筛好再推。
 - ⚠️ `run-as` 只在 **debuggable** 包上可用；release 包会失败并提示改用方式二。
 
-#### ⚠️ 手机游戏库中文名变下划线（`safe_name` 乱码）已修（2026-10）
+#### ⚠️ 手机文件库中文名变下划线（`safe_name` 乱码）已修（2026-10）
 历史坑：`phone_sync.safe_name` 曾把**所有非 ASCII 字符（含中文）**一律替换成 `_`，
 于是 `CT特种部队.gba` 落盘成 `CT____.gba`、索引 `name`/`originalName` 同样被抹掉，
-手机游戏库满屏 `__.gba` / `____ .nes`；且不同中文名会碰撞到同一目标名，后者
+手机文件库满屏 `__.gba` / `____ .nes`；且不同中文名会碰撞到同一目标名，后者
 `cp -f` 静默覆盖前者（索引按 `relativePath` 去重还会**丢条目**）。真机实测 OXF
 367 条里 142 条中招。
 - 修复：`safe_name` 改为**只替换 Android 文件系统非法字符**（`\ / : * ? " < > |`
@@ -1273,7 +1273,7 @@ release 包也能用；配对记录存 `tools/library/.peer_devices.json`（已 
 
 > 注意：手机端 HTTP 服务只在「发现伙伴」页面打开时存活，导入时不要把页面切走。
 
-**手机端金手指关联链路**（排查「游戏库没关联上金手指」时的依据）
+**手机端金手指关联链路**（排查「文件库没关联上金手指」时的依据）
 1. App 读 `files/library/cheats.json` 与 `files/library/cloud_cheats.json` 两层，
    取 `byCrc[e.crcKey]`，字段为 `CheatInfo`（`name/code/enabled`，choice 型
    `options/selected`）；`hasCheats` 只要求列表非空，不要求有已启用的项。
@@ -1285,9 +1285,9 @@ release 包也能用；配对记录存 `tools/library/.peer_devices.json`（已 
 
 ## 15. 近期修复与已知坑（2026-10）
 
-### 15.1 OHOS 退出到游戏库崩溃（街机核心 `dlclose`）
+### 15.1 OHOS 退出到文件库崩溃（街机核心 `dlclose`）
 
-- **现象**：进 neogeo / mame 街机游戏后点右上 ✕ → **直接退出整个 app**（不回游戏库）；NES/GBA 正常。
+- **现象**：进 neogeo / mame 街机游戏后点右上 ✕ → **直接退出整个 app**（不回文件库）；NES/GBA 正常。
 - **根因**：`app/ohos/entry/src/main/cpp/gpretro.cpp` 的 `EmuLoop` 退出序列
   `retro_unload_game → retro_deinit → StopAudio → dlclose(g_coreLib)` 中，
   `dlclose(libgs_mame.so)` 在**渲染线程**触发 MAME 海量全局静态析构 → `SIGSEGV`
@@ -1594,7 +1594,7 @@ Wi-Fi 环境下 DHCP 重分配 IP / 用户换路由器后，配对记录里的 `
 | `app/android/` | Android 原生（Kotlin + C++ netplay） |
 | `app/ohos/` | HarmonyOS NEXT 原生（ArkTS + `gpretro.cpp` NAPI + libretro host） |
 | `scripts/` | 构建/签名/部署脚本（PowerShell + bash） |
-| `tools/library/` | PC 端 Python 工具（游戏库管理 + 局域网服务 + 手机同步） |
+| `tools/library/` | PC 端 Python 工具（文件库管理 + 局域网服务 + 手机同步） |
 | `tools/chatsync/` | Python 金手指关联（索引 ↔ ROM CRC32） |
 | `docs/` | 开发文档（本 skills.md、鸿蒙 libretro 移植、UI 规格等） |
 | `third_party/CORE_PINS.txt` | 5 个 libretro core 的 commit pin（不入仓的内核源码定位） |
@@ -1650,16 +1650,16 @@ Wi-Fi 环境下 DHCP 重分配 IP / 用户换路由器后，配对记录里的 `
 | `data/peer/peer_store.dart` | 配对记录持久化（deviceId → lastIp/lastHttpPort） |
 | `data/peer/peer_sync.dart` | 伙伴库导入执行器（含 BIOS 同步落地） |
 | `data/peer/peer_crypto.dart` | `PeerToken`（HMAC-SHA256 配对信令鉴权） |
-| `data/play/library_search.dart` | 游戏库扫描 + `rom_index.json` 解析 |
+| `data/play/library_search.dart` | 文件库扫描 + `rom_index.json` 解析 |
 | `data/package/game_package.dart` | 资源包导出/导入（manifest `schemaVersion` 2 + 顶层 `bios` 段） |
 | `pal/platform_pal.dart` | 平台抽象（importBiosBatchViaSaf / exportBiosZipViaSaf / import/export PadConfig） |
 | `pal/ohos_pal.dart` | OHOS 侧 `PlatformPal`（**所有缺失插件的 `catch (_)` 兜底**） |
-| `features/library/library_page.dart` | 游戏库（含 RouteAware `didPopNext` 刷 BIOS/ROM） |
+| `features/library/library_page.dart` | 文件库（含 RouteAware `didPopNext` 刷 BIOS/ROM） |
 | `features/library/missing_bios_dialog.dart` | 启动缺 BIOS 弹框（走批量 SAF import 一次补齐） |
 | `features/play/play_lobby_page.dart` | 联机大厅（邀请/接受 → 进入游戏） |
 | `features/play/play_invite_dialog.dart` | 邀请弹窗 |
 | `features/peer/peers_page.dart` | 发现 + 配对 |
-| `features/peer/peer_library_page.dart` | 伙伴游戏库 |
+| `features/peer/peer_library_page.dart` | 伙伴文件库 |
 | `features/settings/settings_sheet.dart` | 设置页（`_BiosManagerCard` + `_PadLayoutCard`） |
 | `main.dart` | `main()`：**所有 `AppSettings.load()`/consent 检查必须 `try/catch`**（OHOS 插件缺失会抛） |
 
@@ -1708,8 +1708,8 @@ Wi-Fi 环境下 DHCP 重分配 IP / 用户换路由器后，配对记录里的 `
 
 | 工具 | 用途 |
 |------|------|
-| `library/library_manager.py` | tkinter 桌面 GUI（游戏库 / 金手指 / BIOS / 关联报告 / 联网检索金手指 / 手机同步） |
-| `library/phone_sync.py` | USB 直推手机游戏库（`adb push` → `run-as` 安装，`safe_name` 已修中文） |
+| `library/library_manager.py` | tkinter 桌面 GUI（文件库 / 金手指 / BIOS / 关联报告 / 联网检索金手指 / 手机同步） |
+| `library/phone_sync.py` | USB 直推手机文件库（`adb push` → `run-as` 安装，`safe_name` 已修中文） |
 | `library/peer_host.py` | **Headless 伙伴服务端**（手机 `tools/library/run_peer_server.py` 启动，PC 模拟 peer 协议） |
 | `library/online_cheats.py` | 一键联网补金手指（libretro-database 仓库，缓存 7 天，阈值 84 分） |
 | `library/library_meta.py` | 元数据索引读取 + `name_cn`/`cover` 补全（CRC 精确匹配优先，`(平台,英文名)` 次之） |

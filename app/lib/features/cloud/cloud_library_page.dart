@@ -151,7 +151,7 @@ class _CloudLibraryPageState extends State<CloudLibraryPage> {
       canPop: !_saving,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('云游戏库'),
+          title: const Text('云文件库'),
           actions: [
             IconButton(
               tooltip: '保存订阅并立即同步',
@@ -217,7 +217,7 @@ class _CloudLibraryPageState extends State<CloudLibraryPage> {
             onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               isDense: true,
-              hintText: '搜索云游戏库 / 双人 / 金手指 / 存档…',
+              hintText: '搜索云文件库 / 双人 / 金手指 / 存档…',
               prefixIcon: const Icon(Icons.search, size: 20),
               suffixIcon: _queryCtl.text.isEmpty
                   ? null

@@ -61,7 +61,7 @@ class PlayBootstrapClient(
     fun fetchSramFinal(): ByteArray? {
         // Teardown-only best-effort pull: the host is already going away, so
         // use ONE short-connect attempt instead of the boot path's 20 s
-        // retry window (which would keep the "返回游戏库" button spinning
+        // retry window (which would keep the "返回文件库" button spinning
         // through ~21 futile reconnects when the host's server has closed).
         return try {
             val r = oneRequest("GET", "/sram-final", connectTimeoutMs = 3_000)
