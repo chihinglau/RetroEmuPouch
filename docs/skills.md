@@ -1732,4 +1732,38 @@ Wi-Fi 环境下 DHCP 重分配 IP / 用户换路由器后，配对记录里的 `
 | `/ui*.xml` / `/ohos*.xml` | 根目录 UI dump / 调试导出 |
 | `/android_log*.txt` / `/ohos_hilog*.txt` | 根目录临时日志 |
 
+---
+
+## 21. OHOS 导出 / 导入 SAF 修复（2026-10-31，真机验证）
+
+资源包「导出资源包」在真机表现：打包（251MB 流式 ZIP）完整跑完，但最后系统保存框**没弹出来** → 直接弹「导出未保存 / 已取消」。根因是 OHOS 平台特有、与 Android 完全无关的三处坑，逐一记录以免重犯。
+
+### 21.1 ⚠️ OHOS `MethodChannel` 不解码 Dart `Map` 参数（最高频坑）
+
+- **现象**：Dart 用 `invokeMethod('exportPackageViaSaf', {'sourcePath': ..., 'suggestedName': ...})` 传 `Map`，原生 `call.argument` 取到的对象**读不到字段**（`.sourcePath` / `.suggestedName` / `.name` / `.mime` 全部为空）。结果原生拿到空 `sourcePath` → 提前 `return false` → 保存框压根没弹。
+- **影响面**：所有用 `Map` 传参的存储通道调用都静默失效：`exportPackageViaSaf` / `importRomViaSaf` / `deleteBios` / `exportMovesConfigViaSaf` / `exportPadConfigViaSaf`。这就是为什么 App 内「导入 ROM / BIOS」一直点不出框（用户此前只能靠 PC/peer 同步灌 ROM）。
+- **修复**：与本项目 `gs/emulator` 通道既有约定一致——**Dart 侧发 JSON 字符串，原生侧 `JSON.parse(call.args)`**：
+  - Dart（`app/lib/pal/ohos_pal.dart`）：`invokeMethod('exportPackageViaSaf', jsonEncode({'sourcePath': sourcePath, 'suggestedName': suggestedName}))`
+  - 原生（`GamePouchPlugin.ets` `onStorage`）：`const obj = rawArgs ? JSON.parse(rawArgs) : null; const sourcePath = obj?.sourcePath ?? '';`
+  - `dispatch` 里用 `call.args as string` 取原始串（**不是** `call.argument`）。
+- **铁律**：OHOS 侧 MethodChannel 传多字段，**一律用 `jsonEncode` 字符串 + `JSON.parse`**，不要直接传 `Map`。
+
+### 21.2 ⚠️ `@ohos.file.picker` 必须 `UIAbilityContext`
+
+- **现象**：`DocumentViewPicker.save()/select()` 要求 `UIAbilityContext`；插件 `onAttachedToEngine` 只给 `ApplicationContext`，导致 picker 静默失败、`if (!ctx) return false`。
+- **修复**：`EntryAbility.configureFlutterEngine` 里 `GamePouchPlugin.setAbilityContext(this.context)` 把 ability context 存进**静态字段**；所有 picker 方法改用 `ctxForPicker()`（先 `uiCtx` 再静态 `abilityCtx`）解析，规避 Flutter 插件生命周期歧义。
+
+### 21.3 ArkTS 编译期硬限制（会直接 build fail）
+
+- `throw e;` —— catch 变量 `e` 是 arbitrary type，被 **`arkts-limited-throw`** 拒绝。改为 `throw new Error((e as Error).message)`。
+- `ESObject` 受限用法会出 WARN，尽量用具体类型 / `Record<string, Object>`。
+- `fs.copyFileSync(srcFd, destUriString)` —— 把 `file://` URI **当字符串**传给 copy 在 OpenHarmony 被拒。改为先 `fs.openSync(destUri, WRITE_ONLY|CREATE|TRUNC)` 取 fd，再 `fs.copyFileSync(srcFd, dstFd)`（fd→fd 拷贝）。
+
+### 21.4 真机诊断：hilog 环形缓冲会被冲掉，改用落盘 trace
+
+- 真机 `hilog -x` 缓冲小，导出 251MB 期间大量系统日志会把我们的 `[GamePouchPlugin]` 行冲掉，抓不到。
+- **做法**：在 `exportFile` 各步骤把 `[时间戳] 步骤` 追加写进 `filesDir/export_cache/_export_trace.txt`，`hdc shell cat .../export_cache/_export_trace.txt` 直接读，绕过缓冲。
+- 失败详情（异常+堆栈）同理落盘到 `export_cache/_export_error.txt`，由 `library_page.dart` 的 catch 写入。
+- 临时包（成功分支才删）保留在 `export_cache/` 可 `hdc file recv` 拉回本地用 `python -c "import zipfile; zipfile.ZipFile(...).testzip()"` 验证 CRC，确认中文名无乱码、零损坏。
+
 
