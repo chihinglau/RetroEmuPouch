@@ -85,6 +85,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--root', default=ROOT_DEFAULT)
     ap.add_argument('--name', default='')
+    ap.add_argument('--no-mdns', action='store_true',
+                    help='禁用 mDNS 广播(仅 UDP 43801 发现)')
     args = ap.parse_args()
 
     root = os.path.abspath(args.root)
@@ -118,7 +120,8 @@ def main():
         logf.write(line + '\n')
         logf.flush()
 
-    host = ph.PeerHost(name=args.name, library=library, log=log)
+    host = ph.PeerHost(name=args.name, library=library, log=log,
+                       enable_mdns=not args.no_mdns)
     port = host.start()
     ip = ph.local_ip()
     log('服务地址: http://%s:%d  (UDP 43801 应答发现)' % (ip, port))

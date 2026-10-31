@@ -10,7 +10,7 @@
 | 版本 | v0.1（初稿，待决策） |
 | 日期 | 2026-10-31 |
 | 范围 | 账号/云服务架构、广告接入、会员/计费体系 |
-| 状态 | 待决策 |
+| 状态 | 已采纳-进行中（骨架） |
 
 **状态取值说明**：`待决策` / `已采纳-未开始` / `进行中` / `已完成` / `暂缓`
 
@@ -20,9 +20,9 @@
 
 | 模块 | 核心结论 | 决策状态 | 备注 |
 |---|---|---|---|
-| 一、账号与云服务（连接 PC 端服务器） | PC=用户自托管；云只存用户数据与权益，不分发 ROM | 待决策 | 合规红线：不得变为 ROM 分发渠道 |
-| 二、广告 + 会员（7天试用→月/年/终身免广告） | 分平台接入广告与计费；服务端校验权益 | 待决策 | OHOS 必须用华为广告/华为 IAP，非 AdMob |
-| 三、落地顺序 | 分三期：账号同步 → 广告 → 会员计费 | 待决策 | 每期独立可交付、可审核 |
+| 一、账号与云服务（连接 PC 端服务器） | PC=用户自托管；云只存用户数据与权益，不分发 ROM | 已采纳-进行中（骨架） | 合规红线：不得变为 ROM 分发渠道 |
+| 二、广告 + 会员（7天试用→月/年/终身免广告） | 分平台接入广告与计费；服务端校验权益 | 已采纳-进行中（骨架） | OHOS 必须用华为广告/华为 IAP，非 AdMob |
+| 三、落地顺序 | 分三期：账号同步 → 广告 → 会员计费 | 已采纳-进行中（骨架） | 每期独立可交付、可审核 |
 
 ---
 
@@ -86,11 +86,11 @@
 
 | 子项 | 说明 | 状态 | 备注 |
 |---|---|---|---|
-| 1 合规前提 | 确立"不自托管 ROM 分发"红线 | 待决策 | |
-| 2 总体架构 | 上述拓扑 | 待决策 | |
+| 1 合规前提 | 确立"不自托管 ROM 分发"红线 | 已采纳-进行中（骨架） | |
+| 2 总体架构 | 上述拓扑 | 已采纳-进行中（骨架） | |
 | 3 AccountService | 登录/token/entitlement | 未开始 | |
-| 4 PairingService | mDNS+配对 | 未开始 | |
-| 5 PC Server 认证端点 | `/pair` `/sync/*` `/library/meta` | 未开始 | |
+| 4 PairingService | mDNS+配对 | 已采纳-进行中（骨架 + mDNS 已接） | 配对已有；mDNS 走纯 Dart `multicast_dns`（`_retroemupouch._tcp.local`），UDP 广播作兜底 |
+| 5 PC Server 认证端点 | `/pair` `/sync/save` `/sync/settings` `/library/meta` | 已完成（骨架） | 已加 /pair、/sync/save、/sync/settings；PC 端新增 mDNS 广播（zeroconf，缺依赖自动降级为仅 UDP） |
 | 6 Account Backend | 用户/配对/会员 | 未开始 | |
 | 7 UI 重塑 | 账号页/云库页 | 未开始 | |
 | 8 风控 | 流量/日志约束 | 未开始 | |
@@ -159,7 +159,7 @@
 
 | 子项 | 说明 | 状态 | 备注 |
 |---|---|---|---|
-| 1 总体架构 | 上述拓扑 | 待决策 | |
+| 1 总体架构 | 上述拓扑 | 已采纳-进行中（骨架） | |
 | 2 AdPal 分平台 | Android AdMob / OHOS 华为广告 | 未开始 | **OHOS 不可用 AdMob** |
 | 3 广告位与频控 | Banner/Interstitial/Rewarded + 频控 | 未开始 | 不在模拟中插广告 |
 | 4 会员模型 | 免费/7天试用/月/年/终身 | 未开始 | |
@@ -180,17 +180,38 @@
 
 | 期 | 内容 | 状态 | 依赖 | 备注 |
 |---|---|---|---|---|
-| Phase 1 | 账号 + PC 配对 + 存档/设置同步（不含 ROM 分发） | 待决策 | 无 | 先把"云"做扎实 |
-| Phase 2 | 广告接入（AdPal 分平台 + 频控 + 退出游戏断点插广告） | 待决策 | Phase 1 账号体系 | |
-| Phase 3 | 会员/计费（BillingPal 分平台 + 7天试用 + 月/年/终身 + 服务端校验） | 待决策 | Phase 1 + Phase 2 | |
+| Phase 1 | 账号 + PC 配对 + 存档/设置同步（不含 ROM 分发） | 已采纳-进行中（骨架） | 无 | 先把"云"做扎实 |
+| Phase 2 | 广告接入（AdPal 分平台 + 频控 + 退出游戏断点插广告） | 已采纳-进行中（骨架） | Phase 1 账号体系 | |
+| Phase 3 | 会员/计费（BillingPal 分平台 + 7天试用 + 月/年/终身 + 服务端校验） | 已采纳-进行中（骨架） | Phase 1 + Phase 2 | |
 
 ---
+
+## 实施进度（截至 2026-10-31）
+
+已按方案落地**共享骨架**（全部以 `NoOp` 安全默认实现，应用仍可编译/运行，不依赖原生广告/计费 SDK 与后端）：
+
+- **账号/配对骨架**：`AccountService`（本地登录态）、`PairingService`（本地已配对 PC 记录，自托管模型）。
+- **会员/权益骨架**：`EntitlementService`（7 天试用、月/年/终身档、isAdFree 判定与本地持久化）、`MembershipTier` 枚举。
+- **广告骨架**：`AdPal` 接口 + `AdService`（按 isAdFree 与每日上限频控门控）。
+- **计费骨架**：`BillingPal` 接口 + `BillingService`（档位→SKU 映射，本地授予，待后端校验）。
+- **UI 接入**：`AccountPage` 新增「会员 / 去广告」区块（`MembershipSection`），可触发试用/购买（当前 NoOp 返回 false，待接原生）。
+- 编译验证：`flutter analyze` 0 错误（其余为既有 warning/info）。
+- **Phase 1 存档/设置同步（2026-10-31）**：PC 服务端 `peer_host.py` 新增 `/api/peer/sync/save`（列表/上传/下载，仅用户存档、不含 ROM/BIOS，带路径穿越防护与 CRC 校验）与 `/api/peer/sync/settings`（GET/PUT JSON）；`peer_client.dart` 新增 `listSaves/uploadSave/downloadSaveFile/getSettings/putSettings` 及 PUT 辅助；配套 `test_peer_sync.py` 单测全绿。
+- **Phase 1 UI 接入（2026-10-31，选项 B）**：`AccountPage` 新增「我的 PC（局域网存档/设置同步）」区块（`MyPcSection` + `MyPcService`，位于 `features/account/`）；从 `PeerStore` 读取已配对 PC，经 `PeerClient` 调用上一阶段的 `/sync/save`、`/sync/settings` 端点，提供「上传/下载设置」「上传/下载存档」四个按钮（凭据缺失时禁用并提示重新配对）；含 host 端单测 `my_pc_service_test.dart`（3/3 绿）。后端账号校验、原生广告/计费为后续阶段。
+- **重命名 gamepouch→retroemupouch（2026-10-31）**：Dart 包名 `gamepouch`→`retroemupouch`（`pubspec` `name` + 全部 `package:gamepouch/` 导入共 5 处）、`oh-package.json5` 名称同步；应用显示名 `app_name` 本就为 `RetroEmuPouch`；OS `bundleName` 已改 `com.gamepouch.gamepouch`→`com.retroemupouch.app`（彻底对齐 Android），DevEco 自动签名证书绑定旧包名、需重签——**已重签完成**。真机 E2E（2026-10-31）：`build-hap.ps1` 用新证书出 `entry-default-signed.hap`（200MB）、`hdc uninstall com.gamepouch.gamepouch`（旧包名残留）+ `hdc install -r` 新 HAP（install=0）、`aa start -b com.retroemupouch.app` 启动成功，`aa dump` 确认 `com.retroemupouch.app:entry:EntryAbility` 前台运行、截图 168KB。注意换包名=全新沙盒，旧 ROM/存档/金手指需重新导入（PC `phone_sync.py`/peer 同步可快速灌回）。
+
+- **导出游戏资源包：OOM 闪退 + 中文乱码修复（2026-10-31）**：根因为 `archive` 3.6.1 的 `ZipEncoder.addFile` 会把整份 ROM `bytes.toUint8List()` + `Deflate().getBytes()` **全量读入内存**，大 ROM 直接 OOM 被系统杀进程（闪退）；原代码注释误称"流式"并不成立。改为自研真正流式 ZIP 写出（`_streamZip`，位于 `data/package/game_package.dart`）：分块读源文件、增量算 CRC32、`ZLibCodec(raw:true)` 分块原始 deflate 直接落盘，峰值内存≈一个 chunk（~64KB），与 ROM 大小无关；ZIP 条目名/内容均 UTF-8 且置 UTF-8 标志位，避免中文乱码（同类 Latin-1-over-UTF-8 在导入侧用 `repairJsonMojibake` 兜底）。新增 `test/features/library/game_package_test.dart`（2MB 中文名 ROM+存档 导出→导入 往返，断言无乱码、可解包、字节一致）绿；`flutter analyze` 无新增 issue，原 8/8 单测仍绿。端到端实测：服务端同步逻辑 + Dart 客户端解析/就绪判定均绿，App 真机启动正常；应用内「我的PC」同步按钮需在手机「发现伙伴」与该 PC 配对后手动点按（hdc 无法可靠点 Flutter，步骤见下）。
+
+- **Phase 1 收尾：LAN mDNS 发现（2026-11-01）**：在 `tools/library/peer_host.py` 的 `PeerHost` 新增 mDNS 广播（`_retroemupouch._tcp.local`，zeroconf，缺依赖自动降级为仅 UDP），并加 `run_peer_server.py --no-mdns` 开关；App 侧新建 `lib/pal/pairing_pal.dart`（`PairingPal` 接口 + `MdnsPairingPal` 纯 Dart 实现 + `NoOpPairingPal`），在 `PeersController.refresh()` 合并 mDNS 发现的 PC（与现有 UDP 广播并存，互为兜底）；新增依赖 `multicast_dns`。设备端 E2E 需在手机「发现伙伴」连同一 Wi-Fi 的真机验证（当前设备离线，未跑）。
+
+**待办（下一阶段）**：接 Android AdMob / OHOS 华为广告、Play Billing / 华为 IAP、后端账号与收据校验。
 
 ## 决策记录（供跟踪）
 
 | 日期 | 决策人 | 结论 | 变更说明 |
 |---|---|---|---|
-| 2026-10-31 | — | 待决策 | 初稿已生成，等待评审 |
+| 2026-10-31 | 实施者 | 已采纳并开始实施 | 方案采纳；账号/广告/会员骨架已实现（NoOp 默认，待接原生广告/计费与后端校验） |
+| 2026-11-01 | 实施者 | Phase 1 收尾：LAN mDNS 发现 | 新增 PC 端 mDNS 广播 + App 侧 `PairingPal`(multicast_dns)；自托管配对闭环打通（UDP/mDNS 双通道） |
 
 ---
 

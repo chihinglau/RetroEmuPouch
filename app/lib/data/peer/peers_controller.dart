@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import '../../pal/pairing_pal.dart';
 import '../../pal/platform_pal.dart';
 import '../play/multiplayer_catalog.dart';
 import '../play/play_session.dart';
@@ -44,11 +45,15 @@ class PeersController extends ChangeNotifier with WidgetsBindingObserver {
   PeersController({
     required this.pal,
     PeerScanner? scanner,
+    this.pairingPal,
     this.refreshInterval = const Duration(seconds: 9),
   }) : _scanner = scanner ?? PeerScanner();
 
   final PlatformPal pal;
   final PeerScanner _scanner;
+  /// Optional LAN mDNS discovery (additive to UDP). Null in widget tests so the
+  /// fake-backed controller never touches the network.
+  final PairingPal? pairingPal;
   final Duration refreshInterval;
 
   String? filesDir;
@@ -394,6 +399,28 @@ class PeersController extends ChangeNotifier with WidgetsBindingObserver {
             selfDeviceId: id.deviceId);
         if (ep != null) found = [...found, ep];
       } catch (_) {/* unreachable — simply stays offline */}
+    }
+
+    // LAN mDNS discovery (additive to UDP): lets the phone find the PC even when
+    // broadcast is filtered (AP isolation). Degrades to nothing if mDNS is
+    // unavailable, so the UDP broadcast path stays the dependable fallback.
+    if (pairingPal != null) {
+      try {
+        final mdnsFound = await pairingPal!.discover(
+            timeout: const Duration(seconds: 4));
+        for (final d in mdnsFound) {
+          found = [
+            ...found,
+            PeerEndpoint(
+              deviceId: d.deviceId,
+              name: d.name,
+              ip: d.ip,
+              httpPort: d.port,
+              protocolVersion: d.protocolVersion,
+            ),
+          ];
+        }
+      } catch (_) {/* mDNS best-effort */}
     }
 
     if (gen != _generation || !active) return;

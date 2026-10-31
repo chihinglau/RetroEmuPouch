@@ -7,6 +7,7 @@ import '../../data/peer/peer_client.dart';
 import '../../data/peer/peer_server.dart';
 import '../../data/peer/peer_store.dart';
 import '../../data/peer/peers_controller.dart';
+import '../../pal/pairing_pal.dart';
 import '../../data/play/play_session.dart';
 import '../../pal/platform_pal.dart';
 import 'pair_dialog.dart';
@@ -53,7 +54,7 @@ class _PeersPageState extends State<PeersPage> {
     if (injected != null) {
       _c = injected;
     } else {
-      _c = PeersController(pal: widget.pal);
+      _c = PeersController(pal: widget.pal, pairingPal: createPairingPal());
       _ownsController = true;
     }
     unawaited(_start());
@@ -392,7 +393,7 @@ class _PeersPageState extends State<PeersPage> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
             child: Text(
-              '仅可分享你拥有合法备份的游戏；数据为两台手机直连，不经过任何服务器。',
+              '仅可分享你拥有合法备份的文件；数据为两台手机直连，不经过任何服务器。',
               textAlign: TextAlign.center,
               style: theme.textTheme.bodySmall,
             ),

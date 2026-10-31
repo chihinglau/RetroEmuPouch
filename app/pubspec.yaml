@@ -1,5 +1,5 @@
-name: gamepouch
-description: "GamePouch (趣玩匣) multi-platform retro game emulator"
+name: retroemupouch
+description: "RetroEmuPouch (趣玩匣) multi-platform retro game emulator"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -48,6 +48,12 @@ dependencies:
   # Path manipulation for zip entry names.
   path: ^1.9.0
   flutter_secure_storage: ^11.2.0
+
+  # LAN mDNS discovery of the user's self-hosted PC (`_retroemupouch._tcp.local`).
+  # Pure-Dart (no platform channel), so it works on both Android and OpenHarmony;
+  # it degrades to no-results when multicast is filtered, leaving the UDP
+  # broadcast discovery as the dependable fallback.
+  multicast_dns: ^0.3.2
 
 dev_dependencies:
   flutter_test:

@@ -54,6 +54,17 @@ _CODE_RE = re.compile(r'^\d{6}$')
 _TOKEN_RE = re.compile(r'^[0-9a-f]{64}$')
 _CRC_RE = re.compile(r'^[0-9A-F]{8}$')
 
+
+def _safe_name(name: str):
+    """解码并拒绝任何可能穿越目录的名字(拒绝 / \\ 与 . / ..)。"""
+    name = urllib.parse.unquote(name)
+    if not name or '/' in name or '\\' in name or name in ('.', '..'):
+        return None
+    if len(name) > 200:
+        return None
+    return name
+
+
 _HERE = os.path.dirname(os.path.abspath(__file__))
 DEVICES_FILE = os.path.join(_HERE, '.peer_devices.json')
 
@@ -96,8 +107,13 @@ class PeerHost:
     """PC 端伙伴服务。library 为一个 dict, 见模块尾部 build_library()。"""
 
     def __init__(self, name: str = '', library: dict | None = None,
-                 log=print):
+                 log=print, enable_mdns: bool = True):
         self.name = name or ('GamePouch 库管理 (%s)' % socket.gethostname())
+        # mDNS 广播让手机端用 LAN mDNS 发现本服务(服务类型 _retroemupouch._tcp.local),
+        #作为现有 UDP 43801 广播发现的补充; AP 隔离/广播被过滤时仍能发现。
+        # 未装 zeroconf 时自动降级为仅 UDP 发现, 不影响其它功能。
+        self.enable_mdns = enable_mdns
+        self._mdns = None
         # device_id 必须跨进程重启保持稳定, 否则手机端保存的配对会失效,
         # 每次重启 PC 都要重新配对(手机会把它当成全新未配对设备)。
         self.device_id = self._load_or_create_self_id()
@@ -137,10 +153,12 @@ class PeerHost:
         except Exception as ex:  # noqa: BLE001
             self.log('UDP %d 绑定失败: %s(手机将无法自动发现, 但仍可手动连接)'
                      % (UDP_PORT, ex))
+        self._start_mdns()
         self.log('伙伴服务已启动: %s:%d' % (local_ip(), self.http_port))
         return self.http_port
 
     def stop(self):
+        self._stop_mdns()
         if self._udp_sock:
             try:
                 self._udp_sock.close()
@@ -155,6 +173,54 @@ class PeerHost:
                 pass
             self._httpd = None
         self.log('伙伴服务已停止')
+
+    # ---------------------------------------------------------- mDNS 广播
+    def _start_mdns(self):
+        """Advertise over LAN mDNS so phones can discover us without UDP
+        broadcast (works behind AP isolation). Degrades silently when
+        `zeroconf` is not installed."""
+        if not self.enable_mdns:
+            return
+        try:
+            from zeroconf import Zeroconf, ServiceInfo  # lazy: optional dep
+        except Exception as ex:  # noqa: BLE001
+            self.log('mDNS 跳过(未装 zeroconf; pip install zeroconf 可启用): %s' % ex)
+            return
+        try:
+            ip = local_ip()
+            info = ServiceInfo(
+                '_retroemupouch._tcp.local.',
+                '%s._retroemupouch._tcp.local.' % self.device_id,
+                addresses=[socket.inet_aton(ip)],
+                port=self.http_port,
+                properties={
+                    'deviceId': self.device_id,
+                    'name': self.name,
+                    'protocolVersion': str(PROTOCOL_VERSION),
+                },
+                server='%s.local.' % self.device_id,
+            )
+            zc = Zeroconf()
+            zc.register_service(info)
+            self._mdns = zc
+            self.log('mDNS 已广播: _retroemupouch._tcp.local → http://%s:%d'
+                     % (ip, self.http_port))
+        except Exception as ex:  # noqa: BLE001
+            self.log('mDNS 广播失败(不影响 UDP 发现): %s' % ex)
+
+    def _stop_mdns(self):
+        zc = self._mdns
+        self._mdns = None
+        if zc is None:
+            return
+        try:
+            zc.unregister_all_services()
+        except Exception:
+            pass
+        try:
+            zc.close()
+        except Exception:
+            pass
 
     # ---------------------------------------------------------- UDP 发现
     def _udp_loop(self):
@@ -344,6 +410,30 @@ class PeerHost:
                     return 200, _FileResponse(b['path'],
                                               'application/octet-stream')
             return 404, {'error': 'not_found'}
+
+        # ---- 存档/设置同步 (Phase 1: 仅用户数据, 不含 ROM/BIOS 二进制) ----
+        if method == 'GET' and path == '/api/peer/sync/save':
+            return self._sync_save_list()
+        if (method == 'GET' or method == 'PUT') and path.startswith(
+                '/api/peer/sync/save/'):
+            parts = path[len('/api/peer/sync/save/'):].split('/')
+            if len(parts) != 2:
+                return 400, {'error': 'bad_path'}
+            try:
+                crc = crc8(parts[0])
+            except ValueError:
+                return 400, {'error': 'bad_crc'}
+            safe = _safe_name(parts[1])
+            if safe is None:
+                return 400, {'error': 'bad_name'}
+            if method == 'GET':
+                return self._send_save(crc, safe)
+            return self._recv_save(crc, safe, body)
+        if method == 'GET' and path == '/api/peer/sync/settings':
+            return self._send_settings()
+        if method == 'PUT' and path == '/api/peer/sync/settings':
+            return self._recv_settings(body)
+
         return 404, {'error': 'not_found'}
 
     def _pair_start(self, body: bytes):
@@ -448,6 +538,77 @@ class PeerHost:
             return 404, {'error': 'not_found'}
         return 200, _FileResponse(p, 'image/png')
 
+
+    # -------------------------------------------------- 存档/设置同步 (Phase 1)
+    def _sync_root(self) -> str:
+        d = os.path.join(_HERE, '.peer_sync')
+        if not os.path.isdir(d):
+            os.makedirs(d, exist_ok=True)
+        return d
+
+    def _sync_save_dir(self, crc: str) -> str:
+        d = os.path.join(self._sync_root(), 'save', crc)
+        if not os.path.isdir(d):
+            os.makedirs(d, exist_ok=True)
+        return d
+
+    def _sync_save_list(self):
+        sdir = os.path.join(self._sync_root(), 'save')
+        saves = []
+        if os.path.isdir(sdir):
+            for crc in os.listdir(sdir):
+                cd = os.path.join(sdir, crc)
+                if not os.path.isdir(cd):
+                    continue
+                for fn in os.listdir(cd):
+                    fp = os.path.join(cd, fn)
+                    if os.path.isfile(fp):
+                        saves.append({'crc': crc, 'name': fn,
+                                      'size': os.path.getsize(fp),
+                                      'mtime': int(os.path.getmtime(fp))})
+        return 200, {'saves': saves}
+
+    def _send_save(self, crc: str, name: str):
+        fp = os.path.join(self._sync_save_dir(crc), name)
+        if not os.path.isfile(fp):
+            return 404, {'error': 'not_found'}
+        return 200, _FileResponse(fp, 'application/octet-stream')
+
+    def _recv_save(self, crc: str, name: str, body: bytes):
+        if not body:
+            return 400, {'error': 'empty'}
+        fp = os.path.join(self._sync_save_dir(crc), name)
+        try:
+            with open(fp, 'wb') as f:
+                f.write(body)
+        except Exception as ex:  # noqa: BLE001
+            return 500, {'error': 'write_failed', 'message': str(ex)}
+        return 200, {'ok': True, 'size': len(body)}
+
+    def _send_settings(self):
+        fp = os.path.join(self._sync_root(), 'settings.json')
+        if not os.path.isfile(fp):
+            return 404, {'error': 'no_settings'}
+        try:
+            with open(fp, 'r', encoding='utf-8') as f:
+                return 200, json.load(f)
+        except Exception as ex:  # noqa: BLE001
+            return 500, {'error': 'read_failed', 'message': str(ex)}
+
+    def _recv_settings(self, body: bytes):
+        try:
+            data = json.loads(body or b'{}')
+        except Exception:
+            return 400, {'error': 'bad_json'}
+        if not isinstance(data, dict):
+            return 400, {'error': 'bad_shape'}
+        fp = os.path.join(self._sync_root(), 'settings.json')
+        try:
+            with open(fp, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, indent=1)
+        except Exception as ex:  # noqa: BLE001
+            return 500, {'error': 'write_failed', 'message': str(ex)}
+        return 200, {'ok': True}
 
 class _FileResponse:
     """标记"直接把文件流回去"。"""
