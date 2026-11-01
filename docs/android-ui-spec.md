@@ -771,12 +771,19 @@ if (useDpadUi && insideDpadDisc(px, py)) {      // dist <= outerR
    macroPointer = id
    macroListener.onMacro(seq)      // IntArray：逐帧掩码序列
    ```
-   → `EmulatorActivity`：`if (handle != 0L && npCfg == null) NativeBridge.nativePlayMacro(handle, seq)`
-   （**联机会话禁用**，lockstep 必须确定性）。
-2. **播放时长**：序列 8–14 帧（每步 3 帧），≈135–230 ms，由原生队列自行排空。
+   → `EmulatorActivity`：`onMacro(seq)` → `startNpMacro(seq)`。**solo 与联机统一**走逐帧
+   `renderer.buttonMask` 回放（50 ms/逻辑步，每步 = `ScriptCompiler.framesPerStep` 个逐帧掩码；
+   与 OHOS JS 回放 `parseMacro` 等价：每个方向按住 ~50ms，末步后追加一帧零掩码释放，按钮必释放，
+   联机也不破坏 lockstep 确定性）。
+   **旧 `nativePlayMacro` 路径已弃用**：它会把最后帧卡在 `macroMask_` 上、输入粘死
+   （即「组合按键释放不出来」的根因），现已由统一的 50ms 回放取代。
+2. **播放时长**：序列按 `framesPerStep`(=3) 个逐帧掩码折叠成一个逻辑步，每步 50 ms；
+   "236+P" ≈ 4 步 × 50ms ≈ 200 ms（"236236+PK" ≈ 7 步 ≈ 350 ms）。**不再是逐条 50ms**
+   （那样会把 12 条掩码拖到 600ms，运动过慢、招式发不出）。
 3. **UP / POINTER_UP**：**只释放 `macroPointer` 槽位，不调用 `onClear()`**
-   —— 否则快速点击时 8–14 帧的运动永远播不完，招式发不出来。
-4. **唯一取消路径**：`releaseAll()`（切后台）→ `macroListener.onClear()` → `nativeClearMacro()`。
+   —— 否则快速点击时运动永远播不完，招式发不出来（同前）。
+4. **唯一取消路径**：`releaseAll()`（切后台）→ `macroListener.onClear()` → `cancelNpMacro()`
+   （重置 `npMacroMask` 并把 `renderer.buttonMask` 还原为实时手柄掩码；不再调用 `nativeClearMacro`）。
 5. **视觉**：`drawMacroBtn` 的 `on = (macroPointer >= 0)` → 手指按住期间为琥珀填充 + 激活描边 + 内缩
    （注释写的是 “amber while its macro is playing”，实际绑定的是指针槽）。
 6. **默认 6 槽**（`assets/moves_presets.json` / `library/moves.json`，profile `kof97`）：

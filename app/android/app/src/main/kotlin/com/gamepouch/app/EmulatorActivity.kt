@@ -396,25 +396,23 @@ class EmulatorActivity : Activity() {
                 renderer.buttonMask = mask or npMacroMask
                 renderer.playerPort = port
             }
-            // One-button special moves (fighting games). Solo: the frame
-            // sequence goes straight to the native macro player. Netplay: the
-            // same sequence is fed through the lockstep local-mask channel
-            // (see startNpMacro) so the move still works without desyncing.
+            // One-button special moves (fighting games). The compiled per-frame
+            // mask sequence is replayed through the SAME 50 ms/step channel the
+            // on-screen pad uses (renderer.buttonMask, OR-ed over the live pad),
+            // for BOTH solo and netplay. This mirrors the HarmonyOS JS replay
+            // exactly: it releases on every step change and emits a final release
+            // frame, so combos latch AND the buttons always let go — unlike the
+            // old native nativePlayMacro path, which held the last frame and left
+            // the input stuck ("组合按键释放不出来"). Netplay stays desync-free
+            // because each step is just ordinary local input the lockstep gate
+            // already transmits.
             pad.macroListener = object : VirtualPadView.OnMacro {
                 override fun onMacro(seq: IntArray) {
                     if (handle == 0L) return
-                    if (npCfg == null) {
-                        NativeBridge.nativePlayMacro(handle, seq)
-                    } else {
-                        startNpMacro(seq)
-                    }
+                    startNpMacro(seq)
                 }
                 override fun onClear() {
-                    if (npCfg != null) {
-                        cancelNpMacro()
-                    } else if (handle != 0L) {
-                        NativeBridge.nativeClearMacro(handle)
-                    }
+                    cancelNpMacro()
                 }
             }
             root.addView(pad, FrameLayout.LayoutParams(
@@ -1506,25 +1504,47 @@ class EmulatorActivity : Activity() {
      * step reaches the lockstep gate exactly like a finger press — no
      * bypass, no desync.
      */
+    /**
+     * Netplay-safe macro playback: pump the compiled per-frame mask sequence
+     * into [renderer.buttonMask] (OR-ed over the live pad mask) so the move is
+     * just ordinary local input and cannot desync the pair. Cadence: every
+     * [ScriptCompiler.framesPerStep] entries (one logical direction) is held for
+     * 50 ms — the same "~3 frames @ 60fps" the HarmonyOS JS replay uses, so a
+     * quarter-circle / dragon-punch latches on both platforms and the buttons
+     * ALWAYS release (the trailing tick emits a zero mask, matching OHOS
+     * cancelMacro). Used for BOTH solo and netplay now that the old native
+     * nativePlayMacro path (which held the last frame and stuck the input —
+     * "组合按键释放不出来") is gone.
+     */
     private fun startNpMacro(seq: IntArray) {
         cancelNpMacro()
-        val frameMs = 50L
+        val stepMs = 50L
+        val stepFrames = ScriptCompiler.framesPerStep
         var i = 0
         val tick = object : Runnable {
             override fun run() {
                 npMacroPending = null
-                if (npEnded || npCfg == null) {
+                if (npEnded) {
                     npMacroMask = 0
                     renderer.buttonMask = npPadMask
                     return
                 }
-                npMacroMask = if (i < seq.size) seq[i] else 0
-                i++
-                renderer.buttonMask = npPadMask or npMacroMask
-                if (i <= seq.size) {
-                    npMacroPending = this
-                    npMacroHandler.postDelayed(this, frameMs)
+                if (i >= seq.size) {
+                    // Trailing release frame: let every button go (matches
+                    // HarmonyOS playMove — the move fires, then the input
+                    // releases so the next press isn't stuck).
+                    npMacroMask = 0
+                    renderer.buttonMask = npPadMask
+                    return
                 }
+                // Collapse framesPerStep entries into one logical step so each
+                // direction is held ~stepMs — identical to the HarmonyOS replay.
+                var m = 0
+                repeat(stepFrames) { if (i < seq.size) m = seq[i++] }
+                npMacroMask = m
+                renderer.buttonMask = npPadMask or npMacroMask
+                npMacroPending = this
+                npMacroHandler.postDelayed(this, stepMs)
             }
         }
         tick.run()
