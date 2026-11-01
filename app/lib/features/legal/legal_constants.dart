@@ -16,4 +16,13 @@ class LegalConstants {
   /// 备案通过后回填（见 `docs/release-plan.md` 缺口 3）。
   /// 空字符串表示"备案中"，UI 显示占位提示而非空白，避免上架前界面出现空字段。
   static const String filingNumber = '';
+
+  /// 用户反馈入口（GitHub Issues）。设置页「意见反馈 / 客服中心」复制给用户，
+  /// 在浏览器打开即可提反馈；后续可替换为邮箱或工单系统（发布时一处改）。
+  static const String feedbackUrl =
+      'https://github.com/chihinglau/RetroEmuPouch/issues';
+
+  /// 「分享应用」推荐文案（剪贴板分享——无 share 插件时的零依赖实现）。
+  static const String shareMessage =
+      '趣玩匣 RetroEmuPouch —— 手机上的复古游戏机，重拾时光里的欢喜！';
 }

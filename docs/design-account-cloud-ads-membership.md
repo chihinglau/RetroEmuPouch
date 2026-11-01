@@ -208,6 +208,12 @@
 
 - **Phase 3 会员/计费客户端骨架（2026-11-01）**：无需外部凭证即可落地的纯客户端骨架已补齐并接线。既有骨架（`EntitlementService`/`BillingService`/`AdService`/`Membership` 单例/`MembershipSection` 已嵌入 `AccountPage`）经核验已完整接线。`Entitlement` 新增 `cloudSaveEnabled`（付费档解锁云存档权益，免费/试用仅本地 LAN 同步）；新增 `ReceiptVerifier` 接口 + `NoOpReceiptVerifier`（后端收据校验接入点 seam），`BillingService` 改「先 `BillingPal` 购买 → 再 `ReceiptVerifier` 校验 → 授予 entitlement」，无后端时本地兜底（标 TODO(server)）；`createBillingPal()` 标注 Android `PlayBillingPal` / OHOS `HuaweiIapPal` 真实实现接入点；`MembershipSection` 展示云存档权益状态。新增单测 `test/features/membership/entitlement_test.dart`（10/10 绿，覆盖 isAdFree/cloudSaveEnabled/effectiveTier/试用窗）；`flutter analyze` 0 error，无新增依赖。
 
+- **设置页重塑：分类主菜单 + 子页面（2026-11-01）**：参照 iOS 风格设置页（彩色圆角入口行 + 子页面），把原来单页长滚动的 `SettingsSheet` 重构为**分类主菜单**，入口行逐项推送全屏子页面（经 host navigator，弹窗本身保持打开、返回即回菜单）。信息架构：
+  - **子页面（6 个）**：使用教程（静态入门 5 步：导入游戏/BIOS/开始/一键招式/同步备份）、会员 / 去广告（内嵌 `MembershipSection`，兼作订阅管理入口）、游戏体验（FPS 浮窗/高刷/加速音频）、控制与手柄（摇杆/布局/一键招式）、BIOS 管理（`_BiosManagerCard`）、通用（记住上次进度/深色主题）、关于与支持（应用信息卡/客服中心/开源许可/隐私政策×2/备案号）。
+  - **直执行项（4 个）**：分享应用（复制推荐文案到剪贴板，零依赖）、给个好评（`PlatformPal.openStore()`，异常兜底复制反馈链接）、意见反馈（复制 `LegalConstants.feedbackUrl`）、还原设置（确认对话框 → `AppSettings().toMap()` 应用回 `current` 并保存，**不触碰存档/BIOS/lastSaveSlot**，深色主题变更实时生效）。
+  - **实现要点**：推送出去的子页面不在 Sheet 的 element 树内，`setState` 刷不到——新增 `_SettingsNotifier`（封装 protected `notifyListeners`），`_patch` 后 `ping()`，子页面正文用 `ListenableBuilder` 包裹实时重建。主菜单头部保留紧凑版（应用名 + 版本号 chip），完整应用信息卡移入「关于与支持」。参照图中的「存档管理」「iCloud 同步」**按用户要求不纳入**（App 已有独立的存档同步体系：「我的 PC」LAN 同步）；「管理订阅」「客服中心」分别并入会员页与关于页（避免空壳页面）。`LegalConstants` 新增 `feedbackUrl`（GitHub Issues）与 `shareMessage`（发布时可一处替换为邮箱/商店链接）。
+  - 验证：`flutter analyze` 0 error（回到既有 14 个 issue，无新增）；`flutter test` 19/19 绿。真机 UI 走查待装包验证。
+
 **待办（下一阶段）**：OHOS 华为/Petals 广告原生通道、Play Billing / 华为 IAP（商店配置+凭证）、后端账号与收据校验（会员/计费客户端骨架已完成，真实计费与后端校验待 Phase 3 凭证）。
 
 ## 决策记录（供跟踪）

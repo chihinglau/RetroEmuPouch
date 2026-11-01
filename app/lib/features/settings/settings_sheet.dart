@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:retroemupouch/features/legal/legal_constants.dart';
+import 'package:retroemupouch/features/membership/membership_card.dart';
 
 import '../../main.dart';
 import '../../features/legal/privacy_policy_page.dart';
@@ -48,6 +49,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
   late final BuildContext _ctx;
   AppVersion? _version;
 
+  /// Notifies pushed settings sub-pages (outside this State's element tree)
+  /// that a setting changed — [setState] only rebuilds the menu sheet itself.
+  final _SettingsNotifier _changes = _SettingsNotifier();
+
   @override
   void initState() {
     super.initState();
@@ -56,6 +61,12 @@ class _SettingsSheetState extends State<SettingsSheet> {
     widget.pal.appVersion().then((v) {
       if (mounted) setState(() => _version = v);
     });
+  }
+
+  @override
+  void dispose() {
+    _changes.dispose();
+    super.dispose();
   }
 
   void _patch(void Function(AppSettings s) mutator) {
@@ -67,6 +78,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
     // Side effects that need to happen synchronously alongside the
     // toggle so the change is visible without an app restart.
     _applySideEffects(before, _settings);
+    _changes.ping();
   }
 
   /// Reflect a setting change in the running app without restarting.
@@ -119,75 +131,207 @@ class _SettingsSheetState extends State<SettingsSheet> {
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(0, 4, 0, 16),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 8, 4, 12),
-                child: Text(
-                  '设置',
-                  style: theme.textTheme.titleLarge,
-                ),
-              ),
-
-              // ----- App info (the former About content) -----
-              Card(
-                margin: EdgeInsets.zero,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(4, 8, 4, 12),
+                  child: Row(
                     children: [
-                      Row(
-                        children: [
-                          Icon(Icons.videogame_asset_outlined,
-                              color: theme.colorScheme.primary),
-                          const SizedBox(width: 8),
-                          Text('趣玩匣 RetroEmuPouch',
-                              style: theme.textTheme.titleMedium),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: theme.colorScheme.primaryContainer,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              _version == null
-                                  ? '加载中…'
-                                  : '${_version!.versionName} (${_version!.versionCode})',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: theme.colorScheme.onPrimaryContainer,
-                                fontFeatures: const [FontFeature.tabularFigures()],
-                              ),
-                            ),
+                      Icon(Icons.videogame_asset_outlined,
+                          color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Text('设置', style: theme.textTheme.titleLarge),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _version == null
+                              ? '加载中…'
+                              : '${_version!.versionName} (${_version!.versionCode})',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onPrimaryContainer,
+                            fontFeatures: const [FontFeature.tabularFigures()],
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        '本应用不内置任何游戏 ROM 或 BIOS，请自行导入合法备份。',
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        '模拟核心：FCEUmm / Gambatte / mGBA / PicoDrive / '
-                        'Stella（libretro），GPL-2.0 / MPL-2.0。',
-                        style: theme.textTheme.bodySmall,
+                        ),
                       ),
                     ],
                   ),
                 ),
-              ),
 
-              const SizedBox(height: 16),
-              Text('游戏体验',
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(color: theme.colorScheme.primary)),
-              const SizedBox(height: 4),
+                // ----- 分类主菜单：一行一个子页面（iOS 风格彩色入口） -----
+                _MenuRow(
+                  icon: Icons.menu_book_outlined,
+                  iconColor: const Color(0xFF3E7BFA),
+                  title: '使用教程',
+                  subtitle: '了解如何导入和使用游戏',
+                  onTap: _openTutorial,
+                ),
+                _MenuRow(
+                  icon: Icons.workspace_premium_outlined,
+                  iconColor: const Color(0xFFB45CF6),
+                  title: '会员 / 去广告',
+                  subtitle: '成为 VIP，享受纯净体验 · 管理订阅',
+                  onTap: _openMembership,
+                ),
+                _MenuRow(
+                  icon: Icons.share_outlined,
+                  iconColor: const Color(0xFF22B8A6),
+                  title: '分享应用',
+                  subtitle: '推荐给朋友',
+                  onTap: () => _copyToClipboard(
+                      LegalConstants.shareMessage, '推荐文案已复制，去粘贴给朋友吧'),
+                ),
+                _MenuRow(
+                  icon: Icons.star_outline,
+                  iconColor: const Color(0xFFF5A623),
+                  title: '给个好评',
+                  subtitle: '您的支持是我们前进的动力',
+                  onTap: _openStoreReview,
+                ),
+                _MenuRow(
+                  icon: Icons.mail_outline,
+                  iconColor: const Color(0xFF4CAF50),
+                  title: '意见反馈',
+                  subtitle: '帮助我们改进（复制反馈入口）',
+                  onTap: () => _copyToClipboard(
+                      LegalConstants.feedbackUrl, '反馈链接已复制，可在浏览器打开'),
+                ),
+                _MenuRow(
+                  icon: Icons.sports_esports_outlined,
+                  iconColor: const Color(0xFF5C6BC0),
+                  title: '游戏体验',
+                  subtitle: 'FPS 浮窗 · 高刷新率 · 加速音频',
+                  onTap: _openGameplay,
+                ),
+                _MenuRow(
+                  icon: Icons.gamepad_outlined,
+                  iconColor: const Color(0xFFFF8A65),
+                  title: '控制与手柄',
+                  subtitle: '摇杆 · 布局 · 一键招式',
+                  onTap: _openControls,
+                ),
+                _MenuRow(
+                  icon: Icons.memory_outlined,
+                  iconColor: const Color(0xFF42A5F5),
+                  title: 'BIOS 管理',
+                  subtitle: '导入 / 导出 / 删除系统文件',
+                  onTap: _openBios,
+                ),
+                _MenuRow(
+                  icon: Icons.tune_outlined,
+                  iconColor: const Color(0xFF90A4AE),
+                  title: '通用',
+                  subtitle: '记住上次进度 · 深色主题',
+                  onTap: _openGeneral,
+                ),
+                _MenuRow(
+                  icon: Icons.info_outline,
+                  iconColor: const Color(0xFFEC6B9D),
+                  title: '关于与支持',
+                  subtitle: '版本 · 许可 · 隐私 · 客服',
+                  onTap: _openAbout,
+                ),
+                _MenuRow(
+                  icon: Icons.restart_alt_outlined,
+                  iconColor: const Color(0xFFE57373),
+                  title: '还原设置',
+                  subtitle: '还原模拟器默认设置，不会删除存档',
+                  onTap: _confirmReset,
+                ),
 
+                const SizedBox(height: 12),
+                Center(
+                  child: Text(
+                    '趣玩匣 RetroEmuPouch · 重拾时光里的欢喜',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: theme.hintColor),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ------------------------------------------------------------------
+  // 分类菜单的导航与公共动作
+  // ------------------------------------------------------------------
+
+  /// Pushes a full-screen settings sub-page on the *host* navigator (the
+  /// sheet's own context would pop the route together with the sheet).
+  void _push(WidgetBuilder builder) {
+    Navigator.of(widget.hostCtx).push(
+      MaterialPageRoute<void>(builder: builder),
+    );
+  }
+
+  /// Rebuilds a sub-page body whenever a setting changes. A pushed route is
+  /// outside this State's element tree, so [setState] alone can't refresh it —
+  /// [_patch] fires [_changes] which these builders listen to.
+  Widget _live(Widget Function(BuildContext) builder) {
+    return ListenableBuilder(
+      listenable: _changes,
+      builder: (ctx, _) => builder(ctx),
+    );
+  }
+
+  Widget _page(String title, List<Widget> children) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: children,
+      ),
+    );
+  }
+
+  Future<void> _copyToClipboard(String text, String message) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted || !context.mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _openStoreReview() async {
+    try {
+      await widget.pal.openStore();
+    } catch (_) {
+      await _copyToClipboard(
+          LegalConstants.feedbackUrl, '未找到应用商店入口，已复制反馈链接');
+    }
+  }
+
+  // ----- 子页面 -----
+
+  void _openTutorial() =>
+      _push((_) => _page('使用教程', const [_TutorialBody()]));
+
+  void _openMembership() => _push((_) => _page('会员 / 去广告', [
+        const MembershipSection(),
+        const SizedBox(height: 8),
+        const Text(
+          '订阅的查看、取消与更改可在应用商店的订阅管理中进行；'
+          '也可随时在上方卡片更换或购买档位。',
+          style: TextStyle(fontSize: 12),
+        ),
+      ]));
+
+  void _openGameplay() => _push((_) => _page('游戏体验', [
+        _live((_) => Column(children: [
               _SettingTile(
                 icon: Icons.speed_outlined,
                 title: '显示 FPS / xruns 浮窗',
@@ -209,13 +353,11 @@ class _SettingsSheetState extends State<SettingsSheet> {
                 value: _settings.fastForwardAudio,
                 onChanged: (v) => _patch((s) => s.fastForwardAudio = v),
               ),
+            ])),
+      ]));
 
-              const SizedBox(height: 16),
-              Text('控制',
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(color: theme.colorScheme.primary)),
-              const SizedBox(height: 4),
-
+  void _openControls() => _push((_) => _page('控制与手柄', [
+        _live((_) => Column(children: [
               _StickSettingsCard(
                 mode: _settings.stickMode,
                 deadzone: _settings.stickDeadzone,
@@ -224,53 +366,45 @@ class _SettingsSheetState extends State<SettingsSheet> {
                 onDeadzoneChanged: (d) => _patch((s) => s.stickDeadzone = d),
                 onUseDpadUiChanged: (v) => _patch((s) => s.useDpadUi = v),
               ),
-
               const SizedBox(height: 4),
               _PadLayoutCard(
                 settings: _settings,
                 pal: widget.pal,
                 patch: _patch,
               ),
-
-              Card(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                child: ListTile(
-                  leading: const Icon(Icons.bolt_outlined),
-                  title: const Text('招式按键（格斗游戏一键大招）'),
-                  subtitle: const Text(
-                      '配置 6 个槽位的招式脚本，支持导入 / 导出，方便按游戏加载'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () async {
-                    final filesDir = await widget.pal.filesDir();
-                    if (!widget.hostCtx.mounted) return;
-                    // Push via the host context so the editor lands on the
-                    // underlying navigator (the settings sheet's own context
-                    // pops with the sheet and would discard the route).
-                    Navigator.of(widget.hostCtx).push(
-                      MaterialPageRoute<void>(
-                        builder: (_) => SpecialMovesEditorPage(
-                          filesDir: filesDir,
-                          pal: widget.pal,
-                        ),
-                      ),
-                    );
-                  },
+            ])),
+        Card(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          child: ListTile(
+            leading: const Icon(Icons.bolt_outlined),
+            title: const Text('招式按键（格斗游戏一键大招）'),
+            subtitle: const Text(
+                '配置 6 个槽位的招式脚本，支持导入 / 导出，方便按游戏加载'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () async {
+              final filesDir = await widget.pal.filesDir();
+              if (!widget.hostCtx.mounted) return;
+              // Push via the host context so the editor lands on the
+              // underlying navigator (the settings sheet's own context
+              // pops with the sheet and would discard the route).
+              Navigator.of(widget.hostCtx).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => SpecialMovesEditorPage(
+                    filesDir: filesDir,
+                    pal: widget.pal,
+                  ),
                 ),
-              ),
+              );
+            },
+          ),
+        ),
+      ]));
 
-              const SizedBox(height: 16),
-              Text('系统文件（BIOS）',
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(color: theme.colorScheme.primary)),
-              const SizedBox(height: 4),
-              _BiosManagerCard(pal: widget.pal),
+  void _openBios() =>
+      _push((_) => _page('系统文件（BIOS）', [_BiosManagerCard(pal: widget.pal)]));
 
-              const SizedBox(height: 16),
-              Text('应用',
-                  style: theme.textTheme.titleSmall
-                      ?.copyWith(color: theme.colorScheme.primary)),
-              const SizedBox(height: 4),
-
+  void _openGeneral() => _push((_) => _page('通用', [
+        _live((_) => Column(children: [
               _SettingTile(
                 icon: Icons.history_outlined,
                 title: '记住上次进度',
@@ -285,74 +419,274 @@ class _SettingsSheetState extends State<SettingsSheet> {
                 value: _settings.darkTheme,
                 onChanged: (v) => _patch((s) => s.darkTheme = v),
               ),
-              Card(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                child: ListTile(
-                  leading: const Icon(Icons.description_outlined),
-                  title: const Text('开源许可'),
-                  subtitle: const Text('内嵌模拟器核心的许可证与源码出处'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: _showLicenses,
-                ),
-              ),
-              Card(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                child: ListTile(
-                  leading: const Icon(Icons.privacy_tip_outlined),
-                  title: const Text('隐私政策 / 用户协议'),
-                  subtitle: const Text('我们如何收集、使用与保护您的数据'),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                        builder: (_) => const PrivacyPolicyPage()),
-                  ),
-                ),
-              ),
-              Card(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                child: ListTile(
-                  leading: const Icon(Icons.language_outlined),
-                  title: const Text('网页版隐私政策'),
-                  subtitle: const Text(
-                      'https://chihinglau.github.io/GamePouch/privacy'),
-                  trailing: const Icon(Icons.copy_outlined),
-                  onTap: () async {
-                    await Clipboard.setData(
-                      ClipboardData(text: LegalConstants.privacyPolicyUrl),
-                    );
-                    if (!context.mounted) return;
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('已复制隐私政策链接，可在浏览器打开')),
-                    );
-                  },
-                ),
-              ),
-              Card(
-                margin: const EdgeInsets.symmetric(vertical: 4),
-                child: ListTile(
-                  leading: const Icon(Icons.verified_user_outlined),
-                  title: const Text('备案号'),
-                  subtitle: Text(
-                    LegalConstants.filingNumber.isEmpty
-                        ? '（备案中，待工信部备案后回填）'
-                        : LegalConstants.filingNumber,
-                  ),
-                ),
-              ),
+            ])),
+      ]));
 
-              const SizedBox(height: 12),
-              Center(
-                child: Text(
-                  '趣玩匣 RetroEmuPouch · 重拾时光里的欢喜',
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.hintColor),
-                ),
+  void _openAbout() => _push((ctx) {
+        final theme = Theme.of(ctx);
+        return _page('关于与支持', [
+          // ----- App info（原「关于」内容，从主菜单移入） -----
+          Card(
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.videogame_asset_outlined,
+                          color: theme.colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Text('趣玩匣 RetroEmuPouch',
+                          style: theme.textTheme.titleMedium),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          _version == null
+                              ? '加载中…'
+                              : '${_version!.versionName} (${_version!.versionCode})',
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: theme.colorScheme.onPrimaryContainer,
+                            fontFeatures: const [FontFeature.tabularFigures()],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    '本应用不内置任何游戏 ROM 或 BIOS，请自行导入合法备份。',
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '模拟核心：FCEUmm / Gambatte / mGBA / PicoDrive / '
+                    'Stella（libretro），GPL-2.0 / MPL-2.0。',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
               ),
-            ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Card(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            child: ListTile(
+              leading: const Icon(Icons.support_agent_outlined),
+              title: const Text('客服中心'),
+              subtitle: const Text('问题反馈与联系支持（复制反馈入口）'),
+              trailing: const Icon(Icons.copy_outlined),
+              onTap: () => _copyToClipboard(
+                  LegalConstants.feedbackUrl, '反馈链接已复制，可在浏览器打开'),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            child: ListTile(
+              leading: const Icon(Icons.description_outlined),
+              title: const Text('开源许可'),
+              subtitle: const Text('内嵌模拟器核心的许可证与源码出处'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: _showLicenses,
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            child: ListTile(
+              leading: const Icon(Icons.privacy_tip_outlined),
+              title: const Text('隐私政策 / 用户协议'),
+              subtitle: const Text('我们如何收集、使用与保护您的数据'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.of(widget.hostCtx).push(
+                MaterialPageRoute(builder: (_) => const PrivacyPolicyPage()),
+              ),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            child: ListTile(
+              leading: const Icon(Icons.language_outlined),
+              title: const Text('网页版隐私政策'),
+              subtitle: const Text(
+                  'https://chihinglau.github.io/GamePouch/privacy'),
+              trailing: const Icon(Icons.copy_outlined),
+              onTap: () => _copyToClipboard(
+                  LegalConstants.privacyPolicyUrl, '已复制隐私政策链接，可在浏览器打开'),
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            child: ListTile(
+              leading: const Icon(Icons.verified_user_outlined),
+              title: const Text('备案号'),
+              subtitle: Text(
+                LegalConstants.filingNumber.isEmpty
+                    ? '（备案中，待工信部备案后回填）'
+                    : LegalConstants.filingNumber,
+              ),
+            ),
+          ),
+        ]);
+      });
+
+  /// 还原设置：确认后把全部 AppSettings 字段重置为出厂默认（不触碰存档/BIOS）。
+  Future<void> _confirmReset() async {
+    // Resolve the app state *before* awaiting: touching a BuildContext across
+    // an async gap is unsafe (the widget may have been disposed).
+    final app = GamePouchApp.of(_ctx);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('还原设置'),
+        content: const Text('将全部设置恢复为默认值（画面 / 控制 / 手柄布局等）。\n\n'
+            '不会删除游戏、存档与 BIOS。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('还原'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    final before = _settings.clone();
+    setState(() => _settings.applyMap(AppSettings().toMap()));
+    await _settings.save();
+    if (before.darkTheme != _settings.darkTheme) {
+      app?.setBrightness(_settings.darkTheme);
+    }
+    _changes.ping();
+    if (!mounted || !context.mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('已还原为默认设置')));
+  }
+}
+
+/// 用于把设置变更广播给推送出去的子页面（封装 protected 的 notifyListeners）。
+class _SettingsNotifier extends ChangeNotifier {
+  void ping() => notifyListeners();
+}
+
+/// 分类主菜单的一行：彩色圆角底 + 图标 + 标题/副标题 + 右箭头（iOS 设置风格）。
+class _MenuRow extends StatelessWidget {
+  const _MenuRow({
+    required this.icon,
+    required this.iconColor,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final Color iconColor;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: iconColor.withAlpha(31),
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            child: Row(
+              children: [
+                Icon(icon, color: iconColor),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: theme.textTheme.titleSmall),
+                      const SizedBox(height: 2),
+                      Text(subtitle,
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: theme.hintColor)),
+                    ],
+                  ),
+                ),
+                Icon(Icons.chevron_right, color: theme.hintColor),
+              ],
+            ),
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 「使用教程」子页面正文：从导入到联机的入门步骤。
+class _TutorialStep {
+  const _TutorialStep(this.icon, this.title, this.body);
+  final IconData icon;
+  final String title;
+  final String body;
+}
+
+class _TutorialBody extends StatelessWidget {
+  const _TutorialBody();
+
+  static const _steps = <_TutorialStep>[
+    _TutorialStep(Icons.download_outlined, '导入游戏',
+        '在游戏库页点「导入」，选择 ROM 压缩包或单文件（支持 NES / GB / GBA / MD / 街机等），导入后自动识别平台。'),
+    _TutorialStep(Icons.memory_outlined, '导入 BIOS',
+        '部分平台（GBA / 街机等）需要系统 BIOS：设置 → BIOS 管理，导入对应文件（如 neogeo.zip、gba_bios）。'),
+    _TutorialStep(Icons.play_circle_outline, '开始游戏',
+        '点击库中的游戏即可运行；横竖屏与手柄布局可随时在「控制与手柄」中调整。'),
+    _TutorialStep(Icons.bolt_outlined, '一键招式',
+        '格斗游戏可在「控制与手柄 → 招式按键」配置一键大招（如 236+P），支持按游戏加载不同方案。'),
+    _TutorialStep(Icons.cloud_sync_outlined, '同步与备份',
+        '账号页可绑定「我的 PC」，在局域网内同步存档与设置；游戏资源也可打包导出分享。'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final s in _steps)
+          Card(
+            margin: const EdgeInsets.only(bottom: 10),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(s.icon, color: theme.colorScheme.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(s.title, style: theme.textTheme.titleSmall),
+                        const SizedBox(height: 4),
+                        Text(s.body, style: theme.textTheme.bodySmall),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
