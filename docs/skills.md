@@ -245,6 +245,23 @@ hdc shell "uitest uiInput swipe x1 y1 x2 y2 ms"
    getFilesDir on channel gs/storage)」红屏。已全部改为 `catch (_)`（见 `app/lib/pal/ohos_pal.dart`），
    确保无原生 handler 时返回安全默认值而非崩溃。
 
+3. **`EntitlementService.create()` 同样裸调 `SharedPreferences`，OHOS 上会员页卡进度条**：
+   与 `AppSettings` 同一坑——`SharedPreferences.getInstance()` 在无原生 handler 时抛 `MissingPluginException`，
+   使 `Membership.instance` 这个 Future reject：会员页 `then` 永不触发 → 永远停在 `LinearProgressIndicator`，
+   且 `LibraryPage` 的 `_membership` 永远为 null（库页底部横幅也不显示）。修复：照搬 `AppSettings` 的
+   「shared_preferences → `PlatformPal` 文件存储」两级梯子（`platform_pal` 新增 `loadKeyValueStore/saveKeyValueStore`，
+   `OhosPal` 落到 `<filesDir>/entitlement.json`，`main()` 经 `EntitlementService.setFallbackStore()` 接线）。
+   新功能若在 OHOS 启动路径读 `SharedPreferences`，务必走同一兜底，否则静默卡死/白屏。
+
+4. **OHOS fork 布局坑（Flutter 层，无 Dart 异常、纯视觉错乱，真机截图才看得出来）**：
+   - `_TierCard` 价格行 `Row(crossAxisAlignment: stretch, children: [Expanded...])` 在 `ListView` **无界高度**下
+     触发 `RenderFlex` 断言（`stretch`/Expanded 与 unbounded height 不兼容）→ 整页头部重叠、后续子项（档位卡）消失。
+     改为 `crossAxisAlignment.center` 即可。
+   - 外层 `Column(crossAxisAlignment: stretch)` 的直接子项（`Text`/`Row`，非 `Container` 包裹）在 `ListView` 内
+     出现过高度归零/错位；尽量用 `Container`/`Card` 包裹或去掉 `stretch`。`Center` 包裹头部子项在该 fork 也疑似零高，
+     改用满宽 `Row(mainAxisAlignment.center)` / `Text(textAlign:center)` 更稳。
+   - 除非真机截图确认渲染正常，否则别信任该 fork 对 `stretch`/`Expanded`/`Align` 在滚动容器中的表现。
+
 #### 真机运行：Pura70 调试前置要求（锁屏 / 息屏，必读）
 
 Pura70（SN `2MN0224730027764`）是**开发者模式 + 指纹/密码锁**。锁屏后 `aa start` 直接拒绝

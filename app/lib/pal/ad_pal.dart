@@ -1,22 +1,25 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 
 /// Ad-delivery seam. Platform implementations slot in behind [createAdPal]:
 ///   Android -> google_mobile_ads (AdMob)
 ///   OHOS    -> HUAWEI Ads / Petals Ads (pending HMS signing + ad-slot IDs)
 ///
-/// Until the OHOS native integration lands, [NoOpAdPal] keeps the app ad-free
-/// and crash-free (matches the project's safe-default philosophy in OhosPal).
+/// Until the OHOS native integration lands, [NoOpAdPal] keeps the app
+/// crash-free (matches the project's safe-default philosophy in OhosPal) and
+/// renders a **visible test-placement placeholder** banner so the library
+/// layout/placement can be validated on-device without a real ad SDK.
 abstract interface class AdPal {
   /// Show an interstitial ad. Returns true if one was actually shown.
   Future<bool> showInterstitial();
 
-  /// Returns a banner widget to embed in the UI, or null if unsupported
-  /// (e.g. OHOS before Huawei Ads is wired, or an ad-free user).
-  Widget? bannerWidget();
+  /// Returns a banner widget to embed in the UI. On Android this is a real
+  /// AdMob banner; on OHOS (pre-Huawei-Ads) it's a test-placement placeholder,
+  /// so it is never null while the platform is wired enough to show one.
+  Widget bannerWidget();
 }
 
 class NoOpAdPal implements AdPal {
@@ -24,7 +27,54 @@ class NoOpAdPal implements AdPal {
   Future<bool> showInterstitial() async => false;
 
   @override
-  Widget? bannerWidget() => null;
+  Widget bannerWidget() => const _OhosTestBannerWidget();
+}
+
+/// Mock banner shown on OHOS until HUAWEI/Petals Ads is wired. It is NOT a
+/// real ad — just a clearly-labeled placeholder so the library bottom placement
+/// is visible and testable. height ~50px mirrors an AdMob banner slot.
+class _OhosTestBannerWidget extends StatelessWidget {
+  const _OhosTestBannerWidget();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final fg = theme.colorScheme.onSurfaceVariant;
+    return Container(
+      height: 50,
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerHighest,
+        border: Border.all(color: theme.colorScheme.outlineVariant),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          const SizedBox(width: 8),
+          Icon(Icons.ad_units_outlined, size: 18, color: fg),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '测试广告位（OHOS 占位，未接华为 / Petals 广告）',
+              style: theme.textTheme.labelSmall?.copyWith(color: fg),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.only(right: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: theme.colorScheme.outlineVariant,
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text('广告',
+                style: theme.textTheme.labelSmall
+                    ?.copyWith(color: fg, fontSize: 10)),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 /// Real AdMob implementation for Android. Uses Google's **test** ad unit IDs by
@@ -75,7 +125,7 @@ class GoogleMobileAdsAdPal implements AdPal {
   }
 
   @override
-  Widget? bannerWidget() => const _AdBannerWidget();
+  Widget bannerWidget() => const _AdBannerWidget();
 }
 
 /// Self-loading AdMob banner. Only ever instantiated on Android (the OHOS

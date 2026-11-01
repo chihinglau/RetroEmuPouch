@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/play/multiplayer_catalog.dart';
 import 'features/library/library_page.dart';
+import 'features/ads/splash_ad_screen.dart';
+import 'features/membership/entitlement_service.dart';
 import 'features/legal/consent_gate.dart';
 import 'features/settings/app_settings.dart';
 import 'pal/platform_pal.dart';
@@ -46,6 +48,14 @@ Future<void> main() async {
   AppSettings.setFallbackStore(
     load: () => pal.loadAppSettings(),
     save: (m) => pal.saveAppSettings(m),
+  );
+  // Same ladder for membership entitlements: on OHOS shared_preferences has no
+  // native handler, and without this EntitlementService.create() rejects
+  // (MissingPluginException) → Membership.instance never resolves → the
+  // membership page hangs on its spinner and the ad banner never mounts.
+  EntitlementService.setFallbackStore(
+    load: () => pal.loadKeyValueStore('entitlement.json'),
+    save: (m) => pal.saveKeyValueStore('entitlement.json', m),
   );
   // Warm the settings cache before the first frame so the Settings sheet
   // can read AppSettings.current synchronously on first open.
@@ -346,7 +356,12 @@ class GamePouchAppState extends State<GamePouchApp> {
         colorSchemeSeed: const Color(0xFF4FC3F7),
         visualDensity: VisualDensity.standard,
       ),
-      home: LibraryPage(pal: widget.pal),
+      // 开屏广告：仅 OHOS（NoOpAdPal 测试占位）显示；真实广告平台由对应 AdPal
+      // 的 open-ad 实现接管后，本条件返回 false，直接进主界面。冷启动只 build
+      // 一次，后台返回不会重进，符合开屏广告只在启动出现的预期。
+      home: shouldShowSplashTestAd()
+          ? SplashAdScreen(pal: widget.pal)
+          : LibraryPage(pal: widget.pal),
       navigatorObservers: [appRouteObserver],
     );
   }

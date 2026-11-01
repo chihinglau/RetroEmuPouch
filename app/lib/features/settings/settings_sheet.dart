@@ -1,10 +1,12 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:retroemupouch/features/legal/legal_constants.dart';
-import 'package:retroemupouch/features/membership/membership_card.dart';
+import 'package:retroemupouch/features/membership/entitlement_service.dart';
+import 'package:retroemupouch/features/membership/membership.dart';
 
 import '../../main.dart';
 import '../../features/legal/privacy_policy_page.dart';
@@ -204,37 +206,15 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   icon: Icons.mail_outline,
                   iconColor: const Color(0xFF4CAF50),
                   title: '意见反馈',
-                  subtitle: '帮助我们改进（复制反馈入口）',
-                  onTap: () => _copyToClipboard(
-                      LegalConstants.feedbackUrl, '反馈链接已复制，可在浏览器打开'),
-                ),
-                _MenuRow(
-                  icon: Icons.sports_esports_outlined,
-                  iconColor: const Color(0xFF5C6BC0),
-                  title: '游戏体验',
-                  subtitle: 'FPS 浮窗 · 高刷新率 · 加速音频',
-                  onTap: _openGameplay,
-                ),
-                _MenuRow(
-                  icon: Icons.gamepad_outlined,
-                  iconColor: const Color(0xFFFF8A65),
-                  title: '控制与手柄',
-                  subtitle: '摇杆 · 布局 · 一键招式',
-                  onTap: _openControls,
-                ),
-                _MenuRow(
-                  icon: Icons.memory_outlined,
-                  iconColor: const Color(0xFF42A5F5),
-                  title: 'BIOS 管理',
-                  subtitle: '导入 / 导出 / 删除系统文件',
-                  onTap: _openBios,
+                  subtitle: '应用商店 · 邮件 · QQ群 · 微信',
+                  onTap: _openFeedback,
                 ),
                 _MenuRow(
                   icon: Icons.tune_outlined,
-                  iconColor: const Color(0xFF90A4AE),
-                  title: '通用',
-                  subtitle: '记住上次进度 · 深色主题',
-                  onTap: _openGeneral,
+                  iconColor: const Color(0xFF5C6BC0),
+                  title: '个性化设置',
+                  subtitle: '游戏体验 · 控制与手柄 · BIOS · 通用',
+                  onTap: _openPersonalization,
                 ),
                 _MenuRow(
                   icon: Icons.info_outline,
@@ -320,17 +300,16 @@ class _SettingsSheetState extends State<SettingsSheet> {
   void _openTutorial() =>
       _push((_) => _page('使用教程', const [_TutorialBody()]));
 
-  void _openMembership() => _push((_) => _page('会员 / 去广告', [
-        const MembershipSection(),
-        const SizedBox(height: 8),
-        const Text(
-          '订阅的查看、取消与更改可在应用商店的订阅管理中进行；'
-          '也可随时在上方卡片更换或购买档位。',
-          style: TextStyle(fontSize: 12),
-        ),
-      ]));
+  void _openMembership() =>
+      _push((_) => _page('会员 / 去广告', const [_MembershipPageBody()]));
 
-  void _openGameplay() => _push((_) => _page('游戏体验', [
+  void _openFeedback() => _push(
+      (_) => _page('意见反馈', [_FeedbackPageBody(pal: widget.pal)]));
+
+  /// 「个性化设置」合并页：把原先分散的 游戏体验 / 控制与手柄 / BIOS / 通用
+  /// 四个入口收进同一页，用分区标题区分，主菜单只留一个入口，更简洁。
+  void _openPersonalization() => _push((_) => _page('个性化设置', [
+        const _SectionTitle('游戏体验'),
         _live((_) => Column(children: [
               _SettingTile(
                 icon: Icons.speed_outlined,
@@ -354,9 +333,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
                 onChanged: (v) => _patch((s) => s.fastForwardAudio = v),
               ),
             ])),
-      ]));
-
-  void _openControls() => _push((_) => _page('控制与手柄', [
+        const SizedBox(height: 12),
+        const _SectionTitle('控制与手柄'),
         _live((_) => Column(children: [
               _StickSettingsCard(
                 mode: _settings.stickMode,
@@ -398,12 +376,11 @@ class _SettingsSheetState extends State<SettingsSheet> {
             },
           ),
         ),
-      ]));
-
-  void _openBios() =>
-      _push((_) => _page('系统文件（BIOS）', [_BiosManagerCard(pal: widget.pal)]));
-
-  void _openGeneral() => _push((_) => _page('通用', [
+        const SizedBox(height: 12),
+        const _SectionTitle('系统文件（BIOS）'),
+        _BiosManagerCard(pal: widget.pal),
+        const SizedBox(height: 12),
+        const _SectionTitle('通用'),
         _live((_) => Column(children: [
               _SettingTile(
                 icon: Icons.history_outlined,
@@ -628,6 +605,407 @@ class _MenuRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 「意见反馈」子页面正文：多渠道选择（参照 iOS 反馈弹窗风格）。
+/// 零依赖实现：应用商店走 `PlatformPal.openStore()`；邮件 / QQ群 / 微信复制
+/// 账号到剪贴板（无 url_launcher / share 插件），发布时替换 `LegalConstants`。
+class _FeedbackPageBody extends StatelessWidget {
+  const _FeedbackPageBody({required this.pal});
+
+  final PlatformPal pal;
+
+  Future<void> _copy(BuildContext context, String text, String message) async {
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // 不用 stretch（同 _MembershipPageBody：OHOS fork 上零高布局 bug）。
+    return Column(
+      children: [
+        Text('感谢您的支持！选择反馈方式：', style: theme.textTheme.bodyMedium),
+        const SizedBox(height: 16),
+        _FeedbackChannelButton(
+          label: '跳转应用商店',
+          onTap: () async {
+            var failed = false;
+            try {
+              await pal.openStore();
+            } catch (_) {
+              failed = true;
+            }
+            if (!failed || !context.mounted) return;
+            await _copy(context, LegalConstants.feedbackUrl,
+                '未找到应用商店入口，已复制反馈链接');
+          },
+        ),
+        _FeedbackChannelButton(
+          label: '发送邮件',
+          onTap: () =>
+              _copy(context, LegalConstants.feedbackEmail, '邮箱已复制，可在邮件 App 粘贴发送'),
+        ),
+        _FeedbackChannelButton(
+          label: 'QQ群反馈',
+          onTap: () => _copy(
+              context, LegalConstants.qqGroup, 'QQ群号已复制，可在 QQ 中搜索加群'),
+        ),
+        _FeedbackChannelButton(
+          label: '微信反馈',
+          onTap: () => _copy(
+              context, LegalConstants.wechatId, '微信号已复制，可在微信中搜索添加'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 反馈渠道大按钮：全宽圆角胶囊、浅灰底、居中加粗文字。
+class _FeedbackChannelButton extends StatelessWidget {
+  const _FeedbackChannelButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Material(
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(28),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(28),
+          onTap: onTap,
+          child: SizedBox(
+            height: 52,
+            child: Center(
+              child: Text(label,
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700)),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 会员计费档位卡（超级 / 普通 VIP 共用布局）。
+class _Plan {
+  const _Plan(this.price, this.period, this.hint, {this.trial = true});
+  final String price;
+  final String period;
+  final String hint;
+  final bool trial;
+}
+
+class _TierCard extends StatelessWidget {
+  const _TierCard({
+    required this.icon,
+    required this.color,
+    required this.title,
+    required this.description,
+    required this.plans,
+    required this.onPlanTap,
+  });
+
+  final IconData icon;
+  final Color color;
+  final String title;
+  final String description;
+  final List<_Plan> plans;
+  final void Function(_Plan plan, int index) onPlanTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surface,
+        border: Border.all(color: color, width: 1.5),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: color, size: 22),
+              const SizedBox(width: 8),
+              Text(title,
+                  style: theme.textTheme.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w800)),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: color.withAlpha(38),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text('免费试用',
+                    style: theme.textTheme.labelSmall?.copyWith(color: color)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(description, style: theme.textTheme.bodySmall),
+          const SizedBox(height: 12),
+          Row(
+            // 不要 crossAxisAlignment: stretch——本 Row 处于 ListView 无界高度
+            // 上下文，stretch+Expanded 会触发 RenderFlex 断言，布局中断导致
+            // 整页头部错位、后续档位卡不渲染。Expanded 子项默认取 Row 高度即可。
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              for (var i = 0; i < plans.length; i++) ...[
+                if (i > 0) const SizedBox(width: 8),
+                Expanded(child: _PlanTile(plan: plans[i], color: color, onTap: () => onPlanTap(plans[i], i))),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlanTile extends StatelessWidget {
+  const _PlanTile({required this.plan, required this.color, required this.onTap});
+
+  final _Plan plan;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final recommended = plan.hint == '最划算';
+    final border = recommended ? Colors.green : theme.colorScheme.outlineVariant;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(8, 12, 8, 10),
+      decoration: BoxDecoration(
+        border: Border.all(color: border, width: recommended ? 1.6 : 1),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          Text(plan.price,
+              style: theme.textTheme.titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 2),
+          Text(plan.period,
+              style: theme.textTheme.labelSmall
+                  ?.copyWith(color: theme.hintColor)),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 30,
+            child: FilledButton(
+              onPressed: onTap,
+              style: FilledButton.styleFrom(
+                backgroundColor: plan.trial ? const Color(0xFFFF8A1E) : color,
+                padding: EdgeInsets.zero,
+                textStyle: theme.textTheme.labelMedium,
+              ),
+              child: Text(plan.trial ? '免费试用' : '购买'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 「会员 / 去广告」子页面正文（参照 iOS 会员页结构）：
+/// 头部致谢 + 当前状态 → 免费试用说明卡 → 超级 VIP / 普通 VIP 双档位。
+/// 价格为展示值（真实价格以应用商店为准，接入计费后由商店拉取）。
+class _MembershipPageBody extends StatefulWidget {
+  const _MembershipPageBody();
+
+  @override
+  State<_MembershipPageBody> createState() => _MembershipPageBodyState();
+}
+
+class _MembershipPageBodyState extends State<_MembershipPageBody> {
+  Membership? _m;
+  bool _failed = false;
+  StreamSubscription<Entitlement>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    // catchError：Membership.instance 万一失败时给出明确提示，
+    // 而不是永远停在加载条（OHOS shared_preferences 缺 handler 曾是根因）。
+    Membership.instance.then((m) {
+      if (!mounted) return;
+      setState(() => _m = m);
+      _sub = m.entitlement.changes.listen((_) {
+        if (mounted) setState(() {});
+      });
+    }).catchError((Object _) {
+      if (mounted) setState(() => _failed = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  void _toast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// 「免费试用」按钮：从未试用过则开启试用，否则视为购买该档位。
+  Future<void> _trialOrBuy(MembershipTier tier) async {
+    final m = _m;
+    if (m == null) return;
+    if (m.entitlement.current.trialStart == null) {
+      await m.entitlement.ensureTrialStarted();
+      _toast('已开启 ${EntitlementService.trialDays} 天免费试用');
+      return;
+    }
+    await _buy(tier);
+  }
+
+  Future<void> _buy(MembershipTier tier) async {
+    final m = _m;
+    if (m == null) return;
+    final ok = await m.billing.buy(tier);
+    _toast(ok ? '已开通（本地授予，真实计费待接入商店）' : '购买未完成');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final m = _m;
+    if (m == null) {
+      return Padding(
+        padding: const EdgeInsets.all(24),
+        child: _failed
+            ? Text('会员服务加载失败，请重启应用重试',
+                style: theme.textTheme.bodyMedium?.copyWith(
+                    color: theme.colorScheme.error))
+            : const LinearProgressIndicator(),
+      );
+    }
+    final e = m.entitlement;
+    final tier = e.current.effectiveTier;
+    final statusText = switch (tier) {
+      MembershipTier.free => '免费用户',
+      MembershipTier.trial =>
+        '试用中 · 剩余 ${e.trialRemainingDays} 天',
+      _ => '${tier.label}（已去广告）',
+    };
+
+    // 注意：不要用 crossAxisAlignment: stretch——OHOS fork 上 stretch Column
+    // 直接子项（Text/Row）在 ListView 无界高度下会零高布局、全部叠在原点
+    // （Container 包裹的子项正常）。ListView 本给满宽约束，去掉 stretch 等价。
+    return Column(
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.favorite, color: Color(0xFFE91E63), size: 24),
+            const SizedBox(width: 6),
+            Text('支持开发者',
+                style: theme.textTheme.titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w800)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Text('感谢您使用我们的应用！您的支持是我们持续改进的动力',
+            textAlign: TextAlign.center, style: theme.textTheme.bodySmall),
+        const SizedBox(height: 4),
+        Text('当前状态：$statusText',
+            textAlign: TextAlign.center,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.primary)),
+        const SizedBox(height: 14),
+
+        // ----- 免费试用说明卡 -----
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFFF8A1E), width: 1.2),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(children: [
+                Icon(Icons.card_giftcard, color: Color(0xFFFF8A1E), size: 20),
+                SizedBox(width: 6),
+                Text('免费试用 ${EntitlementService.trialDays} 天',
+                    style: TextStyle(fontWeight: FontWeight.w800)),
+              ]),
+              const SizedBox(height: 8),
+              Text('· 试用期内去除所有广告、解锁云存档权益',
+                  style: theme.textTheme.bodySmall),
+              Text('· 到期后自动回到免费版，不会自动扣费',
+                  style: theme.textTheme.bodySmall),
+              Text('· 每个账号仅可试用一次，随时可购买正式档位',
+                  style: theme.textTheme.bodySmall),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // ----- 超级 VIP（去所有广告 + 云存档）-----
+        _TierCard(
+          icon: Icons.diamond_outlined,
+          color: const Color(0xFFB45CF6),
+          title: '超级 VIP',
+          description: '去除所有广告，完全离线，享受纯净体验（含云存档权益）',
+          plans: const [
+            _Plan('¥15.00', '/月', '按月订阅'),
+            _Plan('¥22.00', '/年', '最划算'),
+            _Plan('¥38.00', '(永久)', '一次买断', trial: false),
+          ],
+          onPlanTap: (plan, i) => plan.trial
+              ? _trialOrBuy(i == 0
+                  ? MembershipTier.monthly
+                  : MembershipTier.yearly)
+              : _buy(MembershipTier.lifetime),
+        ),
+
+        // ----- 普通 VIP（去开屏/视频广告，保留横幅）-----
+        _TierCard(
+          icon: Icons.star_outlined,
+          color: const Color(0xFF2196F3),
+          title: '普通 VIP',
+          description: '去除开屏广告、视频广告，仅保留横幅广告，不影响游戏体验',
+          plans: const [
+            _Plan('¥8.00', '/月', '按月订阅'),
+            _Plan('¥15.00', '/年', '最划算'),
+            _Plan('¥18.00', '(永久)', '一次买断', trial: false),
+          ],
+          onPlanTap: (plan, i) => plan.trial
+              ? _trialOrBuy(i == 0
+                  ? MembershipTier.vipMonthly
+                  : MembershipTier.vipYearly)
+              : _buy(MembershipTier.vipLifetime),
+        ),
+
+        const Text(
+          '订阅的查看、取消与更改可在应用商店的订阅管理中进行；'
+          '价格与档位以后续接入的应用商店实际展示为准。',
+          style: TextStyle(fontSize: 12),
+        ),
+      ],
     );
   }
 }
@@ -997,6 +1375,26 @@ class _BiosSectionHeader extends StatelessWidget {
               style: theme.textTheme.labelMedium
                   ?.copyWith(color: color, fontWeight: FontWeight.w600)),
         ],
+      ),
+    );
+  }
+}
+
+/// 合并页内的分组标题（如「个性化设置」下区分 游戏体验 / 控制与手柄 等）。
+class _SectionTitle extends StatelessWidget {
+  const _SectionTitle(this.text);
+  final String text;
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 6),
+      child: Text(
+        text,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.primary,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }

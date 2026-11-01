@@ -66,7 +66,7 @@ class _MembershipCardState extends State<_MembershipCard> {
             ),
             const SizedBox(height: 12),
             Text(
-              '当前状态：${tier.label}${e.isAdFree ? '（已去广告）' : '（含广告）'}',
+              '当前状态：${tier.label}${e.isAdFree ? '（已去广告）' : (e.isVipActive ? '（免插屏广告）' : '（含广告）')}',
               style: theme.textTheme.titleMedium,
             ),
             const SizedBox(height: 4),

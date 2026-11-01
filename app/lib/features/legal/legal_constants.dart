@@ -25,4 +25,13 @@ class LegalConstants {
   /// 「分享应用」推荐文案（剪贴板分享——无 share 插件时的零依赖实现）。
   static const String shareMessage =
       '趣玩匣 RetroEmuPouch —— 手机上的复古游戏机，重拾时光里的欢喜！';
+
+  /// 客服邮箱（意见反馈 → 发送邮件；无 url_launcher，复制给用户去邮箱发送）。
+  static const String feedbackEmail = 'support@retroemupouch.example.com';
+
+  /// 官方 QQ 群号（意见反馈 → QQ群反馈；复制后加群）。
+  static const String qqGroup = '123456789';
+
+  /// 官方微信号 / 公众号（意见反馈 → 微信反馈；复制后添加）。
+  static const String wechatId = 'RetroEmuPouch';
 }

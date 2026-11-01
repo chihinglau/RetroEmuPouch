@@ -15,6 +15,7 @@ import '../../system_files.dart';
 import '../account/account_page.dart';
 import '../settings/settings_sheet.dart';
 import '../membership/membership.dart';
+import '../../pal/ad_pal.dart';
 import 'missing_bios_dialog.dart';
 
 enum _SortBy { title, releaseDate, size, recent }
@@ -93,7 +94,19 @@ class _LibraryPageState extends State<LibraryPage>
   }
 
   /// Banner ad widget (null when unsupported or the user is ad-free).
-  Widget? get _banner => _membership?.ad.bannerWidget();
+  ///
+  /// On OHOS the [NoOpAdPal] test-placement placeholder should always render so
+  /// the library layout can be validated — even before [Membership] finishes
+  /// loading or while the device is ad-free (e.g. in its trial window).
+  Widget? get _banner {
+    final m = _membership;
+    if (m != null) return m.ad.bannerWidget();
+    // Membership not yet resolved: fall back to the pal directly on OHOS so the
+    // test banner is visible without waiting for the singleton.
+    final pal = createAdPal();
+    if (pal is NoOpAdPal) return pal.bannerWidget();
+    return null;
+  }
 
   @override
   void initState() {

@@ -5,7 +5,7 @@ import 'entitlement_service.dart';
 
 /// Drives ad display, gated by [EntitlementService.isAdFree] and a per-day cap
 /// with a cooldown between shows. Safe when the underlying [AdPal] is the
-/// [NoOpAdPal] (nothing is shown).
+/// [NoOpAdPal] (a non-intrusive test-placement placeholder, no real ad).
 class AdService {
   AdService(this._pal, this._entitlement);
   final AdPal _pal;
@@ -21,10 +21,11 @@ class AdService {
   /// spam the user.
   static const cooldown = Duration(minutes: 1);
 
-  /// Show an interstitial only when the user is not ad-free, under the daily
-  /// cap, and past the cooldown since the last one. Returns true if shown.
+  /// Show an interstitial only when the user hasn't blocked interstitials
+  /// (普通VIP already removes them), under the daily cap, and past the cooldown
+  /// since the last one. Returns true if shown.
   Future<bool> maybeShowInterstitial() async {
-    if (_entitlement.isAdFree) return false;
+    if (_entitlement.blocksInterstitialAds) return false;
     final now = DateTime.now();
     final dayKey = '${now.year}-${now.month}-${now.day}';
     if (_dayKey != dayKey) {
@@ -44,8 +45,13 @@ class AdService {
   }
 
   /// Banner widget to embed, or null when unsupported / ad-free.
+  ///
+  /// The OHOS [NoOpAdPal] test-placement placeholder is shown **regardless** of
+  /// [EntitlementService.isAdFree] so the library layout can be validated on a
+  /// test device (e.g. one whose trial made it ad-free) before Huawei/Petals
+  /// ads are wired — once a real [AdPal] replaces [NoOpAdPal], the gate applies.
   Widget? bannerWidget() {
-    if (_entitlement.isAdFree) return null;
+    if (_entitlement.isAdFree && _pal is! NoOpAdPal) return null;
     return _pal.bannerWidget();
   }
 }

@@ -126,9 +126,12 @@
 - **Rewarded（可选）**：用于临时解锁某项增强（如额外云存档位），纯自愿。
 
 ### 4. 会员/权益模型
-- 免费用户：看广告。
-- 注册会员：**首次登录起 7 天试用 Premium（免广告）**。
-- 试用后：月付 / 年付 / **终身**（一次性，无到期）三档，均免广告，可叠加增值（更多同步位、更大存档备份、远程中继带宽等）。
+- 免费用户：看广告（插屏 + 底部横幅）。
+- 双档位设计（2026-11-01 落地，见 §9 映射与 §实施进度）：
+  - **超级 VIP**：去除**所有**广告（插屏/开屏/横幅）+ 解锁云存档等增值权益；月付 / 年付 / **终身**三档。
+  - **普通 VIP**：仅去除插屏/开屏广告、**保留底部横幅**（横幅按 `isAdFree` 单独门控），适合不愿被插屏打断、但可接受轻量横幅的用户；月付 / 年付 / 终身三档。
+- 档位由 `MembershipTier` 枚举表达：`free / trial / monthly / yearly / lifetime`（超级 VIP 组）与 `vipMonthly / vipYearly / vipLifetime`（普通 VIP 组）。广告门控分层：`isAdFree`（超级 VIP/试用/终身，完全去广告）、`isVipActive`（普通 VIP 生效中，仅去插屏）、`blocksInterstitialAds`（前两者并集，插屏门控）、`bannerWidget()` 横幅单独按 `isAdFree` 显示（普通 VIP 仍可看到横幅）。
+- 试用：会员页点「免费试用」开启 **7 天试用**（窗内等同超级 VIP 免广告），每账号仅一次（见 §6）；已试用后按钮转「购买」。
 
 ### 5. 计费与收据校验（分平台）
 - Android → **Play Billing**；OHOS → **华为 IAP**。统一包成 `BillingPal`。
@@ -144,6 +147,7 @@
 ### 7. entitlement 校验与容错
 - `EntitlementService` 持有 `tier / expiry / isLifetime`；**启动时 + App 回到前台时**刷新；
 - 校验失败/离线时**默认回退到"显示广告"**，但**绝不锁死 App**（避免误伤付费用户也避免把免费用户卡住）。
+- **OHOS 持久化兜底（2026-11-01 落地）**：`EntitlementService.create()` 原先裸调 `SharedPreferences.getInstance()`；OHOS 无 shared_preferences 原生 handler，会抛 `MissingPluginException`，导致 `Membership.instance` reject——会员页卡进度条、且 `_membership` 永远为 null（连带库页横幅不显示）。现采用与 `AppSettings` 一致的「shared_preferences → `PlatformPal` 文件存储」两级梯子：`PlatformPal` 新增 `loadKeyValueStore(name)/saveKeyValueStore(name)` 接缝，`OhosPal` 实现为 `<filesDir>/<name>`（如 `entitlement.json`）JSON 文件；`main()` 经 `EntitlementService.setFallbackStore(...)` 接线；`EntitlementService` 内部走「内存 KV → prefs → 文件兜底」统一 `_set()` 写入，读取失败时回退文件存储。Android 因 shared_preferences 可用、走原路径，无副作用。
 
 ### 8. 隐私与商店合规（必做）
 - 两个商店都要求**隐私政策 + 广告 SDK 同意**；未成年人用**非个性化广告**或拿同意。
@@ -151,9 +155,11 @@
 - 模拟器 + 广告属敏感组合，建议默认非个性化，并显著提供退出个性化选项。
 
 ### 9. 与现有结构映射
-- `lib/pal/` 下新增 `ad_pal.dart`(`AdPal` 接口) + `billing_pal.dart`(`BillingPal` 接口)，实现挂在 `OhosPal`/`AndroidPal` 同体系。
-- 新增 `lib/features/membership/`：`entitlement_service.dart`、`ad_service.dart`、`billing_service.dart`。
-- `AccountPage` 增加"会员/试用状态/购买"区块；退出游戏的 `exitToLibrary` 流程里接入"到库页时按频控弹 Interstitial"。
+- `lib/pal/`：`ad_pal.dart`(`AdPal` 接口 + `NoOpAdPal` 测试占位横幅 `_OhosTestBannerWidget` + `GoogleMobileAdsAdPal`)、`billing_pal.dart`(`BillingPal` 接口)、`platform_pal.dart` 新增 `loadKeyValueStore/saveKeyValueStore`(OHOS 文件兜底接缝，见 §7)。
+- `lib/features/membership/`：`entitlement_service.dart`(双档位 `MembershipTier` + `isVipActive`/`blocksInterstitialAds` + OHOS 文件兜底梯子)、`ad_service.dart`(横幅按 `isAdFree` 单独门控、插屏按 `blocksInterstitialAds`)、`billing_service.dart`(vip* SKU + 本地兜底过期时间)、`membership.dart`(`Membership` 单例)。
+- **设置：合并页「个性化设置」**（`settings_sheet.dart`）：把原「游戏体验 / 控制与手柄 / BIOS 管理 / 通用」四个子页面合并进同一个 `_page`，用 `_SectionTitle` 分区标题区分，主菜单只留一个入口，更简洁。会员页 (`_MembershipPageBody`，双档位定价卡 `_TierCard`/`_PlanTile`) 与反馈页 (`_FeedbackPageBody`，应用商店/邮件/QQ群/微信多渠道) 同为设置子页。
+- **开屏广告测试页**（`features/ads/splash_ad_screen.dart`）：约 5 秒倒计时 + 跳过；`shouldShowSplashTestAd()` 仅 OHOS(`NoOpAdPal`) 显示，真实华为/Petals 广告接入后由 `OhosAdPal` 取代、该函数返回 false 直接进库页。`main.dart` 的 `home` 按平台切换。
+- `AccountPage` 的 `MembershipSection` 状态文案识别普通 VIP；退出游戏的 `exitToLibrary` 流程里接入"到库页时按频控弹 Interstitial"。
 
 ### 模块二 跟踪表
 
@@ -162,7 +168,7 @@
 | 1 总体架构 | 上述拓扑 | 已采纳-进行中（骨架） | |
 | 2 AdPal 分平台 | Android AdMob / OHOS 华为广告 | 进行中（Android AdMob 测试ID已接 + **Android APK 已构建验证**；OHOS 待 HMS 签名+广告位ID） | **OHOS 不可用 AdMob**，走华为/Petals Ads（原生通道，待接入） |
 | 3 广告位与频控 | Banner/Interstitial/Rewarded + 频控 | 进行中（Interstitial+退出游戏断点已接；Banner 已接；频控=每日≤3+冷却1min；Rewarded 未做） | 不在模拟运行中插广告 |
-| 4 会员模型 | 免费/7天试用/月/年/终身 | 已完成（骨架：`Entitlement`+`EntitlementService` 本地持久化、7天试用 `ensureTrialStarted`、`isAdFree`/`effectiveTier` 判定、新增 `cloudSaveEnabled` 云存档权益） | 真实权益由后端下发（Phase 3） |
+| 4 会员模型 | 免费/7天试用/月/年/终身 + 普通VIP双档 | 已完成（双档位 `MembershipTier`：超级VIP全去广告+云存档 / 普通VIP去插屏留横幅；OHOS 持久化文件兜底已接，见 §7） | 真实权益由后端下发（Phase 3） |
 | 5 BillingPal 分平台 | Play Billing / 华为 IAP | 进行中（接口 `BillingPal`+`BillingService`+SKU 映射+本地授予已接；`createBillingPal()` 已标注 Android/OHOS 真实实现接入点） | **真实 Play Billing/华为 IAP 待商店配置 + 凭证（Phase 3）** |
 | 6 收据服务端校验 | 防作弊 | 已接（骨架：`ReceiptVerifier` 接口 + `NoOpReceiptVerifier` seam，`BillingService` 先校验后授予、无后端时本地兜底） | 真实后端校验端点待 Phase 3 |
 | 7 试用/过期/终身逻辑 | trialStart 权威 | 已完成（`Entitlement.isAdFree`：终身/有效订阅/7天试用窗内均免广告；过窗降级 free；终身无到期） | |
@@ -186,7 +192,7 @@
 
 ---
 
-## 实施进度（截至 2026-10-31）
+## 实施进度（截至 2026-11-01）
 
 已按方案落地**共享骨架**（全部以 `NoOp` 安全默认实现，应用仍可编译/运行，不依赖原生广告/计费 SDK 与后端）：
 
@@ -203,7 +209,8 @@
 - **导出游戏资源包：OOM 闪退 + 中文乱码修复（2026-10-31）**：根因为 `archive` 3.6.1 的 `ZipEncoder.addFile` 会把整份 ROM `bytes.toUint8List()` + `Deflate().getBytes()` **全量读入内存**，大 ROM 直接 OOM 被系统杀进程（闪退）；原代码注释误称"流式"并不成立。改为自研真正流式 ZIP 写出（`_streamZip`，位于 `data/package/game_package.dart`）：分块读源文件、增量算 CRC32、`ZLibCodec(raw:true)` 分块原始 deflate 直接落盘，峰值内存≈一个 chunk（~64KB），与 ROM 大小无关；ZIP 条目名/内容均 UTF-8 且置 UTF-8 标志位，避免中文乱码（同类 Latin-1-over-UTF-8 在导入侧用 `repairJsonMojibake` 兜底）。新增 `test/features/library/game_package_test.dart`（2MB 中文名 ROM+存档 导出→导入 往返，断言无乱码、可解包、字节一致）绿；`flutter analyze` 无新增 issue，原 8/8 单测仍绿。端到端实测：服务端同步逻辑 + Dart 客户端解析/就绪判定均绿，App 真机启动正常；应用内「我的PC」同步按钮需在手机「发现伙伴」与该 PC 配对后手动点按（hdc 无法可靠点 Flutter，步骤见下）。
 
 - **Phase 1 收尾：LAN mDNS 发现（2026-11-01）**：在 `tools/library/peer_host.py` 的 `PeerHost` 新增 mDNS 广播（`_retroemupouch._tcp.local`，zeroconf，缺依赖自动降级为仅 UDP），并加 `run_peer_server.py --no-mdns` 开关；App 侧新建 `lib/pal/pairing_pal.dart`（`PairingPal` 接口 + `MdnsPairingPal` 纯 Dart 实现 + `NoOpPairingPal`），在 `PeersController.refresh()` 合并 mDNS 发现的 PC（与现有 UDP 广播并存，互为兜底）；新增依赖 `multicast_dns`。设备端 E2E 需在手机「发现伙伴」连同一 Wi-Fi 的真机验证（当前设备离线，未跑）。
-- **Phase 2 广告接入：Android AdMob（2026-11-01）**：`lib/pal/ad_pal.dart` 新增 `GoogleMobileAdsAdPal`（`google_mobile_ads`，默认 **Google 测试广告位 ID**，真实 ID 待发布时替换），`createAdPal()` 按 `Platform.operatingSystem` 在 Android 走 AdMob、OHOS 走 `NoOpAdPal`（华为/Petals Ads 待 HMS 签名+广告位 ID）；`AdService` 频控升级为「每日≤3 + 冷却 1min + 跨会话按日重置」。`LibraryPage` 接入**安全断点**：退出游戏回库页（`didChangeAppLifecycleState.resumed`）经 `AdService.maybeShowInterstitial()` 弹插屏（绝不在模拟运行中插广告），并在库页底部挂载 `bannerWidget()` 横幅。新增依赖 `google_mobile_ads`；AndroidManifest 加 AdMob APP_ID（测试 ID）。OHOS 因 NoOp 对该平台完全无副作用；真机 E2E（Android 调试 + OHOS 华为广告）待凭证与设备。
+- **Phase 2 广告接入：Android AdMob（2026-11-01）**：`lib/pal/ad_pal.dart` 新增 `GoogleMobileAdsAdPal`（`google_mobile_ads`，默认 **Google 测试广告位 ID**，真实 ID 待发布时替换），`createAdPal()` 按 `Platform.operatingSystem` 在 Android 走 AdMob、OHOS 走 `NoOpAdPal`（华为/Petals Ads 待 HMS 签名+广告位 ID）；`AdService` 频控升级为「每日≤3 + 冷却 1min + 跨会话按日重置」。`LibraryPage` 接入**安全断点**：退出游戏回库页（`didChangeAppLifecycleState.resumed`）经 `AdService.maybeShowInterstitial()` 弹插屏（绝不在模拟运行中插广告），并在库页底部挂载 `bannerWidget()` 横幅。新增依赖 `google_mobile_ads`；AndroidManifest 加 AdMob APP_ID（测试 ID）。OHOS 因 `NoOpAdPal` 对该平台完全无副作用（插屏 no-op）；真机 E2E（Android 调试 + OHOS 华为广告）待凭证与设备。
+  - **OHOS 测试广告位占位（2026-11-01）**：为在鸿蒙端验证库页广告位布局/占位，给 `NoOpAdPal.bannerWidget()` 返回一个**模拟横幅** `_OhosTestBannerWidget`（~50px 彩色条 + "测试广告位（OHOS 占位，未接华为 / Petals 广告）" + "广告"角标）。**非真实广告、零依赖**，仅用于布局走查；华为/Petals 广告接入后由真实 `OhosAdPal` 取代。`AdPal.bannerWidget()` 返回类型由 `Widget?` 改为 `Widget`（两实现均非空），`library_page` 的 `if (_banner != null)` 仍成立。Android 走 AdMob 真实测试广告不受影响。
 - **Phase 2 验证：Android APK 构建打通（2026-11-01）**：此前卡在 Gradle 配置阶段，根因有二——(1) `gradle.properties` 设 `android.builtInKotlin=false`（AGP 9.x 不再内置 Kotlin），但 `app/android/app/build.gradle.kts` 的 `plugins{}` 漏 apply `org.jetbrains.kotlin.android`，导致 `kotlin { compilerOptions { jvmTarget } }` 解析失败（`Unresolved reference: compilerOptions/jvmTarget`）；补上后通过。(2) `google_mobile_ads 5.3.1` 的 `android/build.gradle` 用了 `configurations.all` 属性访问（Gradle 9.x 已移除该 API，报 `Could not get unknown property 'all'`）；升级到 `^9.2.0`（Flutter 3.41.10 满足其 SDK 约束，`flutter analyze` 0 error、Dart 侧 API 无破坏）后插件脚本兼容 Gradle 9。`flutter build apk --debug --flavor store` 现已成功产出 `app-store-debug.apk`（约 250MB，含全部原生内核），并 `adb install` 到已连接 Android 设备（OXF AN10，Android 12 arm64）成功。构建链路打通，后续改动可用该命令做 Android 侧回归。
 
 - **Phase 3 会员/计费客户端骨架（2026-11-01）**：无需外部凭证即可落地的纯客户端骨架已补齐并接线。既有骨架（`EntitlementService`/`BillingService`/`AdService`/`Membership` 单例/`MembershipSection` 已嵌入 `AccountPage`）经核验已完整接线。`Entitlement` 新增 `cloudSaveEnabled`（付费档解锁云存档权益，免费/试用仅本地 LAN 同步）；新增 `ReceiptVerifier` 接口 + `NoOpReceiptVerifier`（后端收据校验接入点 seam），`BillingService` 改「先 `BillingPal` 购买 → 再 `ReceiptVerifier` 校验 → 授予 entitlement」，无后端时本地兜底（标 TODO(server)）；`createBillingPal()` 标注 Android `PlayBillingPal` / OHOS `HuaweiIapPal` 真实实现接入点；`MembershipSection` 展示云存档权益状态。新增单测 `test/features/membership/entitlement_test.dart`（10/10 绿，覆盖 isAdFree/cloudSaveEnabled/effectiveTier/试用窗）；`flutter analyze` 0 error，无新增依赖。
@@ -213,6 +220,11 @@
   - **直执行项（4 个）**：分享应用（复制推荐文案到剪贴板，零依赖）、给个好评（`PlatformPal.openStore()`，异常兜底复制反馈链接）、意见反馈（复制 `LegalConstants.feedbackUrl`）、还原设置（确认对话框 → `AppSettings().toMap()` 应用回 `current` 并保存，**不触碰存档/BIOS/lastSaveSlot**，深色主题变更实时生效）。
   - **实现要点**：推送出去的子页面不在 Sheet 的 element 树内，`setState` 刷不到——新增 `_SettingsNotifier`（封装 protected `notifyListeners`），`_patch` 后 `ping()`，子页面正文用 `ListenableBuilder` 包裹实时重建。主菜单头部保留紧凑版（应用名 + 版本号 chip），完整应用信息卡移入「关于与支持」。参照图中的「存档管理」「iCloud 同步」**按用户要求不纳入**（App 已有独立的存档同步体系：「我的 PC」LAN 同步）；「管理订阅」「客服中心」分别并入会员页与关于页（避免空壳页面）。`LegalConstants` 新增 `feedbackUrl`（GitHub Issues）与 `shareMessage`（发布时可一处替换为邮箱/商店链接）。
   - 验证：`flutter analyze` 0 error（回到既有 14 个 issue，无新增）；`flutter test` 19/19 绿。真机 UI 走查待装包验证。
+
+- **会员双档位模型 + 会员页/反馈页重做（2026-11-01）**：`MembershipTier` 新增普通 VIP 组（`vipMonthly/vipYearly/vipLifetime`），`Entitlement` 新增 `isVipActive`（普通 VIP 生效中、仅去插屏）与 `blocksInterstitialAds`（超级/试用/普通VIP 并集，插屏门控），横幅仍按 `isAdFree` 单独显示（普通 VIP 看得到横幅）；`BillingService` 补 vip* SKU 与本地兜底过期时间/买断标记；`AdService` 插屏门控改用 `blocksInterstitialAds`，横幅 `bannerWidget()` 仅真实 `AdPal` 遵守 `isAdFree`、`NoOpAdPal` 占位条始终显示以便布局走查。`settings_sheet.dart` 会员页 `_MembershipPageBody` 重做为「支持开发者 + 当前状态 + 免费试用 7 天说明卡 + 超级 VIP / 普通 VIP 双档位定价卡（`_TierCard`/`_PlanTile`，价格展示值）」；反馈页 `_FeedbackPageBody` 改为多渠道（应用商店 `openStore()` / 邮件 / QQ群 / 微信，均剪贴板零依赖），新增 `LegalConstants.feedbackEmail/qqGroup/wechatId`（发布时替换）。账号页 `MembershipSection` 状态文案识别普通 VIP。
+- **OHOS entitlement 持久化兜底 + 会员页 RenderFlex 修复（2026-11-01）**：见 §7——`EntitlementService.create()` 原裸调 `SharedPreferences` 在 OHOS 抛 `MissingPluginException`，使 `Membership.instance` reject（会员页卡进度条 + 库页横幅消失）；改为「内存 KV → prefs → `PlatformPal` 文件存储」两级梯子（`platform_pal` 新增 `loadKeyValueStore/saveKeyValueStore`，`OhosPal` 落到 `entitlement.json`，`main()` 接线）。另修复会员页 `_TierCard` 价格行 `Row(crossAxisAlignment: stretch)` 在 ListView 无界高度下触发 RenderFlex 断言导致整页布局错乱（头部重叠、档位卡消失），改为 `crossAxisAlignment.center`。Pura70 真机截图验证：会员页完整渲染双档位定价卡。
+- **开屏广告测试页（2026-11-01）**：新增 `features/ads/splash_ad_screen.dart`（`SplashAdScreen`：约 5 秒倒计时环 + 右上角「跳过 N」+ 底部「广告」角标，`shouldShowSplashTestAd()` 仅 OHOS(`NoOpAdPal`) 显示），`main.dart` 的 `home` 按平台切换（冷启动只 build 一次、后台返回不重进，符合开屏只启动出现）。真实华为/Petals 广告接入后由 `OhosAdPal` 取代、该函数返回 false 直接进库页。
+- **设置页合并「个性化设置」（2026-11-01）**：把主菜单原「游戏体验 / 控制与手柄 / BIOS 管理 / 通用」四个子页面合并为单一「个性化设置」入口，页内用 `_SectionTitle` 分区标题串起四组内容（游戏体验开关 / 摇杆+布局+招式 / BIOS / 通用开关），主菜单更简洁；招式编辑页经 host navigator 跳转逻辑保持不变。
 
 **待办（下一阶段）**：OHOS 华为/Petals 广告原生通道、Play Billing / 华为 IAP（商店配置+凭证）、后端账号与收据校验（会员/计费客户端骨架已完成，真实计费与后端校验待 Phase 3 凭证）。
 
@@ -225,6 +237,11 @@
 | 2026-11-01 | 实施者 | Phase 2 广告接入：Android AdMob | `google_mobile_ads` + Google 测试广告位 ID 接 Android 插屏/横幅；`createAdPal()` 按平台分流，OHOS 暂 NoOp（华为广告待 HMS）；退出游戏断点 + 频控（每日≤3+冷却1min） |
 | 2026-11-01 | 实施者 | Bug 修复：OHOS 金手指无法启用 | `gpretro.cpp` `GetCheats` 原读 `g_filesDir(=appRoot/roms)/library/cheats.json`（路径错，应为 `g_appDir(=appRoot)/library/`），且只读 `cheats.json` 不读 `cloud_cheats.json`；PC 下载的金手指落在 `cloud_cheats.json` 故永远「本游戏暂无金手指」。改为用 `g_appDir` 并合并 `cloud_cheats.json` 兜底（Android `CheatStore.load` 同语义）。Switch/Choice 两类均经此路径修复。 |
 | 2026-11-01 | 实施者 | Phase 2 验证：Android APK 构建打通 | 卡点二修复：`build.gradle.kts` 漏 apply `org.jetbrains.kotlin.android`（配 `android.builtInKotlin=false` 必现 DSL 解析失败）；`google_mobile_ads` 5.3.1→9.2.0（Gradle 9 移除 `configurations.all` 属性访问致插件脚本报错）。`flutter build apk --debug --flavor store` 产出 `app-store-debug.apk`（~250MB）并 `adb install` 到 OXF AN10 成功。 |
+
+| 2026-11-01 | 实施者 | 会员双档位模型 | 超级VIP（全去广告+云存档）/ 普通VIP（去插屏留横幅）双档；广告门控分层 `isAdFree`/`isVipActive`/`blocksInterstitialAds`，横幅按 `isAdFree` 单独显示；`MembershipTier` 扩 vip* 三档，`BillingService` 补 vip* SKU。 |
+| 2026-11-01 | 实施者 | OHOS entitlement 持久化兜底 | `EntitlementService` 原裸调 `SharedPreferences` 在 OHOS 无原生 handler 抛 `MissingPluginException`，使 `Membership.instance` reject（会员页卡进度条+库页横幅消失）；改用与 `AppSettings` 一致的「shared_preferences → `PlatformPal` 文件存储」两级梯子（`entitlement.json`）。 |
+| 2026-11-01 | 实施者 | 设置页合并「个性化设置」 | 主菜单原「游戏体验/控制与手柄/BIOS 管理/通用」四入口合并为单一「个性化设置」，页内 `_SectionTitle` 分区；反馈页改为多渠道（应用商店/邮件/QQ群/微信）。 |
+| 2026-11-01 | 实施者 | 开屏广告测试页 | 新增 `SplashAdScreen`（~5s 倒计时+跳过，`shouldShowSplashTestAd()` 仅 OHOS 显示），`main.dart` 的 `home` 按平台切换；真实华为/Petals 广告接入后由 `OhosAdPal` 取代。 |
 
 ---
 

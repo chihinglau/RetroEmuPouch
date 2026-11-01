@@ -384,13 +384,34 @@ class OhosPal implements PlatformPal {
   }
 
   @override
-  Future<void> saveAppSettings(Map<String, Object> data) async {
+  Future<void> saveAppSettings(Map<String, Object> data) async =>
+      saveKeyValueStore('app_prefs.json', data);
+
+  // ---- generic KV file store (shared_preferences has no OHOS handler) ----
+  // Same sandbox + pattern as app_prefs.json above: JSON map under filesDir,
+  // best-effort (missing/corrupt file → caller falls back to defaults).
+  @override
+  Future<Map<String, Object>?> loadKeyValueStore(String name) async {
     try {
       final dir = await filesDir();
-      final f = File('$dir/app_prefs.json');
+      final f = File('$dir/$name');
+      if (!f.existsSync()) return null;
+      final j = jsonDecode(await f.readAsString());
+      if (j is Map) return j.cast<String, Object>();
+    } catch (_) {
+      // Missing/corrupt file: caller falls back to defaults.
+    }
+    return null;
+  }
+
+  @override
+  Future<void> saveKeyValueStore(String name, Map<String, Object> data) async {
+    try {
+      final dir = await filesDir();
+      final f = File('$dir/$name');
       await f.writeAsString(jsonEncode(data), flush: true);
     } catch (_) {
-      // Best-effort; settings stay in memory this session.
+      // Best-effort; state stays in memory this session.
     }
   }
 }

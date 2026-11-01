@@ -43,12 +43,15 @@ class BillingService {
     final expireAt = switch (tier) {
       MembershipTier.monthly => DateTime.now().add(const Duration(days: 30)),
       MembershipTier.yearly => DateTime.now().add(const Duration(days: 365)),
+      MembershipTier.vipMonthly => DateTime.now().add(const Duration(days: 30)),
+      MembershipTier.vipYearly => DateTime.now().add(const Duration(days: 365)),
       _ => null,
     };
     await _entitlement.grant(
       tier: tier,
       expireAt: expireAt,
-      lifetime: tier == MembershipTier.lifetime,
+      lifetime: tier == MembershipTier.lifetime ||
+          tier == MembershipTier.vipLifetime,
     );
     return true;
   }
@@ -75,6 +78,12 @@ class BillingService {
         return 'premium_yearly';
       case MembershipTier.lifetime:
         return 'premium_lifetime';
+      case MembershipTier.vipMonthly:
+        return 'vip_monthly';
+      case MembershipTier.vipYearly:
+        return 'vip_yearly';
+      case MembershipTier.vipLifetime:
+        return 'vip_lifetime';
       default:
         return '';
     }

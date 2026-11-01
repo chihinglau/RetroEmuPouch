@@ -272,6 +272,15 @@ abstract interface class PlatformPal {
   /// Persists the [AppSettings] snapshot (see [loadAppSettings]). Default: no-op.
   Future<void> saveAppSettings(Map<String, Object> data) async {}
 
+  /// Generic named key-value file store — the shared fallback ladder for any
+  /// feature that would otherwise hit `shared_preferences` directly
+  /// (e.g. [EntitlementService]). Returns null when nothing persisted yet.
+  /// Default: null — platforms with working shared_preferences never call this.
+  Future<Map<String, Object>?> loadKeyValueStore(String name) async => null;
+
+  /// Persists the named key-value store (see [loadKeyValueStore]). Default: no-op.
+  Future<void> saveKeyValueStore(String name, Map<String, Object> data) async {}
+
   /// [netplay] carries the lockstep session extras when launching a netplay
   /// game (role/peerIp/ports/sessionKey/roomId/bootstrapPort/...); null on
   /// the ordinary single-player path, which must stay byte-identical.
@@ -519,4 +528,12 @@ class AndroidPal implements PlatformPal {
 
   @override
   Future<void> saveAppSettings(Map<String, Object> data) async {}
+
+  // Same: Android has a working shared_preferences, never needs the KV file
+  // fallback.
+  @override
+  Future<Map<String, Object>?> loadKeyValueStore(String name) async => null;
+
+  @override
+  Future<void> saveKeyValueStore(String name, Map<String, Object> data) async {}
 }
