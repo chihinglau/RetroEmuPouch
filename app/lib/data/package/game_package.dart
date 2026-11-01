@@ -1,7 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
+import 'package:retroemupouch/data/peer/peer_files.dart';
 import 'package:path/path.dart' as p;
 
 import '../../domain/rom_entry.dart';
@@ -164,32 +166,25 @@ class GamePackage {
     String appVersion = _appVersion,
     BuildProgress? onProgress,
   }) async {
-    final archive = Archive();
+    final out = File(outputZip);
+    await out.parent.create(recursive: true);
+    final zipEntries = <_ZipEntry>[];
     final games = <PackageGame>[];
     final cheatMap = <String, dynamic>{};
     final lib = RomLibrary(filesDir);
-    // File handles opened over ROM / save / cover bytes; closed in the finally
-    // block. Streaming keeps a 100+ MB ROM from being buffered in memory all at
-    // once — this fixes the out-of-memory crash on package export.
-    final streams = <InputFileStream>[];
 
     try {
       var i = 0;
       for (final e in entries) {
         final romFile = File('$filesDir/${e.relativePath}');
         if (!romFile.existsSync()) continue; // skip missing ROMs
-        final romIn = InputFileStream(romFile.path);
-        streams.add(romIn);
-        archive.addFile(
-            ArchiveFile.stream(e.relativePath, romFile.lengthSync(), romIn));
+        zipEntries.add(_ZipEntry(name: e.relativePath, file: romFile.path));
 
         final savePaths = <String>[];
         if (options.includeSaves) {
           for (final s in _collectSaves(e)) {
             final rel = 'saves/${p.basename(s.path)}';
-            final saveIn = InputFileStream(s.path);
-            streams.add(saveIn);
-            archive.addFile(ArchiveFile.stream(rel, s.lengthSync(), saveIn));
+            zipEntries.add(_ZipEntry(name: rel, file: s.path));
             savePaths.add(rel);
           }
         }
@@ -199,10 +194,7 @@ class GamePackage {
           final cf = File('$filesDir/${e.coverRelative}');
           if (cf.existsSync()) {
             coverPath = e.coverRelative;
-            final coverIn = InputFileStream(cf.path);
-            streams.add(coverIn);
-            archive.addFile(
-                ArchiveFile.stream(coverPath!, cf.lengthSync(), coverIn));
+            zipEntries.add(_ZipEntry(name: coverPath!, file: cf.path));
           }
         }
 
@@ -233,12 +225,12 @@ class GamePackage {
       }
 
       if (options.includeCheats && cheatMap.isNotEmpty) {
-        archive.addFile(_stringFile(
+        zipEntries.add(_ZipEntry.bytes(
             'cheats.json',
-            const JsonEncoder.withIndent('  ').convert({
+            utf8.encode(const JsonEncoder.withIndent('  ').convert({
               'version': 1,
               'byCrc': cheatMap,
-            })));
+            }))));
       }
 
       // Bundle the selected BIOS blobs (already installed under
@@ -255,51 +247,31 @@ class GamePackage {
           final src = File(srcPath);
           if (!src.existsSync()) continue;
           final rel = 'system/$name';
-          final biosIn = InputFileStream(src.path);
-          streams.add(biosIn);
-          archive.addFile(ArchiveFile.stream(rel, src.lengthSync(), biosIn));
+          zipEntries.add(_ZipEntry(name: rel, file: src.path));
           biosPaths.add(rel);
         }
         onProgress?.call(i, entries.length + biosPaths.length, '正在打包：系统文件');
       }
 
-      archive.addFile(_stringFile(
+      zipEntries.add(_ZipEntry.bytes(
           'manifest.json',
-          const JsonEncoder.withIndent('  ').convert(GamePackageManifest(
+          utf8.encode(const JsonEncoder.withIndent('  ').convert(GamePackageManifest(
             games: games,
             appVersion: appVersion,
             createdAt: DateTime.now().toIso8601String(),
             bios: biosPaths,
-          ).toJson())));
+          ).toJson()))));
 
-      // Stream the ZIP straight to disk instead of ZipEncoder().encode (which
-      // buffers the whole archive in memory). Combined with the streamed file
-      // inputs above, multi-ROM / large-ROM exports no longer OOM the device.
-      final out = File(outputZip);
-      await out.parent.create(recursive: true);
-      final outStream = OutputFileStream(outputZip);
-      try {
-        final encoder = ZipEncoder();
-        encoder.startEncode(outStream, level: 6);
-        final total = archive.files.length;
-        var idx = 0;
-        for (final f in archive.files) {
-          encoder.addFile(f);
-          idx++;
-          onProgress?.call(idx, total, '正在写入压缩包：${f.name}');
-          await Future.delayed(Duration.zero); // yield so the UI can repaint
-        }
-        encoder.endEncode();
-      } finally {
-        outStream.close();
-      }
+      // Stream the ZIP to disk in one pass: each source is read in chunks and
+      // raw-deflated in chunks, so peak memory is ~one chunk regardless of ROM
+      // size. This replaces archive's ZipEncoder, which buffered the whole file
+      // in RAM (`bytes.toUint8List()` + `Deflate().getBytes()`) and crashed
+      // (OOM) when exporting large game resource packages.
+      await _streamZip(out, zipEntries, onProgress: onProgress);
       return out;
     } finally {
-      for (final s in streams) {
-        try {
-          s.close();
-        } catch (_) {/* best effort */}
-      }
+      // Per-entry files are opened with openRead(); the stream closes itself
+      // once the deflate pipeline finishes consuming it.
     }
   }
 
@@ -330,9 +302,9 @@ class GamePackage {
     GamePackageManifest? manifest;
     if (manifestEntry != null) {
       try {
-        manifest = GamePackageManifest.fromJson(
-            jsonDecode(utf8.decode(manifestEntry.content as List<int>,
-                allowMalformed: true)) as Map<String, dynamic>);
+        manifest = GamePackageManifest.fromJson(repairJsonMojibake(jsonDecode(
+            utf8.decode(manifestEntry.content as List<int>,
+                allowMalformed: true))) as Map<String, dynamic>);
       } catch (_) {
         manifest = null;
       }
@@ -376,8 +348,9 @@ class GamePackage {
       final cheatsEntry = archive.findFile('cheats.json');
       if (cheatsEntry != null) {
         try {
-          final j = jsonDecode(utf8.decode(cheatsEntry.content as List<int>,
-              allowMalformed: true)) as Map<String, dynamic>;
+          final j = repairJsonMojibake(jsonDecode(utf8.decode(
+              cheatsEntry.content as List<int>,
+              allowMalformed: true))) as Map<String, dynamic>;
           final byCrc = j['byCrc'];
           if (byCrc is Map) {
             await RomLibrary(filesDir)
@@ -440,14 +413,6 @@ class GamePackage {
 
   // --- helpers ---
 
-  static ArchiveFile _bytesFile(String name, List<int> bytes) =>
-      ArchiveFile(name, bytes.length, bytes);
-
-  static ArchiveFile _stringFile(String name, String s) {
-    final bytes = utf8.encode(s);
-    return ArchiveFile(name, bytes.length, bytes);
-  }
-
   List<File> _collectSaves(RomEntry e) {
     final dir = Directory('$filesDir/saves');
     if (!dir.existsSync()) return const [];
@@ -494,6 +459,174 @@ class GamePackage {
 
   /// Fallback manifest version when the caller does not supply one.
   static const String _appVersion = '1.8.4';
+}
+
+// --- streaming ZIP writer -------------------------------------------------
+// Replaces archive's ZipEncoder, which materialised the *entire* input file in
+// RAM (`bytes.toUint8List()` + `Deflate().getBytes()`) and OOM-killed the app
+// on large ROMs. Here each source is read in chunks, the CRC32 is updated
+// incrementally, and raw-deflate output is written to disk in chunks — peak
+// memory is one chunk (~64 KB) no matter the ROM size. Names/content are UTF-8
+// with the language-encoding flag set, so Chinese never mojibakes.
+
+class _ZipEntry {
+  _ZipEntry({required this.name, this.file, this.bytes})
+      : assert((file == null) != (bytes == null));
+  final String name;
+  final String? file; // path on disk, streamed via openRead()
+  final List<int>? bytes; // in-memory content (manifest / cheats)
+  Stream<List<int>> get stream =>
+      file != null ? File(file!).openRead() : Stream<List<int>>.value(bytes!);
+  factory _ZipEntry.bytes(String name, List<int> bytes) =>
+      _ZipEntry(name: name, bytes: bytes);
+}
+
+class _Crc32 {
+  int _crc = 0xFFFFFFFF;
+  void add(List<int> data) {
+    for (final b in data) {
+      _crc ^= (b & 0xff);
+      for (var k = 0; k < 8; k++) {
+        _crc = (_crc & 1) != 0 ? (_crc >> 1) ^ 0xEDB88320 : _crc >> 1;
+      }
+      _crc &= 0xFFFFFFFF;
+    }
+  }
+
+  int get value => (_crc ^ 0xFFFFFFFF) & 0xFFFFFFFF;
+}
+
+class _CountingSink implements Sink<List<int>> {
+  _CountingSink(this._io, this._onBytes);
+  final IOSink _io;
+  final void Function(int) _onBytes;
+  @override
+  void add(List<int> data) {
+    _io.add(data);
+    _onBytes(data.length);
+  }
+
+  @override
+  void close() {}
+}
+
+class _CentralRecord {
+  _CentralRecord(this.nameBytes, this.crc, this.comp, this.uncomp, this.localOffset);
+  final List<int> nameBytes;
+  final int crc;
+  final int comp;
+  final int uncomp;
+  final int localOffset;
+}
+
+List<int> _u16(int v) => [(v & 0xff), (v >> 8) & 0xff];
+List<int> _u32(int v) => [
+      (v & 0xff),
+      (v >> 8) & 0xff,
+      (v >> 16) & 0xff,
+      (v >> 24) & 0xff,
+    ];
+
+/// Writes [entries] to [out] as a ZIP in a single sequential pass. Local file
+/// headers use the data-descriptor flag (bit 3) so CRC/sizes can be written
+/// after the deflate stream without seeking — archive's decoder supports this.
+Future<void> _streamZip(File out, List<_ZipEntry> entries,
+    {BuildProgress? onProgress}) async {
+  final iosink = out.openWrite();
+  var position = 0;
+  final central = <_CentralRecord>[];
+  try {
+    var done = 0;
+    for (final e in entries) {
+      final nameBytes = utf8.encode(e.name);
+      final localOffset = position;
+      final header = BytesBuilder();
+      header.add(_u32(0x04034b50));
+      header.add(_u16(20)); // version needed
+      header.add(_u16(0x0808)); // UTF-8 (bit 11) + data descriptor (bit 3)
+      header.add(_u16(8)); // deflate
+      header.add(_u16(0)); // mod time
+      header.add(_u16(0)); // mod date
+      header.add(_u32(0)); // crc32 (filled in descriptor)
+      header.add(_u32(0)); // compressed size (filled in descriptor)
+      header.add(_u32(0)); // uncompressed size (filled in descriptor)
+      header.add(_u16(nameBytes.length));
+      header.add(_u16(0)); // extra
+      header.add(nameBytes);
+      final headerBytes = header.takeBytes();
+      iosink.add(headerBytes);
+      position += headerBytes.length;
+
+      final crc = _Crc32();
+      var uncomp = 0;
+      var comp = 0;
+      final counting = _CountingSink(iosink, (n) => comp += n);
+      final bc = ByteConversionSink.from(counting);
+      final deflateIn =
+          ZLibCodec(raw: true).encoder.startChunkedConversion(bc);
+      await for (final chunk in e.stream) {
+        crc.add(chunk);
+        uncomp += chunk.length;
+        deflateIn.add(chunk);
+      }
+      deflateIn.close();
+      await iosink.flush();
+
+      final desc = BytesBuilder();
+      desc.add(_u32(0x08074b50));
+      desc.add(_u32(crc.value));
+      desc.add(_u32(comp));
+      desc.add(_u32(uncomp));
+      final descBytes = desc.takeBytes();
+      iosink.add(descBytes);
+      position += comp + descBytes.length;
+
+      central.add(_CentralRecord(nameBytes, crc.value, comp, uncomp, localOffset));
+      done++;
+      onProgress?.call(done, entries.length, '正在写入压缩包：${e.name}');
+      await Future.delayed(Duration.zero);
+    }
+
+    final centralStart = position;
+    for (final c in central) {
+      final h = BytesBuilder();
+      h.add(_u32(0x02014b50));
+      h.add(_u16(20)); // version made by
+      h.add(_u16(20)); // version needed
+      h.add(_u16(0x0800)); // UTF-8 (central dir carries real sizes)
+      h.add(_u16(8)); // deflate
+      h.add(_u16(0)); // time
+      h.add(_u16(0)); // date
+      h.add(_u32(c.crc));
+      h.add(_u32(c.comp));
+      h.add(_u32(c.uncomp));
+      h.add(_u16(c.nameBytes.length));
+      h.add(_u16(0)); // extra
+      h.add(_u16(0)); // comment
+      h.add(_u16(0)); // disk number
+      h.add(_u16(0)); // internal attrs
+      h.add(_u32(0)); // external attrs
+      h.add(_u32(c.localOffset));
+      h.add(c.nameBytes);
+      final hBytes = h.takeBytes();
+      iosink.add(hBytes);
+      position += hBytes.length;
+    }
+    final centralSize = position - centralStart;
+    final eocd = BytesBuilder();
+    eocd.add(_u32(0x06054b50));
+    eocd.add(_u16(0));
+    eocd.add(_u16(0));
+    eocd.add(_u16(central.length));
+    eocd.add(_u16(central.length));
+    eocd.add(_u32(centralSize));
+    eocd.add(_u32(centralStart));
+    eocd.add(_u16(0));
+    iosink.add(eocd.takeBytes());
+    await iosink.flush();
+  } finally {
+    await iosink.close();
+  }
 }
 
 /// IEEE 802.3 CRC32 (matches java.util.zip.CRC32), used for plain-ROM-zip

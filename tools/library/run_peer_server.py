@@ -8,7 +8,7 @@
 用法:
     python run_peer_server.py [--root .tools/gstest] [--port 0]
 
-* --root 指向含 roms/ chats/ bios/ 的本地库根(默认项目内 gstest)。
+* --root 指向含 roms/ cheats/ bios/ 的本地库根(默认项目内 gstest)。
 * 配对请求自动确认(联调用; 正式 GUI 需人工确认)。
 * 日志写入同目录 peer_server.log 并在控制台打印。
 """
@@ -60,7 +60,7 @@ def scan_games(root: str):
 
 
 def load_cheats(root: str):
-    p = os.path.join(root, 'chats', 'cheats.json')
+    p = os.path.join(root, 'cheats', 'cheats.json')
     if not os.path.isfile(p):
         return {}
     try:

@@ -91,6 +91,12 @@ interface CallArgs {
   core?: string;
 }
 
+interface ResumeArgs {
+  rememberLastGame?: boolean;
+  slot?: number;
+  crc?: string;
+}
+
 interface LaunchArgs {
   rom: string;
   core: string;
@@ -102,6 +108,9 @@ interface LaunchArgs {
   // App-level toggles from the Flutter SettingsSheet that the native emulator
   // surface consumes (FPS HUD, high refresh rate, fast-forward audio).
   prefs?: PrefsArgs;
+  // Resume: last save slot + ROM crc forwarded to EmulatorSpike so it can
+  // auto-load the most recent save state after the core is ready.
+  resume?: ResumeArgs;
 }
 
 /// Virtual-pad config pushed from the Flutter SettingsSheet (AppSettings) at
@@ -147,6 +156,18 @@ interface SettingsJson {
 export class GamePouchPlugin implements FlutterPlugin {
   private appCtx?: common.Context;
   private uiCtx?: common.UIAbilityContext;
+  /// The Flutter plugin lifecycle (`onAttachedToEngine`) only hands us an
+  /// `ApplicationContext`, which `@ohos.file.picker` refuses — it needs the
+  /// `UIAbilityContext`. The EntryAbility stashes it here so picker-backed
+  /// import/export work regardless of which plugin instance the engine
+  /// dispatches method calls to.
+  private static abilityCtx?: common.UIAbilityContext;
+  static setAbilityContext(ctx: common.UIAbilityContext): void {
+    GamePouchPlugin.abilityCtx = ctx;
+  }
+  private ctxForPicker(): common.UIAbilityContext | undefined {
+    return this.uiCtx ?? GamePouchPlugin.abilityCtx;
+  }
   private channels: MethodChannel[] = [];
   private netplayCh?: MethodChannel;
   // Singleton handle so EmulatorSpike can fire the reverse netplay callback.
@@ -208,10 +229,11 @@ export class GamePouchPlugin implements FlutterPlugin {
       return;
     }
     const args: CallArgs = call.argument as CallArgs;
+    const rawArgs: string = call.args as string;
     if (channel === 'gs/storage') {
-      this.onStorage(method, args, result);
+      this.onStorage(method, args, rawArgs, result);
     } else if (channel === 'gs/updater') {
-      this.onUpdater(method, args, result);
+      this.onUpdater(method, args, rawArgs, result);
     } else if (channel === 'gs/netplay') {
       this.onNetplay(method, args, result);
     } else {
@@ -254,7 +276,16 @@ export class GamePouchPlugin implements FlutterPlugin {
   // --------------------------------------------------------------------------
   // gs/storage
   // --------------------------------------------------------------------------
-  private async onStorage(method: string, args: CallArgs, result: MethodResult): Promise<void> {
+  private async onStorage(method: string, args: CallArgs, rawArgs: string, result: MethodResult): Promise<void> {
+    // OHOS MethodChannel does not decode Dart Map arguments, so the storage
+    // methods that need multiple fields receive a JSON *string* (mirroring the
+    // gs/emulator channel convention) and we parse it here.
+    let obj: ESObject | null = null;
+    if (rawArgs && rawArgs.length > 0) {
+      try { obj = JSON.parse(rawArgs) as ESObject; } catch (_) { obj = null; }
+    }
+    const getStr = (k: string): string =>
+      (obj !== null && typeof obj[k] === 'string') ? (obj[k] as string) : '';
     switch (method) {
       case 'getFilesDir':
         result.success(this.filesDir());
@@ -311,12 +342,12 @@ export class GamePouchPlugin implements FlutterPlugin {
         result.success(true);
         return;
       case 'deleteBios': {
-        const name: string = args?.name ?? '';
+        const name: string = getStr('name');
         result.success(this.deleteBios(name));
         return;
       }
       case 'importRomViaSaf': {
-        const mime: string = args?.mime ?? '*/*';
+        const mime: string = getStr('mime') || '*/*';
         this.importFile<RomInfo>('roms', mime, { unique: true },
           (f: StagedFile): RomInfo => {
             const crc = crc32File(f.path);
@@ -369,8 +400,8 @@ export class GamePouchPlugin implements FlutterPlugin {
       case 'exportPackageViaSaf':
       case 'exportMovesConfigViaSaf':
       case 'exportPadConfigViaSaf': {
-        const sourcePath: string = args?.sourcePath ?? '';
-        const suggestedName: string = args?.suggestedName ?? 'gamepouch_export';
+        const sourcePath: string = getStr('sourcePath');
+        const suggestedName: string = getStr('suggestedName') || 'gamepouch_export';
         // Pre-fill the picker's file name (Android passes EXTRA_TITLE) so the
         // user gets `moves-kof97.json` instead of an untitled document.
         this.exportFile(sourcePath, suggestedName).then((ok: boolean) => result.success(ok)).catch((e: Error) => result.error('EXPORT_FAILED', e.message, ''));
@@ -421,6 +452,9 @@ export class GamePouchPlugin implements FlutterPlugin {
         if (typeof p.prefs === 'object' && p.prefs !== null) {
           out.prefs = p.prefs as PrefsArgs
         }
+        if (typeof p.resume === 'object' && p.resume !== null) {
+          out.resume = p.resume as ResumeArgs
+        }
       }
     } catch (e) {
       // Not JSON — treat the raw string as a relative rom path.
@@ -470,6 +504,15 @@ export class GamePouchPlugin implements FlutterPlugin {
         // i.e. the Settings sheet had no effect on the running emulator. Hand
         // the authoritative config dir over explicitly.
         params['filesDir'] = this.filesDir()
+        if (la.resume) {
+          params['resumeSlot'] = (typeof la.resume.slot === 'number') ? la.resume.slot : -1
+          params['resumeCrc'] = (typeof la.resume.crc === 'string') ? la.resume.crc : ''
+          params['rememberLastGame'] = (typeof la.resume.rememberLastGame === 'boolean') ? la.resume.rememberLastGame : true
+        } else {
+          params['resumeSlot'] = -1
+          params['resumeCrc'] = ''
+          params['rememberLastGame'] = true
+        }
         if (la.netplay) {
           params['netplay'] = la.netplay
           console.info(`[GamePouchPlugin] onEmulator.launch netplay role=${(la.netplay['role'] as number) ?? -1}`);
@@ -522,7 +565,7 @@ export class GamePouchPlugin implements FlutterPlugin {
   // --------------------------------------------------------------------------
   // gs/updater
   // --------------------------------------------------------------------------
-  private onUpdater(method: string, args: CallArgs, result: MethodResult): void {
+  private onUpdater(method: string, args: CallArgs, rawArgs: string, result: MethodResult): void {
     if (method === 'getVersion') {
       try {
         const info = bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_WITH_APPLICATION);
@@ -649,7 +692,7 @@ export class GamePouchPlugin implements FlutterPlugin {
   }
 
   private async importFile<T>(relDir: string, mime: string, opts: ImportOpts, build: (f: StagedFile) => T): Promise<T | null> {
-    const ctx = this.uiCtx;
+    const ctx = this.ctxForPicker();
     if (!ctx) {
       return null;
     }
@@ -671,7 +714,7 @@ export class GamePouchPlugin implements FlutterPlugin {
   }
 
   private async importFiles(relDir: string): Promise<string[] | null> {
-    const ctx = this.uiCtx;
+    const ctx = this.ctxForPicker();
     if (!ctx) {
       return null;
     }
@@ -704,7 +747,7 @@ export class GamePouchPlugin implements FlutterPlugin {
   /// pre-validates it. [requireKey] is the top-level key the payload must have
   /// (`profiles` for moves, empty for the pad layout which accepts any object).
   private async importJson(relDir: string, prefix: string, requireKey: string): Promise<JsonInfo | null> {
-    const ctx = this.uiCtx;
+    const ctx = this.ctxForPicker();
     if (!ctx) {
       return null;
     }
@@ -732,9 +775,33 @@ export class GamePouchPlugin implements FlutterPlugin {
     return { path: destPath, name: finalName, size: tmp.size, ok: ok };
   }
 
+  /// Append a single line to `filesDir/export_cache/_export_trace.txt` so a
+  /// device-side export failure is diagnosable even when `hilog` ring-buffer
+  /// entries have been flushed by unrelated system logs.
+  private traceExport(line: string): void {
+    try {
+      const dir = `${this.filesDir()}/export_cache`;
+      try { fs.mkdirSync(dir, true); } catch (_) { /* exists */ }
+      const f = fs.openSync(
+        `${dir}/_export_trace.txt`,
+        fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.APPEND,
+      );
+      try {
+        fs.writeSync(f.fd, `${new Date().toISOString()}  ${line}\n`);
+      } finally {
+        fs.closeSync(f);
+      }
+    } catch (e) {
+      console.warn('[GamePouchPlugin] traceExport failed: ' + (e as Error)?.message);
+    }
+  }
+
   private async exportFile(sourcePath: string, suggestedName?: string): Promise<boolean> {
-    const ctx = this.uiCtx;
+    this.traceExport(`=== exportFile src=${sourcePath} suggested=${suggestedName ?? ''}`);
+    const ctx = this.ctxForPicker();
+    this.traceExport('ctx=' + (ctx ? 'OK' : 'NULL'));
     if (!ctx || !sourcePath || !fs.accessSync(sourcePath)) {
+      this.traceExport('early return false (missing ctx/src or no source file)');
       return false;
     }
     const dp = new picker.DocumentViewPicker(ctx);
@@ -742,17 +809,43 @@ export class GamePouchPlugin implements FlutterPlugin {
     if (suggestedName !== undefined && suggestedName.length > 0) {
       saveOpts['newFileNames'] = [suggestedName];
     }
-    const uris: Array<string> = await dp.save(saveOpts);
+    this.traceExport('calling dp.save() ...');
+    let uris: Array<string> = [];
+    try {
+      uris = await dp.save(saveOpts);
+    } catch (e) {
+      const msg = 'dp.save THREW: ' + (e as Error)?.message;
+      this.traceExport(msg);
+      throw new Error(msg);
+    }
+    this.traceExport('dp.save uris=' + JSON.stringify(uris));
     if (!uris || uris.length === 0) {
+      this.traceExport('dp.save returned empty -> user cancelled / picker not shown');
       return false;
     }
     const destUri = uris[0];
     const src = fs.openSync(sourcePath, fs.OpenMode.READ_ONLY);
     try {
-      fs.copyFileSync(src.fd, destUri);
+      // Open the picked destination URI explicitly. A raw copyFileSync to a
+      // `file://` URI string is rejected on OpenHarmony, so copy fd→fd instead.
+      const dst = fs.openSync(
+        destUri,
+        fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.TRUNC,
+      );
+      try {
+        fs.copyFileSync(src.fd, dst.fd);
+      } finally {
+        fs.closeSync(dst);
+      }
+      this.traceExport('copied OK -> ' + destUri);
+    } catch (e) {
+      const msg = 'copy failed: ' + (e as Error).message;
+      this.traceExport(msg);
+      throw new Error(msg);
     } finally {
       fs.closeSync(src);
     }
+    this.traceExport('exportFile SUCCESS');
     return true;
   }
 
@@ -786,7 +879,7 @@ export class GamePouchPlugin implements FlutterPlugin {
   /// Zips `<filesDir>/system/` into a single archive via SAF so the user can
   /// back up their BIOS set. Mirrors Android `exportBiosZipViaSaf`.
   private async exportBiosZip(): Promise<boolean> {
-    const ctx = this.uiCtx;
+    const ctx = this.ctxForPicker();
     if (!ctx) {
       return false;
     }

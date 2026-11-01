@@ -131,7 +131,7 @@ class OhosPal implements PlatformPal {
   Future<ImportedRom?> importRomViaSaf({String mime = '*/*'}) async {
     try {
       final res =
-          await _storage.invokeMethod<dynamic>('importRomViaSaf', {'mime': mime});
+          await _storage.invokeMethod<dynamic>('importRomViaSaf', jsonEncode({'mime': mime}));
       if (res == null) return null;
       return ImportedRom.fromMap(res as Map<dynamic, dynamic>);
     } catch (_) {
@@ -185,7 +185,7 @@ class OhosPal implements PlatformPal {
   Future<bool> deleteBios(String name) async {
     try {
       final ok =
-          await _storage.invokeMethod<bool>('deleteBios', {'name': name});
+          await _storage.invokeMethod<bool>('deleteBios', jsonEncode({'name': name}));
       return ok ?? false;
     } catch (_) {
       return false;
@@ -198,10 +198,8 @@ class OhosPal implements PlatformPal {
     required String suggestedName,
   }) async {
     try {
-      final ok = await _storage.invokeMethod<bool>('exportPackageViaSaf', {
-        'sourcePath': sourcePath,
-        'suggestedName': suggestedName,
-      });
+      final ok = await _storage.invokeMethod<bool>('exportPackageViaSaf',
+          jsonEncode({'sourcePath': sourcePath, 'suggestedName': suggestedName}));
       return ok ?? false;
     } catch (_) {
       return false;
@@ -226,10 +224,8 @@ class OhosPal implements PlatformPal {
     required String suggestedName,
   }) async {
     try {
-      final ok = await _storage.invokeMethod<bool>('exportMovesConfigViaSaf', {
-        'sourcePath': sourcePath,
-        'suggestedName': suggestedName,
-      });
+      final ok = await _storage.invokeMethod<bool>('exportMovesConfigViaSaf',
+          jsonEncode({'sourcePath': sourcePath, 'suggestedName': suggestedName}));
       return ok ?? false;
     } catch (_) {
       return false;
@@ -254,10 +250,8 @@ class OhosPal implements PlatformPal {
     required String suggestedName,
   }) async {
     try {
-      final ok = await _storage.invokeMethod<bool>('exportPadConfigViaSaf', {
-        'sourcePath': sourcePath,
-        'suggestedName': suggestedName,
-      });
+      final ok = await _storage.invokeMethod<bool>('exportPadConfigViaSaf',
+          jsonEncode({'sourcePath': sourcePath, 'suggestedName': suggestedName}));
       return ok ?? false;
     } catch (_) {
       return false;
@@ -282,6 +276,31 @@ class OhosPal implements PlatformPal {
       // (not FlutterSharedPreferences.xml), we serialize the pad config here and
       // let GamePouchPlugin.ets stamp it into settings.json before the emulator
       // surface is created — so the Settings screen actually drives the pad.
+      // Resume: read the last save slot persisted by the native emulator and
+      // forward it so a re-launch of the same ROM auto-loads the most recent
+      // state (parallels Android's flutter.lastSaveSlot auto-resume; only when
+      // 「记住上次进度」 is enabled).
+      Map<String, dynamic> resume = {
+        'rememberLastGame': AppSettings.current.rememberLastGame,
+        'slot': -1,
+        'crc': '',
+      };
+      if (AppSettings.current.rememberLastGame) {
+        try {
+          final dir = await filesDir();
+          final f = File('$dir/last_slot.json');
+          if (f.existsSync()) {
+            final m = jsonDecode(await f.readAsString()) as Map<String, dynamic>;
+            resume = {
+              'rememberLastGame': true,
+              'slot': (m['slot'] is int) ? m['slot'] as int : -1,
+              'crc': (m['crc'] is String) ? m['crc'] as String : '',
+            };
+          }
+        } catch (_) {
+          // Missing/corrupt: fall back to no-resume.
+        }
+      }
       final payload = jsonEncode({
         'rom': relativePath,
         'core': coreId,
@@ -300,6 +319,7 @@ class OhosPal implements PlatformPal {
           'highRefreshRate': AppSettings.current.highRefreshRate,
           'fastForwardAudio': AppSettings.current.fastForwardAudio,
         },
+        'resume': resume,
       });
       final ok = await _emulator.invokeMethod<bool>('launch', payload);
       return ok ?? false;

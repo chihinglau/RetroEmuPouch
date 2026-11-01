@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gamepouch/features/legal/legal_constants.dart';
+import 'package:retroemupouch/features/legal/legal_constants.dart';
 
 import '../../main.dart';
 import '../../features/legal/privacy_policy_page.dart';
@@ -174,8 +174,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                       const SizedBox(height: 6),
                       Text(
                         '模拟核心：FCEUmm / Gambatte / mGBA / PicoDrive / '
-                        'Stella（libretro），GPL-2.0 / MPL-2.0；完整源码与'
-                        '构建脚本随项目仓库提供。',
+                        'Stella（libretro），GPL-2.0 / MPL-2.0。',
                         style: theme.textTheme.bodySmall,
                       ),
                     ],
@@ -274,8 +273,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
 
               _SettingTile(
                 icon: Icons.history_outlined,
-                title: '记住上次游戏',
-                subtitle: '启动时自动恢复上次运行的游戏进度',
+                title: '记住上次进度',
+                subtitle: '启动时自动恢复上次运行的进度',
                 value: _settings.rememberLastGame,
                 onChanged: (v) => _patch((s) => s.rememberLastGame = v),
               ),
@@ -345,7 +344,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
               const SizedBox(height: 12),
               Center(
                 child: Text(
-                  '趣玩匣 RetroEmuPouch · 让历史更安心',
+                  '趣玩匣 RetroEmuPouch · 重拾时光里的欢喜',
                   style: theme.textTheme.bodySmall
                       ?.copyWith(color: theme.hintColor),
                 ),

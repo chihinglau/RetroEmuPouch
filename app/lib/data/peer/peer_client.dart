@@ -167,10 +167,12 @@ class PeerClient {
     String path,
     File dest, {
     required void Function(int received, int? total) onProgress,
+    void Function(Map<String, String> headers)? onHeaders,
   }) async {
     final req = await _http.getUrl(Uri.parse('$baseUrl$path'));
     _auth.forEach(req.headers.set);
     final res = await req.close();
+    onHeaders?.call(_headerMap(res.headers));
     if (res.statusCode == HttpStatus.unauthorized) {
       throw PeerUnauthorizedException('$path returned 401');
     }
@@ -196,9 +198,63 @@ class PeerClient {
   }
 
   Future<File> downloadRom(String crc, File dest,
-          {void Function(int, int?)? onProgress}) =>
-      _download('/api/peer/rom/$crc', dest,
-          onProgress: onProgress ?? (_, _) {});
+      {void Function(int, int?)? onProgress}) async {
+    String? expected;
+    final file = await _download('/api/peer/rom/$crc', dest,
+        onProgress: onProgress ?? (_, _) {},
+        onHeaders: (h) => expected = h['x-file-crc']);
+    // Verify the transferred bytes equal the SOURCE's actual on-disk CRC
+    // (advertised via X-File-Crc), not the index crc32 — that one is a
+    // dump-agnostic game-identity key and differs across ROM dumps, so checking
+    // the file against it would reject every cross-dump import. Older hosts that
+    // don't send the header are trusted as-is.
+    if (expected != null && expected!.isNotEmpty) {
+      final actual = _crc32HexOfFile(file);
+      if (actual.toUpperCase() != expected!.toUpperCase()) {
+        try {
+          await file.delete();
+        } catch (_) {}
+        throw Exception(
+            'ROM 校验失败（数据不完整或已损坏）：期望 $expected，实际 $actual');
+      }
+    }
+    return file;
+  }
+
+  static Map<String, String> _headerMap(HttpHeaders h) {
+    final m = <String, String>{};
+    h.forEach((name, values) {
+      if (values.isNotEmpty) m[name.toLowerCase()] = values.last;
+    });
+    return m;
+  }
+
+  static final List<int> _crc32Table = () {
+    final t = List<int>.filled(256, 0);
+    for (int i = 0; i < 256; i++) {
+      int c = i;
+      for (int k = 0; k < 8; k++) {
+        c = (c & 1) != 0 ? (0xEDB88320 ^ (c >> 1)) : (c >> 1);
+      }
+      t[i] = c;
+    }
+    return t;
+  }();
+
+  /// CRC-32 (8-hex uppercase) of [f], matching the host's advertised file CRC
+  /// and the emulator's native Crc32File.
+  static String _crc32HexOfFile(File f) {
+    final table = _crc32Table;
+    var crc = 0xFFFFFFFF;
+    final bytes = f.readAsBytesSync();
+    for (final b in bytes) {
+      crc = table[(crc ^ b) & 0xFF] ^ (crc >> 8);
+    }
+    return ((crc ^ 0xFFFFFFFF) & 0xFFFFFFFF)
+        .toRadixString(16)
+        .padLeft(8, '0')
+        .toUpperCase();
+  }
 
   Future<File> downloadCover(String crc, File dest,
           {void Function(int, int?)? onProgress}) =>
@@ -234,6 +290,82 @@ class PeerClient {
           {void Function(int, int?)? onProgress}) =>
       _download('/api/peer/bios/${Uri.encodeComponent(name)}', dest,
           onProgress: onProgress ?? (_, _) {});
+
+  // --------------------------------------------------- save/settings sync
+  static final _crcRe = RegExp(r'^[0-9A-F]{8}$');
+
+  String _crc8(String c) {
+    final u = c.toUpperCase();
+    if (!_crcRe.hasMatch(u)) throw ArgumentError('bad crc: $c');
+    return u;
+  }
+
+  /// List saves the paired PC holds (across all CRCs). Returns
+  /// `[{crc, name, size, mtime}, ...]`.
+  Future<List<Map<String, dynamic>>> listSaves() async {
+    final r = await _getJson('/api/peer/sync/save');
+    final s = r['saves'];
+    return s is List
+        ? s
+            .whereType<Map>()
+            .map((m) => m.cast<String, dynamic>())
+            .toList()
+        : const [];
+  }
+
+  Future<File> downloadSaveFile(String crc, String name, File dest,
+          {void Function(int, int?)? onProgress}) =>
+      _download('/api/peer/sync/save/${_crc8(crc)}/${Uri.encodeComponent(name)}',
+          dest, onProgress: onProgress ?? (_, _) {});
+
+  /// Upload a save file to the paired PC's sync store.
+  Future<void> uploadSave(String crc, String name, File file) async {
+    final bytes = await file.readAsBytes();
+    await _putBytes(
+        '/api/peer/sync/save/${_crc8(crc)}/${Uri.encodeComponent(name)}',
+        bytes);
+  }
+
+  Future<Map<String, dynamic>> getSettings() =>
+      _getJson('/api/peer/sync/settings');
+
+  Future<void> putSettings(Map<String, dynamic> settings) async {
+    await _putJson('/api/peer/sync/settings', settings);
+  }
+
+  Future<void> _putBytes(String path, List<int> bytes) async {
+    final req = await _http.putUrl(Uri.parse('$baseUrl$path'));
+    req.headers.contentType = ContentType('application', 'octet-stream');
+    _auth.forEach(req.headers.set);
+    req.add(bytes);
+    final res = await req.close().timeout(const Duration(seconds: 30));
+    await res.drain();
+    if (res.statusCode == HttpStatus.unauthorized) {
+      throw PeerUnauthorizedException('$path returned 401');
+    }
+    if (res.statusCode != HttpStatus.ok) {
+      final b = await res.transform(utf8.decoder).join();
+      throw _apiError(res.statusCode, b);
+    }
+  }
+
+  Future<Map<String, dynamic>> _putJson(String path, Object payload) async {
+    final req = await _http.putUrl(Uri.parse('$baseUrl$path'));
+    req.headers.contentType = ContentType.json;
+    _auth.forEach(req.headers.set);
+    req.write(jsonEncode(payload));
+    final res = await req.close().timeout(const Duration(seconds: 30));
+    final body = await res.transform(utf8.decoder).join().timeout(
+        const Duration(seconds: 30));
+    if (res.statusCode == HttpStatus.unauthorized) {
+      throw PeerUnauthorizedException('$path returned 401');
+    }
+    if (res.statusCode != HttpStatus.ok) {
+      throw _apiError(res.statusCode, body);
+    }
+    if (body.isEmpty) return const {};
+    return repairJsonMojibake(jsonDecode(body)) as Map<String, dynamic>;
+  }
 
   void close() => _http.close(force: true);
 }

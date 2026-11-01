@@ -1,6 +1,6 @@
 {
   "app": {
-    "bundleName": "com.gamepouch.gamepouch",
+    "bundleName": "com.retroemupouch.app",
     "vendor": "RetroEmuPouch",
     "versionCode": 49,
     "versionName": "1.8.4",

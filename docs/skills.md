@@ -964,7 +964,7 @@ ROM / BIOS / 金手指。设计上与手机端完全同构：**ROM 的 CRC32（�
 IEEE 802.3，不剥 NES 头）是元数据与金手指的关联键**，与 `RomEntry.crcKey` 一致。
 
 ### 金手指关联：`tools/chatsync/sync_cheats.py`
-把元数据索引里的金手指搬到 `.tools/gstest/chats`，以 `roms/` 里的真实游戏为基准关联。
+把元数据索引里的金手指搬到 `.tools/gstest/cheats`，以 `roms/` 里的真实游戏为基准关联。
 
 ```powershell
 python tools\chatsync\sync_cheats.py            # 实际执行
@@ -982,11 +982,11 @@ python tools\chatsync\verify_cheats.py          # 产出校验报告
   桥接到英文金手指名。NES 无内部名源，中文名侧无法映射，属「确实无对应游戏」。
 
 产物：
-- `chats/<ROM 主干>.cht` —— 与 `roms/` 一一对应（RetroArch 文本格式）
-- `chats/cheats.json` —— GamePouch 原生 `{"version":1,"byCrc":{<8位大写CRC32>:[...]}}`，
+- `cheats/<ROM 主干>.cht` —— 与 `roms/` 一一对应（RetroArch 文本格式）
+- `cheats/cheats.json` —— GamePouch 原生 `{"version":1,"byCrc":{<8位大写CRC32>:[...]}}`，
   可直接 push 到手机 `library/cheats.json` 使用
-- `chats/report.json` —— matched / missing / orphan 清单
-- `chats/_orphans/` —— **无对应游戏的金手指保留在此，绝不静默丢弃**
+- `cheats/report.json` —— matched / missing / orphan 清单
+- `cheats/_orphans/` —— **无对应游戏的金手指保留在此，绝不静默丢弃**
 
 > 现状（626 游戏 / 47 个 .cht + 153 条街机内联）：命中 174（cps1 28、cps2 35、neogeo 87、
 > gba 24），孤立 26。GBA 未命中的 5 个（Mortal Kombat Advance、Konami Krazy Racers、
@@ -1013,7 +1013,7 @@ python tools\library\library_manager.py
 
 **文件库页**
 - 任选根目录扫描，自动识别 `roms/`（含 GBA/NES/NeoGeo/CPS1/CPS2 子目录或扁平目录）、
-  `bios/`、`chats/`；
+  `bios/`、`cheats/`；
 - 游戏列表列：名称 / 平台 / 分类 / 大小 / CRC32 / 金手指数 / **内部标题**（GBA 英文原名，
   是中文名↔英文金手指名的桥梁）/ 依赖 BIOS（NeoGeo←`neogeo.zip`，CPS1&2←`qsound.zip`）；
 - 检索：名称+内部标题模糊搜索、平台/分类筛选、表头排序、
@@ -1037,8 +1037,8 @@ PC 端支持 **新增 / 编辑 / 删除命令**，手机 App 端只做 **逐项�
   `cheatN_code`/`cheatN_code2`…）+ 是否默认启用；
 - **编辑命令 / 删除命令**：选中右侧一条命令后操作；
 - **保存修改**：同时写两处，保证两端一致——
-  1. `chats/<主干>.cht`（RetroArch 文本，`to_cht_text`）；
-  2. `chats/cheats.json` 的 `byCrc[CRC32]`（GamePouch `CheatInfo` 结构
+  1. `cheats/<主干>.cht`（RetroArch 文本，`to_cht_text`）；
+  2. `cheats/cheats.json` 的 `byCrc[CRC32]`（GamePouch `CheatInfo` 结构
      `{name, code, enabled, options, selected}`，手机端 LAN/USB 同步读的就是它）。
 - 数据模型与手机端 `RomEntry.CheatInfo` 完全对齐：PC 写入的每条命令都能被 App
   `CheatInfo.fromJson` 解析，同步过去后即可在 App 里逐项开关。
@@ -1068,8 +1068,8 @@ PC 端支持 **新增 / 编辑 / 删除命令**，手机 App 端只做 **逐项�
    解析出 `Pokemon`）时**全部放弃**，宁缺勿错。
 
 产物（与本地那份同构）
-- `chats/<ROM 主干>.cht`（RetroArch 文本）+ 合并进 `chats/cheats.json` 的 `byCrc[CRC32]`；
-- `chats/_online_report.json` 记录 `{stem: {crc, count, source, at}}`，
+- `cheats/<ROM 主干>.cht`（RetroArch 文本）+ 合并进 `cheats/cheats.json` 的 `byCrc[CRC32]`；
+- `cheats/_online_report.json` 记录 `{stem: {crc, count, source, at}}`，
   支持 **撤销联网适配** 按钮一键回退（删 .cht + 摘掉 byCrc 条目，不动本地原有金手指）；
 - 并发写入用 `_SAVE_LOCK` 串行，避免多线程「读-改-写」丢条目 / 临时文件互相踩踏。
 
@@ -1154,7 +1154,7 @@ NES/GBA，**中文名 NES ROM 必然落空**——于是这类游戏在手机端
 > 等英文 hack 名）现在都能关联。注意：**吞食天地1中文版本身在索引里 `cheats:[]`
 > 为空**，所以它确实没有金手指可取——这类游戏需在「金手指」页用**新增命令**手动加。
 > 关联的「为什么没金手指」诊断提示也加到了 PC 端金手指页：选中游戏若未关联，会显示
-> `chats/<主干>.cht 未找到且 cheats.json 无匹配`，引导用户去重新关联或手动新增。
+> `cheats/<主干>.cht 未找到且 cheats.json 无匹配`，引导用户去重新关联或手动新增。
 
 > 自测 `test_phone_assoc.py` 用合成元数据索引 + 合成 ROM，跑通
 > `sync_cheats 关联 → PC library 标记 hasCheats → 局域网拉取 cheats → 写入
@@ -1779,7 +1779,7 @@ cd D:\ai\prj\trae\HuaWei\RetroEmuPouch
 # 最简：用仓库内置测试库 .tools/gstest
 python tools/library/run_peer_server.py
 
-# 用你自己的库（根目录下要有 roms/ chats/ bios/）
+# 用你自己的库（根目录下要有 roms/ cheats/ bios/）
 python tools/library/run_peer_server.py --root "D:\你的库路径" --name "客厅电脑"
 
 # 关掉 mDNS，只走 UDP 43801 广播发现
@@ -1814,5 +1814,93 @@ start_peer.bat --no-mdns
 - **Windows 防火墙**：放行 Python 入站（UDP 43801 + 那个 HTTP 端口），否则手机发现不了也连不上。
 - **发现不到**：先查防火墙 / 是否同一网段（AP 隔离会让广播失效 → 装 `zeroconf` 走 mDNS 通常能救）；再看控制台和 `peer_server.log` 的 `服务地址` 行。
 - PC 端能起、控制台打印出 `服务地址` 即视为服务正常；真机「发现伙伴」这一步需手机实际连上同一 Wi-Fi 后验证。
+
+---
+
+## 23. 存档（档位 / Save RAM）标准格式（跨端一致，避免串档 / 导入失效）
+
+> 适用对象：所有单机电池存档（libretro `RETRO_MEMORY_SAVE_RAM`，文件后缀 `.sav`）。
+> 联机对战的 SRAM 同步是**另一套契约**，见 §11，勿与本节混淆。
+
+### 23.1 唯一标准（所有端必须遵守）
+
+- **规范路径**：`<filesDir>/saves/<CRC>.sav`（电池存档 / Save RAM）。
+- **文件名**：`<CRC>` = **ROM 文件字节的 CRC32，十六进制大写 `%08X`**（例：`1A2B3C4D.sav`）。
+  - HarmonyOS 文件系统**大小写敏感**，必须大写；导入器写盘用 `toUpperCase()`，原生端 `getRomCrc()` 用 `%08X`，两端一致。
+- **CRC 计算**：对同一份 ROM **字节**做 CRC32；importer 的 `RemoteGame.crc` 与 emulator 读取时的 CRC **必须是同一算法、同一字节来源**。改其一必须同步改另一端。
+- **含义**：存档按**游戏（ROM）**隔离 → 两份不同 ROM（CRC 不同）即两份独立文件，**天然跨游戏独立**，这就是「各游戏存档独立」的保证。
+
+### 23.2 各端实现（已对齐，勿回退）
+
+| 端 | 规范存档读写位置 | 实现要点 |
+|----|----------------|----------|
+| **导入器（伙伴页）** | `<filesDir>/saves/<crc>.sav` | `lib/data/peer/peer_sync.dart`：`_saveRel = $baseDir/saves/$crc.$ext`，写盘前 `toUpperCase()` |
+| **Android 单机** | `<filesDir>/saves/<crc>.sav` | `gs_runner.cpp`：`sramPath_ = saveDir_ + "/" + key + ".sav"`（`key = crcKey`）。启动载入 SAVE_RAM、退出 flush；legacy `saveDir_/<basename>.sav` → CRC 文件迁移 |
+| **HarmonyOS 单机** | `<filesDir>/saves/<crc>.sav` | `gpretro.cpp`：load 时把该文件注入 `RETRO_MEMORY_SAVE_RAM`；`StopEmulator` 时 flush。核心自动档目录 `g_saveDir` 已按 CRC 隔离到 `saves/<crc>/` |
+| **联机对战** | `<filesDir>/saves/<netplayKey>.sav` | 用**会话密钥**而非 CRC，单独路径（§11） |
+
+- `filesDir` == 原生 `g_appDir`（=`roms/` 的父目录，即应用 `files/`）。两端一致 → importer 落盘点 = emulator 读取点。
+- emulator 运行时 `getRunningSaveKey()` 返回 ROM CRC（大写），与导入文件名一致。
+
+### 23.3 历史踩坑（避免复现）
+
+1. **鸿蒙单机曾用 libretro 默认 `<saveDir>/<contentBasename>.sav`**（`g_saveDir = rootDir/state`）：
+   - 按**文件名**命名 → 两个 ROM 文件名相同会**互相串档**；
+   - 且与导入器的 CRC 命名不一致 → **伙伴页导入的档位鸿蒙不生效**（已修）。
+   - 修复：鸿蒙单机改为 CRC-keyed 的 `saves/<crc>.sav` 载入/落盘；核心自动档目录按 CRC 隔离（`saves/<crc>/`）；旧 `state/<basename>.sav` 在首次启动迁移到新位置。
+2. **大小写**：鸿蒙 FS 大小写敏感，`crc` 必须两端都大写，否则读不到文件。
+3. **同一 ROM 的不同 dump** CRC 不同 → 各自独立存档（预期行为，不是 bug）。
+
+### 23.4 新增平台 / emulator 接入检查清单
+
+任何新的模拟器入口或新端，必须做到，否则会复发「导入无效 / 串档」：
+
+- [ ] 启动游戏时，把 `<filesDir>/saves/<crc>.sav` 读入核心 `RETRO_MEMORY_SAVE_RAM`（文件不存在则留空，不要写入空档）。
+- [ ] 退出游戏时，把核心 `RETRO_MEMORY_SAVE_RAM` 原子落盘到 `<filesDir>/saves/<crc>.sav`（先写 `.tmp` 再 `rename`，失败回滚）。
+- [ ] 核心自带的自动存档目录（libretro `GET_SAVE_DIRECTORY`）**不要**用共享的 `<saveDir>/<basename>.sav`：要么按 CRC 隔离（`saves/<crc>/`），要么指向一次性临时目录，避免跨游戏串档。
+- [ ] CRC 算法/字节来源与导入器一致，且文件名大写；`getRunningSaveKey()` 返回 CRC。
+- [ ] 若有旧命名存档，做一次性迁移到 CRC 文件（参考 Android 的 legacy→crc 迁移、鸿蒙的 `state/<basename>.sav` → `saves/<crc>.sav`）。
+- [ ] 联机 SRAM 用独立会话密钥路径，别和单机 CRC 路径共用。
+
+### 23.5 自测
+
+- 安卓导出某游戏存档 → 鸿蒙伙伴页「导入所选（仅存档）」→ 鸿蒙进该游戏确认进度生效（**跨端通用**）。
+- 鸿蒙玩 A、B 两款 ROM（即使文件名相同）→ 各自存档 / 「继续游戏」→ 互不串台。
+- 导入器落盘点 `filesDir/saves/` 与 emulator 读取点 `g_appDir/saves/` 必须是同一目录（大小写一致）。
+
+### 23.6 存档位 / 读档快照（3 槽 `saveStateSlot`/`loadStateSlot`）— 同样必须按游戏隔离
+
+「档位（电池存档）」(§23.1) 解决了，但**读档页的 3 个快照槽是另一套机制**，也曾是「不同游戏串档」的真凶：
+
+- HarmonyOS 原生 `gpretro.cpp`：`StatePath/ThumbPath/MetaPath` 原写到 `g_filesDir/state{0,1,2}.sav`（**全游戏共享**），`listSaves()` 只按 slot 0..2 枚举 → 读档页把 A 游戏的快照显示给 B 游戏、且 B 存盘会覆盖 A。
+- **修正（对齐 Android `EmulatorActivity.kt`）**：槽位按 ROM CRC 命名，存于 `saves/`：
+  - 状态：`saves/<crc>.slot<i>.state`
+  - 缩略图：`saves/<crc>.slot<i>.rgba`
+  - 元数据：`saves/<crc>.slot<i>.meta`
+  - ArkTS 侧（`EmulatorSpike.ets` 的 `openLoadDialog`/`deleteSave`）用 `getSavesDir()` + `getRomCrc()` 拼出同一路径；`listSaves()` 只枚举当前游戏的槽位，故不会跨游戏串。
+- Android 对应：`slotStateFile(i) = File(filesDir, "saves/$saveKey.slot$i.state")`，`listSaves` 用 `^$saveKey\.slot(\d+)\.state$` 过滤。
+- 读档页 UI 须可滚动且缩略图用**固定 4:3 裁切框**（`objectFit: Cover`），不能按截图自身宽高比拉伸（否则比例失调）；参考 `EmulatorActivity` 的 `wp(0.267)×hp(0.20)` 预览尺寸。
+
+检查清单补充（新端接入时）：
+- [ ] `saveStateSlot`/`loadStateSlot`/`listSaves` 的槽位文件路径必须含 ROM CRC（与电池存档同一 `saves/<crc>` 命名空间），**禁止**共享文件名（如 `state0.sav`）。
+- [ ] 读档列表只枚举当前游戏 CRC 的槽位；删除时连带删 `.state`/`.rgba`/`.meta`。
+- [ ] 读档对话框用 `Scroll` 包裹列表 + 固定比例缩略图，避免大图溢出且无法下拉。
+
+### 23.7 安卓→鸿蒙 存档导入（跨 dump 复用）
+
+- **核心机制（务必与安卓一致，不要自创 re-key）**：安卓 `EmulatorActivity` 的 `saveKey = CheatStore.crcKey(filesDir, romRel)`，而 `crcKey` 是**查 `rom_index.json` 里该 `relativePath` 对应的 `crc32`**——即「索引里的 CRC」，两端共享同一份同步过的索引，所以同一游戏在两台设备上算出的存档 key 恒等。鸿蒙早期错误地用 `g_soloSaveKey = Crc32File(g_romPath)`（运行时重算**磁盘文件** CRC），一旦两端 dump 不同（字节不同 → 磁盘 CRC 不同）就分叉，导致导入存档名对不上。
+- **正确修复（2026-11-01，机制对齐，非补丁）**：`gpretro.cpp` 新增 `SoloSaveCrc()`——加载时按 `g_romPath` 反推 `relativePath`（剥掉 `g_appDir/` 前缀，`g_appDir` 即 `files` 目录，ROM 全路径 `.../files/roms/peer/x.nes` → `roms/peer/x.nes`），读 `rom_index.json` 找到该条目取 `crc32` 8 位大写十六进制作为 `g_soloSaveKey`；未索引的 ROM 退回 `Crc32File`（兼容 sideload）。`GetRomCrc` 返回**加载时已定下的 `g_soloSaveKey`**（而非重新调用 `SoloSaveCrc` 重算），保证 `listSaves` / 删除 / 缩略图 / `cheats.json` 查找全部走同一个 key——否则删除用的 crc 与列表用的 key 分叉，会出现「删除不刷新 / 槽位错乱」。这与安卓 `CheatStore.crcKey` 完全一致。导入的 `31C302FB.*` 直接被鸿蒙找到，**不再需要任何 re-key / 改名补丁**。
+  - **补坑（2026-11-01 二次修复）**：`SoloSaveCrc` 初版用刚性字符串 `"relativePath":"<rel>"` 匹配，但本工程 `rom_index.json` 是 pretty-printed 的 `"relativePath": "<rel>"`（冒号后有空格），匹配永远失败 → 静默回退成 `Crc32File`（磁盘 CRC，跨 dump 不同）→ 表现为「存档/缩略图从 oxf 导入成功，但鸿蒙读不到/不更新」（文件落在 `31C302FB.*`，运行时却去读 `0BE9B81B.*`）。已改为 whitespace-tolerant 扫描（找 `"relativePath"` 键 → 取其后引号串 → 比对 candidate → 再取其后的 `"crc32"` 数值）。**教训：本工程所有 JSON 都是带空格的 pretty-print，用原始 `find("\"k\":\"v\"")` 必失败，必须用真正的 JSON 解析或容忍空格的扫描。**
+  - **与安卓的差异点（关键）**：安卓 `CheatStore.crcKey(filesDir, romRel)` 用正式 JSON 解析器读 `rom_index.json` 的 `crc32`，天然不受空格影响；鸿蒙此前自写脆性字符串匹配才踩坑。对齐方向是「用索引 crc32 做 key」，实现上务必 tolerant。
+  - **对照 3 项（用户要求核查）**：
+    1. **游戏路径名称**：两端都按 `rom_index.json` 的 `relativePath`（如 `roms/peer/吞食天地II·诸葛孔明传.nes`）作为游戏身份；`originalName`/`name` 仅展示用，不参与 key。✓ 已对齐。
+    2. **存档/缩略图落地路径**：两端都落在 `saves/<索引crc32>.<sav|state|slotN.jpg|slotN.rgba|meta>`（= `31C302FB.*`）。✓ 已对齐（修复前鸿蒙误用磁盘 crc `0BE9B81B.*`）。
+    3. **校验**：(a) 存档/金手指 key = 索引 crc32（跨 dump 一致），两端一致；(b) ROM 传输完整性 = 源文件真实 CRC（`X-File-Crc` 响应头，鸿蒙 `downloadRom` 校验），与索引 crc 解耦——安卓同理（不拿文件真实 crc 去比对索引 crc）。✓ 已对齐。
+  - Dart 端 `peer_sync.dart` 早期那个 `_rekeySaveToLocalRom`（`_crc32Table`/`_crc32HexOfFile`/`_romTitle`/`_mirrorIfMissing`/`_normalizeTitle`）已全部**撤回**（那是用磁盘 CRC 做镜像的临时补丁，治标不治本，且用过期的 `rom_index.json` crc32 当目标名导致 no-op）。
+- **ROM 导入“校验失败”（根因已修，2026-11-01）**：伙伴 ROM 导入 `_landRom` 原先用 `_verifyCrc(part, item.crc)` 拿**下载文件的真实 CRC** 去比对 `item.crc`——而 `item.crc` 是 `rom_index.json` 的 `crc32`（**索引 crc**，跨 dump 一致、用作存档/金手指身份键）。当本机收到的 ROM 是不同 dump（真实磁盘 CRC 不同）时，文件真实 CRC（`0x0BE9B81B`）≠ 索引 crc（`0x31C302FB`），校验必然失败 → “ROM 校验失败”。**修复**：传输完整性改为校验**源文件真实 CRC**——host（`peer_server.dart`）发 ROM 时在响应头 `X-File-Crc` 带上实际文件 CRC；client（`peer_client.dart` `downloadRom`）下载后比对“收到的字节 == 源文件 CRC”。这样跨 dump 导入时完整性仍被校验，但不再拿文件真实 CRC 去硬比对索引 crc。索引 crc 仍只用于存档/金手指身份键（与安卓一致）。旧 host 不发该头时 client 自动跳过校验（向后兼容）。
+- **导入槽位缩略图为空（已修）**：`openLoadDialog`（`EmulatorSpike.ets`）原只读 `<crc>.slotN.rgba`（原生写的那份），但伙伴导入槽位的缩略图是 `.jpg`。修复：`.rgba` 缺失则回退 `image.createImageSource(<crc>.slotN.jpg)` 解码。注意：此 `.jpg` 是导入时随存档带来的，文件名用导入端（安卓）的 crc（`31C302FB.slotN.jpg`）；因 `SoloSaveCrc()` 现在也返回索引 crc（`31C302FB`），所以 ArkTS 用 `getRomCrc()` 拼出的 `<crc>.slotN.jpg` 正好命中它。
+- **删除槽位**：`deleteSave` 拼 `<crc>.slotN.state/.rgba/.meta/.jpg`，`crc` 来自 `getRomCrc()`（即 `SoloSaveCrc()`，索引 crc）。导入槽位文件在 `31C302FB.*` 名下，与本机索引 crc 一致 → 删除正常。（早期「删不掉」正是机制分叉：删除按本机磁盘 CRC `0BE9B81B` 找，而文件在 `31C302FB` 名下。）
+- **实测对齐验证（吞食天地II）**：pura 上 `吞食天地II·诸葛孔明传.nes` 磁盘 CRC = `0x0BE9B81B`，但索引 `crc32 = 0x31C302FB`（两端同步的索引，安卓导出存档即 `31C302FB.sav`）。修复后鸿蒙改用索引 crc `0x31C302FB`，直接命中 `31C302FB.sav` → 加载 oxf 进度；`0BE9B81B.*` 旧文件成为孤儿（无害，可不清理）。
+- 验证：两端装同一游戏（哪怕 dump 不同）→ 安卓导存档 → 鸿蒙伙伴导入 → 进该游戏「读档」/「继续游戏」可见并加载。若 `.sav` 体积因核心版本不同而大于本机 SRAM，加载会被跳过（`cap >= size` 守卫，与安卓一致）——属核心版本差异，非逻辑问题。
 
 

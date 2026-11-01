@@ -168,7 +168,7 @@ Future<void> main() async {
         final prefsFile = File('$dir/app_prefs.json');
         log('app_prefs.json.exists=${prefsFile.existsSync()}');
 
-        // 2) 「记住上次游戏」 side effect must not throw and must clear the slot.
+        // 2) 「记住上次进度」 side effect must not throw and must clear the slot.
         await AppSettings.clearLastSaveSlot();
         log('clearLastSaveSlot.ok=true');
 

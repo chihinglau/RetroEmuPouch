@@ -75,7 +75,7 @@ check('不存在的游戏不误命中',
 print('\n== 5. 下载 + 落地(临时目录) ==')
 tmp = tempfile.mkdtemp(prefix='gp_online_')
 try:
-    os.makedirs(os.path.join(tmp, 'chats'), exist_ok=True)
+    os.makedirs(os.path.join(tmp, 'cheats'), exist_ok=True)
     g = dict(probes[0])
     g['crc'] = 'DEADBEEF'
     g['path'] = ''
@@ -86,9 +86,9 @@ try:
         check('下载到内容', 'cheat0_desc' in text, '%d 字节' % len(text))
         r = oc.adapt(tmp, g, text, source=cs[0].path)
         check('adapt 成功', r['ok'], str(r))
-        cht = os.path.join(tmp, 'chats', 'CT Special Forces.cht')
+        cht = os.path.join(tmp, 'cheats', 'CT Special Forces.cht')
         check('生成 .cht 文件', os.path.isfile(cht))
-        with open(os.path.join(tmp, 'chats', 'cheats.json'), 'r',
+        with open(os.path.join(tmp, 'cheats', 'cheats.json'), 'r',
                   encoding='utf-8') as f:
             j = json.load(f)
         check('cheats.json 按 CRC 键控', 'DEADBEEF' in j['byCrc'],

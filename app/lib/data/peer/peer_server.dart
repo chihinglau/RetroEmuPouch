@@ -750,6 +750,45 @@ class PeerServer {
     _streamFile(req, f, contentType);
   }
 
+  static final List<int> _crc32Table = () {
+    final t = List<int>.filled(256, 0);
+    for (int i = 0; i < 256; i++) {
+      int c = i;
+      for (int k = 0; k < 8; k++) {
+        c = (c & 1) != 0 ? (0xEDB88320 ^ (c >> 1)) : (c >> 1);
+      }
+      t[i] = c;
+    }
+    return t;
+  }();
+
+  /// CRC-32 of [f] (matches the emulator's native Crc32File and Android's
+  /// java.util.zip.CRC32). Advertised as the `X-File-Crc` response header so the
+  /// receiver can verify the transferred bytes against the SOURCE's actual file,
+  /// not the (dump-agnostic) index crc32 that is used as the save/cheat identity
+  /// key — those two intentionally differ across ROM dumps.
+  String _crc32HexOfFile(File f) {
+    final table = _crc32Table;
+    var crc = 0xFFFFFFFF;
+    final raf = f.openSync();
+    try {
+      final buf = Uint8List(1 << 16);
+      while (true) {
+        final n = raf.readIntoSync(buf);
+        if (n == 0) break;
+        for (var i = 0; i < n; i++) {
+          crc = table[(crc ^ buf[i]) & 0xFF] ^ (crc >> 8);
+        }
+      }
+    } finally {
+      raf.closeSync();
+    }
+    return ((crc ^ 0xFFFFFFFF) & 0xFFFFFFFF)
+        .toRadixString(16)
+        .padLeft(8, '0')
+        .toUpperCase();
+  }
+
   Future<void> _sendFileByCrc(
     HttpRequest req,
     String crcRaw,
@@ -766,6 +805,12 @@ class PeerServer {
     if (f == null || !f.existsSync()) {
       return _sendError(req, HttpStatus.notFound, 'not_found');
     }
+    // Advertise the actual on-disk CRC so the receiver verifies the bytes it
+    // received equal the bytes we sent (the index crc32 is a different,
+    // dump-agnostic key and must NOT be used for this integrity check).
+    try {
+      req.response.headers.set('X-File-Crc', _crc32HexOfFile(f));
+    } catch (_) {}
     _streamFile(req, f, contentType);
   }
 

@@ -1,4 +1,4 @@
-import { startEmulator, stopEmulator, setEmulatorTarget, setInput, setPlayerPort, resetEmu, setSpeed, setAudioMuted, getLoadError, saveState, loadState, getFps, getFilesDir, saveStateSlot, loadStateSlot, listSaves, getCheats, setCheats, isCoreReady, netplayFreeze } from 'libgpretro.so'
+import { startEmulator, stopEmulator, setEmulatorTarget, setInput, setPlayerPort, resetEmu, setSpeed, setAudioMuted, getLoadError, saveState, loadState, getFps, getFilesDir, getSavesDir, saveStateSlot, loadStateSlot, listSaves, getRomCrc, getCheats, setCheats, isCoreReady, netplayFreeze } from 'libgpretro.so'
 import { NetplaySession, NetplayCfg, NetplayStatus } from '../netplay_session'
 import { GamePouchPlugin } from '../plugins/GamePouchPlugin'
 import router from '@ohos.router';
@@ -32,7 +32,7 @@ const C_EXIT = '#EF9A9A'
 const C_TEXT = '#FFFFFF'
 const C_TEXT_ACTIVE = '#2D2000'
 
-interface EmuParams { rom?: string; core?: string; platform?: string; netplay?: object; filesDir?: string }
+interface EmuParams { rom?: string; core?: string; platform?: string; netplay?: object; filesDir?: string; resumeSlot?: number; resumeCrc?: string; rememberLastGame?: boolean }
 interface PadCircleSpec { bit: number; label: string; cx: number; cy: number; r: number }
 interface PadPillSpec { bit: number; label: string; cx: number; cy: number; w: number; h: number }
 interface MovePreset { label: string; script: string }
@@ -78,6 +78,8 @@ interface CheatInfo {
   selected?: number
 }
 interface CheatOption { label?: string; code?: string }
+// cheats.json shape: { version, byCrc: { <8-hex CRC>: CheatInfo[] } } (also used by cloud_cheats.json).
+interface CheatStore { version?: number; byCrc: Record<string, CheatInfo[]> }
 // Rendered row: a toggle (Switch) plus, for choice cheats, a Select of options.
 interface CheatRow {
   name: string
@@ -88,6 +90,8 @@ interface CheatRow {
   choiceSel: number
   // Effective code when enabled (already resolved for choice cheats).
   code: string
+  // Back-reference to the source CheatInfo so the toggle state can be persisted.
+  info: CheatInfo
 }
 
 /// Faithful port of the Android emulator UI: a full-screen native game surface
@@ -158,6 +162,13 @@ struct EmulatorSpike {
   @State stickPointer: number = -1
   // Save slots: which slot the next 存档 writes to + the load-dialog list.
   private saveSlot: number = 0
+  // Resume: last save slot + ROM crc, forwarded at launch so re-entering the
+  // same game auto-loads the most recent save state (mirrors Android's
+  // flutter.lastSaveSlot preference). The crc guards against loading another
+  // game's state if the persisted slot belongs to a different ROM.
+  private resumeSlot: number = -1
+  private resumeCrc: string = ''
+  private rememberLastGame: boolean = true
   // Netplay: lobby session config (forwarded from GamePouchPlugin) + the live
   // session object. Started after the core finishes loading (§16.4).
   private netplayParams?: Record<string, Object>
@@ -167,10 +178,18 @@ struct EmulatorSpike {
   private ending: boolean = false
   @State loadDialog: boolean = false
   @State saveList: SaveSlotInfo[] = []
+  // Save-slot thumbnail + scroll sizing for the load dialog (computed per open so
+  // it tracks orientation; mirrors Android's fixed wp(0.267)×hp(0.20) preview).
+  @State slotTw: number = 200
+  @State slotTh: number = 150
+  @State slotScrollH: number = 600
   // Cheats: openCheatsDialog loads cheats.json by ROM CRC; rows mirror the
   // Switch/Choice dialog on Android (CheatInfo.enabled + options/selected).
   @State cheatsOpen: boolean = false
   @State cheatRows: CheatRow[] = []
+  // Source CheatInfo[] for the current ROM (full objects, incl. options) — used
+  // to persist toggle state back into cheats.json.
+  private cheatInfos: CheatInfo[] = []
   private fpsTimer: number = -1
   // JS-side macro replay (the OHOS host has no nativePlayMacro yet): the
   // timer id + the bit-mask currently held by an in-flight 招式 sequence.
@@ -259,6 +278,14 @@ struct EmulatorSpike {
     this.platform = (p && p.platform) ? p.platform : ''
     this.cfgDir = (p && p.filesDir) ? p.filesDir : ''
     this.netplayParams = (p && p.netplay) ? p.netplay as Record<string, Object> : undefined
+    this.resumeSlot = (p && typeof p.resumeSlot === 'number') ? p.resumeSlot : -1
+    this.resumeCrc = (p && p.resumeCrc) ? p.resumeCrc : ''
+    this.rememberLastGame = (p && typeof p.rememberLastGame === 'boolean') ? p.rememberLastGame : true
+    if (!this.rememberLastGame) {
+      // 记住上次进度 turned off: drop the persisted slot so a future launch
+      // can't silently resume a stale save.
+      this.clearLastSaveFile()
+    }
     this.profile = this.computeProfile()
     console.info(`[EmulatorSpike] target rom=${this.rom} core=${this.core} platform=${this.platform} profile=${this.profile}`)
     if (this.netplayParams) {
@@ -629,6 +656,11 @@ struct EmulatorSpike {
   // ---- netplay (§16.4) ---------------------------------------------------
   // Core finished loading (onLoad). If a lobby session was forwarded, attach it.
   private onCoreReady(): void {
+    // Android parity: re-apply persisted cheats at launch (they were never auto-applied).
+    this.seedCheatsWhenReady(Date.now() + 30000)
+    // Resume: auto-load the most recent save state for this ROM when 记住上次进度
+    // is on (mirrors Android's flutter.lastSaveSlot auto-resume).
+    this.seedSaveWhenReady(Date.now() + 30000)
     if (!this.netplayParams) return
     // Android gates the entire bootstrap on npCoreReady.await(35s) BEFORE it
     // attaches netplay (host and guest alike), so every lockstep frame starts
@@ -957,6 +989,13 @@ struct EmulatorSpike {
         }
         // Cheats dialog (Switch per cheat / Choice for multi-option cheats).
         if (this.cheatsOpen) {
+          // Translucent backdrop: tap outside the card to dismiss. It is a sibling
+          // drawn beneath the card, so taps on the card do NOT bubble to it.
+          Column() {}
+            .width('100%')
+            .height('100%')
+            .backgroundColor('rgba(0,0,0,0.5)')
+            .onClick(() => { this.cheatsOpen = false })
           this.cheatsDialogView()
         }
       }
@@ -1682,7 +1721,20 @@ struct EmulatorSpike {
   panel() {
     Row({ space: 0 }) {
       this.panelBtn('摇杆', () => { this.onCommand('摇杆') })
-      this.panelBtn(this.speedMult > 1 ? ('加速×' + this.speedMult) : '加速', () => { this.onCommand('加速') })
+      // Android shows the live multiplier on the button (加速×1/×2/×4/…). Bind the
+      // label directly to @State (inline, NOT via panelBtn's closure param) so it
+      // refreshes live on speed change instead of only after the panel rebuilds.
+      Stack() {
+        Text('加速×' + this.speedMult)
+          .fontSize((this.ref() * 0.042) + 'px')
+          .fontColor(C_TEXT)
+      }
+      .width(this.toolPillW() + 'px').height(this.toolPillH() + 'px')
+      .borderRadius('50%')
+      .backgroundColor(C_FILL)
+      .border({ width: this.strokeW(false) + 'px', color: C_STROKE })
+      .margin({ left: (this.winW * 0.006) + 'px', right: (this.winW * 0.006) + 'px' })
+      .onClick(() => { this.onCommand('加速') })
       this.panelBtn('重开', () => { this.onCommand('重开') })
       this.panelBtn('金手', () => { this.onCommand('金手') })
       this.panelBtn('存档', () => { this.onCommand('存档') })
@@ -1693,7 +1745,6 @@ struct EmulatorSpike {
       x: (this.toolRowX() + this.toolPillW() + this.winW * 0.012 - this.winW * 0.006) + 'px',
       y: this.toolRowY() + 'px'
     })
-    .onClick(() => { this.panelOpen = false })
   }
 
   @Builder
@@ -1714,79 +1765,114 @@ struct EmulatorSpike {
   // ---------- 3-slot load dialog (mirrors EmulatorActivity's load list) ----------
   @Builder
   loadDialogView() {
+    Stack({ alignContent: Alignment.Center }) {
     // Dimmed backdrop (tap to dismiss).
     Column()
       .width('100%').height('100%')
       .backgroundColor('rgba(0,0,0,0.5)')
       .onClick(() => { this.loadDialog = false })
+    // Card mirrors Android renderLoadDialog(): title 「读取存档（n/3）」, rows =
+    // thumbnail (wp 26.7% × hp 20%, rounded, cropped) + 「存档 N · 槽位 M」 bold
+    // + fmtSlotTime gray + red 删除 text, 1px dividers, 取消 at bottom-right.
+    // Sizing comes from openLoadDialog() into @State slotTw/Th/slotScrollH.
     Column() {
-      Text('读档')
-        .fontSize((this.ref() * 0.05) + 'px')
-        .fontColor('#222222')
+      Text('读取存档（' + this.saveList.length + '/3）')
+        .fontSize(20)
+        .fontColor('#1F2329')
         .fontWeight(FontWeight.Bold)
         .alignSelf(ItemAlign.Start)
-        .margin({ bottom: this.ref() * 0.016 })
-      ForEach(this.saveList, (s: SaveSlotInfo) => {
-        Row() {
-          if (s.thumb) {
-            Image(s.thumb)
-              .width((this.ref() * 0.13) + 'px')
-              .height((this.ref() * 0.13 * s.h / s.w) + 'px')
-              .borderRadius(this.ref() * 0.01)
-              .objectFit(ImageFit.Cover)
-          } else {
-            Column()
-              .width((this.ref() * 0.13) + 'px')
-              .height((this.ref() * 0.13 * (s.h > 0 ? s.h / s.w : 0.75)) + 'px')
-              .backgroundColor('rgba(255,255,255,0.12)')
-          }
-          Column() {
-            Text('槽位 ' + (s.slot + 1))
-              .fontColor('#222222')
-              .fontSize(15)
-            Text(s.exists ? this.fmtTime(s.time) : '空')
-              .fontColor(s.exists ? '#888888' : '#BBBBBB')
-              .fontSize(12)
-          }
-          .layoutWeight(1)
-          .alignSelf(ItemAlign.Center)
-          .padding({ left: this.ref() * 0.012 })
-          if (s.exists) {
-            Button('读档')
-              .fontSize(14)
-              .backgroundColor(C_FILL_ACTIVE)
-              .fontColor(C_TEXT_ACTIVE)
-              .borderRadius(this.ref() * 0.02)
-              .onClick(() => { this.loadSlot(s.slot) })
-            Button('删除')
-              .fontSize(14)
-              .backgroundColor('rgba(239,154,154,0.9)')
-              .fontColor('#FFFFFF')
-              .borderRadius(this.ref() * 0.02)
-              .onClick(() => { this.deleteSave(s.slot) })
-          }
+        .margin({ bottom: 8 })
+      Scroll() {
+        Column() {
+          ForEach(this.saveList, (s: SaveSlotInfo, idx: number) => {
+            Row() {
+              if (s.thumb) {
+                Image(s.thumb)
+                  .width(Math.round(this.slotTw) + 'px')
+                  .height(Math.round(this.slotTh) + 'px')
+                  .borderRadius(Math.round(this.ref() * 0.0167))
+                  .objectFit(ImageFit.Cover)
+              } else {
+                Column()
+                  .width(Math.round(this.slotTw) + 'px')
+                  .height(Math.round(this.slotTh) + 'px')
+                  .backgroundColor('#181B26')
+                  .borderRadius(Math.round(this.ref() * 0.0167))
+              }
+              Column() {
+                Text('存档 ' + (idx + 1) + ' · 槽位 ' + (s.slot + 1))
+                  .fontSize(15)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor('#1F2329')
+                  .maxLines(1)
+                Text(this.fmtSlotTime(s.time))
+                  .fontSize(12.5)
+                  .fontColor('#5F6670')
+                  .margin({ top: 4 })
+                  .maxLines(1)
+              }
+              // Explicit px width: unitless paddings elsewhere were interpreted
+              // as vp (~3.5x), which overflowed the row and clipped this column.
+              .width(Math.round(this.winW * 0.22) + 'px')
+              .alignItems(HorizontalAlign.Start)
+              .margin({ left: Math.round(this.winW * 0.012) + 'px', right: Math.round(this.winW * 0.012) + 'px' })
+              Blank()
+              Text('删除')
+                .fontSize(13.5)
+                .fontColor('#C62828')
+                .padding({
+                  left: Math.round(this.winW * 0.039) + 'px',
+                  right: Math.round(this.winW * 0.017) + 'px',
+                  top: 10,
+                  bottom: 10
+                })
+                .onClick(() => { this.confirmDeleteSave(s.slot, s.time) })
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Center)
+            // All winW/winH-derived paddings must carry 'px': unitless numbers
+            // are treated as vp (~3.5x on device), which overflowed the row and
+            // clipped both the info column and the 删除 button.
+            .padding({
+              left: Math.round(this.winW * 0.028) + 'px',
+              right: Math.round(this.winW * 0.028) + 'px',
+              top: Math.round(this.winH * 0.022) + 'px',
+              bottom: Math.round(this.winH * 0.022) + 'px'
+            })
+            .onClick(() => { this.loadSlot(s.slot) })
+            if (idx < this.saveList.length - 1) {
+              Divider()
+                .color('#1F000000')
+                .strokeWidth(1)
+                .margin({ left: Math.round(this.winW * 0.033) + 'px', right: Math.round(this.winW * 0.033) + 'px' })
+            }
+          }, (s: SaveSlotInfo) => 'slot' + s.slot)
         }
         .width('100%')
-        .padding(this.ref() * 0.01)
-        .margin({ bottom: this.ref() * 0.01 })
-        .backgroundColor('rgba(255,255,255,0.92)')
-        .borderRadius(this.ref() * 0.02)
-      }, (s: SaveSlotInfo) => 'slot' + s.slot)
-      Button('关闭')
-        .width('100%')
-        .fontSize(15)
-        .backgroundColor(C_FILL)
-        .fontColor(C_TEXT)
-        .borderRadius(this.ref() * 0.02)
-        .margin({ top: this.ref() * 0.01 })
-        .onClick(() => { this.loadDialog = false })
+        .alignItems(HorizontalAlign.Start)
+      }
+      .width('100%')
+      .height(Math.round(this.slotScrollH) + 'px')
+      .align(Alignment.Top)
+      .scrollBar(BarState.Off)
+      Row() {
+        Blank()
+        Text('取消')
+          .fontSize(15)
+          .fontColor('#009688')
+          .padding({ left: 16, right: 8, top: 10, bottom: 10 })
+          .onClick(() => { this.loadDialog = false })
+      }
+      .width('100%')
+      .margin({ top: 4 })
     }
-    .width('78%')
-    .padding(this.ref() * 0.025)
+    .width('82%')
+    .padding(Math.round(this.winW * 0.022) + 'px')
     .backgroundColor('#FFFFFF')
-    .borderRadius(this.ref() * 0.03)
-    .position({ x: (this.layX + this.winW / 2) + 'px', y: (this.layY + this.winH / 2) + 'px' })
-    .translate({ x: '-50%', y: '-50%' })
+    .borderRadius(Math.round(this.ref() * 0.02))
+    }
+    .width('100%')
+    .height('100%')
   }
 
   private onCommand(label: string): void {
@@ -1829,6 +1915,11 @@ struct EmulatorSpike {
         if (ok) {
           this.showToast('已存档 槽 ' + (slot + 1))
           this.saveSlot = (slot + 1) % 3
+          this.persistLastSave(slot)
+          // Android parity: every save also has a JPEG thumbnail
+          // (grabThumbnail → JPEG 85); convert the raw .rgba the native side
+          // just wrote so the on-disk layout matches Android exactly.
+          this.writeSlotJpg(slot)
         } else {
           this.showToast('存档失败')
         }
@@ -2067,35 +2158,141 @@ struct EmulatorSpike {
   // ---- 3-slot load dialog ----
   private openLoadDialog(): void {
     try {
+      // Sizing mirrors Android renderLoadDialog: thumbnail wp(0.267)×hp(0.20),
+      // scroll area capped at 58% of the screen height so 3 rows + title +
+      // button always fit.
+      this.slotTw = this.winW * 0.267
+      this.slotTh = this.winH * 0.20
+      this.slotScrollH = this.winH * 0.58
       const json = listSaves()
       const arr = JSON.parse(json) as SaveSlotInfo[]
-      const dir = getFilesDir()
-      for (const s of arr) {
-        if (s.exists && s.w > 0 && s.h > 0 && dir) {
-          const path = dir + '/thumb' + s.slot + '.rgba'
-          try {
-            const file: fs.File = fs.openSync(path)
-            const st = fs.statSync(path)
-            const buf: ArrayBuffer = new ArrayBuffer(st.size)
-            fs.readSync(file.fd, buf)
-            fs.closeSync(file.fd)
-            const opts: image.InitializationOptions = {
-              pixelFormat: image.PixelMapFormat.RGBA_8888,
-              size: { width: s.w, height: s.h }
+      const savesDir = (getSavesDir() as string)
+      const crc = (getRomCrc() as string)
+      // Android listSlots(): only slots with a .state file exist, sorted by
+      // mtime newest first — the picker ordinal (存档 N) is the position in
+      // that order, not the raw slot index.
+      const filled = arr.filter((s: SaveSlotInfo) => s.exists)
+        .sort((a: SaveSlotInfo, b: SaveSlotInfo) => b.time - a.time)
+      this.dbgLoad('=== openLoadDialog crc=' + crc + ' dir=' + savesDir +
+        ' filled=' + filled.map((x) => '[' + x.slot + ',' + x.time + ',' + x.w + 'x' + x.h + ']').join(','))
+      if (filled.length === 0) {
+        this.loadDialog = false
+        AlertDialog.show({
+          title: '读取存档',
+          message: '还没有手动存档。\n游戏中点菜单「存档」即可保存当前进度，最近 3 个存档会自动保留。',
+          primaryButton: {
+            value: '知道了',
+            action: () => {
             }
-            image.createPixelMap(buf, opts).then((pm: image.PixelMap) => {
-              s.thumb = pm
-              // Trigger a refresh of the rendered list.
-              this.saveList = this.saveList.slice()
-            }).catch(() => {})
-          } catch (e) { /* no thumbnail */ }
-        }
+          }
+        })
+        return
       }
-      this.saveList = arr
-      this.loadDialog = true
+      // Android: thumbnails are JPEGs (saves/<saveKey>.slotN.jpg) decoded with
+      // BitmapFactory.decodeFile — the JPEG carries its own dimensions, so no
+      // .meta w/h is needed (imported slots have none, which is why the old
+      // w>0 guard skipped them). Legacy local saves may only have the raw
+      // .rgba (+ .meta w/h); decode that as a fallback.
+      // Decode every thumbnail BEFORE opening the dialog: the picker builds its
+      // rows once, so PixelMaps must be ready at first render (a thumb that
+      // arrives later never re-renders the ForEach item).
+      const decodeSlot = (s: SaveSlotInfo): Promise<void> => {
+        return new Promise<void>((resolve) => {
+          if (!savesDir) {
+            resolve()
+            return
+          }
+          const jpgPath = savesDir + '/' + crc + '.slot' + s.slot + '.jpg'
+          const rgbaPath = savesDir + '/' + crc + '.slot' + s.slot + '.rgba'
+          let jpgOk = false
+          try { jpgOk = fs.accessSync(jpgPath) } catch (e) { jpgOk = false }
+          this.dbgLoad('slot' + s.slot + ' jpgExists=' + jpgOk)
+          const tryRgba = () => {
+            if (!(s.w > 0 && s.h > 0)) {
+              this.dbgLoad('slot' + s.slot + ' rgbaSkip (no w/h)')
+              resolve()
+              return
+            }
+            try {
+              const rf: fs.File = fs.openSync(rgbaPath, fs.OpenMode.READ_ONLY)
+              const st = fs.statSync(rgbaPath)
+              const buf: ArrayBuffer = new ArrayBuffer(st.size)
+              fs.readSync(rf.fd, buf)
+              fs.closeSync(rf.fd)
+              const opts: image.InitializationOptions = {
+                pixelFormat: image.PixelMapFormat.RGBA_8888,
+                size: { width: s.w, height: s.h }
+              }
+              image.createPixelMap(buf, opts).then((pm: image.PixelMap) => {
+                this.dbgLoad('slot' + s.slot + ' rgbaOk')
+                s.thumb = pm
+                resolve()
+              }).catch((e: object) => {
+                this.dbgLoad('slot' + s.slot + ' rgbaFail ' + JSON.stringify(e))
+                resolve()
+              })
+            } catch (e) {
+              this.dbgLoad('slot' + s.slot + ' rgbaReadFail ' + JSON.stringify(e))
+              resolve()
+            }
+          }
+          if (!jpgOk) {
+            tryRgba()
+            return
+          }
+          try {
+            const jf: fs.File = fs.openSync(jpgPath, fs.OpenMode.READ_ONLY)
+            const st = fs.statSync(jpgPath)
+            const buf: ArrayBuffer = new ArrayBuffer(st.size)
+            const n = fs.readSync(jf.fd, buf)
+            fs.closeSync(jf.fd)
+            this.dbgLoad('slot' + s.slot + ' jpgReadBytes=' + n + ' size=' + st.size)
+            const src: image.ImageSource = image.createImageSource(buf)
+            src.createPixelMap().then((pm: image.PixelMap) => {
+              this.dbgLoad('slot' + s.slot + ' pmOk')
+              s.thumb = pm
+              resolve()
+            }).catch((e: object) => {
+              this.dbgLoad('slot' + s.slot + ' pmFail ' + JSON.stringify(e))
+              tryRgba()
+            }).finally(() => { try { src.release() } catch (er) { } })
+          } catch (e) {
+            this.dbgLoad('slot' + s.slot + ' jpgSyncFail ' + JSON.stringify(e))
+            tryRgba()
+          }
+        })
+      }
+      Promise.all(filled.map((s: SaveSlotInfo) => decodeSlot(s))).then(() => {
+        this.dbgLoad('dialog open, thumbs=' + filled.map((x) => (x.thumb ? 1 : 0)).join(''))
+        this.saveList = filled
+        this.loadDialog = true
+      })
     } catch (e) {
       this.showToast('读档列表失败')
     }
+  }
+
+  // Diagnostics: append to <savesDir>/load_dbg.txt (immune to hilog buffer churn).
+  private dbgLoad(msg: string): void {
+    try {
+      const dir = (getSavesDir() as string)
+      if (!dir) {
+        return
+      }
+      const p = dir + '/load_dbg.txt'
+      let prev = ''
+      try {
+        const rf: fs.File = fs.openSync(p, fs.OpenMode.READ_ONLY)
+        const st = fs.statSync(p)
+        const b: ArrayBuffer = new ArrayBuffer(st.size)
+        fs.readSync(rf.fd, b)
+        fs.closeSync(rf.fd)
+        prev = String.fromCharCode(...new Uint8Array(b))
+      } catch (e) { prev = '' }
+      const wf: fs.File = fs.openSync(p, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC)
+      fs.writeSync(wf.fd, prev + msg + '\n')
+      fs.closeSync(wf.fd)
+    } catch (e) { /* ignore */ }
   }
 
   private loadSlot(slot: number): void {
@@ -2108,19 +2305,100 @@ struct EmulatorSpike {
   }
 
   private deleteSave(slot: number): void {
-    const dir = getFilesDir()
-    if (dir) {
-      try { fs.unlinkSync(dir + '/state' + slot + '.sav') } catch (e) {}
-      try { fs.unlinkSync(dir + '/thumb' + slot + '.rgba') } catch (e) {}
-      try { fs.unlinkSync(dir + '/thumb' + slot + '.meta') } catch (e) {}
+    const savesDir = (getSavesDir() as string)
+    const crc = (getRomCrc() as string)
+    if (savesDir) {
+      try { fs.unlinkSync(savesDir + '/' + crc + '.slot' + slot + '.state') } catch (e) {}
+      try { fs.unlinkSync(savesDir + '/' + crc + '.slot' + slot + '.rgba') } catch (e) {}
+      try { fs.unlinkSync(savesDir + '/' + crc + '.slot' + slot + '.meta') } catch (e) {}
+      try { fs.unlinkSync(savesDir + '/' + crc + '.slot' + slot + '.jpg') } catch (e) {}
     }
     this.openLoadDialog() // refresh
   }
 
-  private fmtTime(secs: number): string {
+  // Android parity: every manual save carries a JPEG thumbnail
+  // (saves/<saveKey>.slotN.jpg, quality 85 — grabThumbnail + compress(JPEG)).
+  // The native SaveStateSlot emits the raw down-scaled .rgba plus a .meta
+  // ("w h"); convert it to a real JPEG here so the on-disk layout matches
+  // Android and the load picker can decode it like BitmapFactory does.
+  private writeSlotJpg(slot: number): void {
+    try {
+      const savesDir = (getSavesDir() as string)
+      const crc = (getRomCrc() as string)
+      if (!savesDir) {
+        return
+      }
+      const base = savesDir + '/' + crc + '.slot' + slot
+      const mf: fs.File = fs.openSync(base + '.meta', fs.OpenMode.READ_ONLY)
+      const ms = fs.statSync(base + '.meta')
+      const mb: ArrayBuffer = new ArrayBuffer(ms.size)
+      fs.readSync(mf.fd, mb)
+      fs.closeSync(mf.fd)
+      const parts = String.fromCharCode(...new Uint8Array(mb)).trim().split(/\s+/)
+      const w = Number(parts[0])
+      const h = Number(parts[1])
+      if (!(w > 0 && h > 0)) {
+        return
+      }
+      const rf: fs.File = fs.openSync(base + '.rgba', fs.OpenMode.READ_ONLY)
+      const rs = fs.statSync(base + '.rgba')
+      const buf: ArrayBuffer = new ArrayBuffer(rs.size)
+      fs.readSync(rf.fd, buf)
+      fs.closeSync(rf.fd)
+      const opts: image.InitializationOptions = {
+        pixelFormat: image.PixelMapFormat.RGBA_8888,
+        size: { width: w, height: h }
+      }
+      image.createPixelMap(buf, opts).then((pm: image.PixelMap) => {
+        const packer = image.createImagePacker()
+        const popts: image.PackingOption = { format: 'image/jpeg', quality: 85 }
+        packer.packToData(pm, popts).then((data: ArrayBuffer) => {
+          const jf = fs.openSync(base + '.jpg',
+            fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC)
+          fs.writeSync(jf.fd, data)
+          fs.closeSync(jf.fd)
+          try { packer.release() } catch (e) { }
+        }).catch(() => { try { packer.release() } catch (e) { } })
+      }).catch(() => { })
+    } catch (e) { /* thumbnail is optional */ }
+  }
+
+  // EmulatorActivity.fmtSlotTime(): 今天/昨天 HH:mm, else M月d日 HH:mm.
+  private fmtSlotTime(secs: number): string {
     const d = new Date(secs * 1000)
     const pad = (n: number): string => (n < 10 ? '0' + n : '' + n)
-    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes())
+    const hm = pad(d.getHours()) + ':' + pad(d.getMinutes())
+    const startOfDay = (t: Date): number =>
+      new Date(t.getFullYear(), t.getMonth(), t.getDate()).getTime()
+    const diffDays = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000)
+    if (diffDays === 0) {
+      return '今天 ' + hm
+    }
+    if (diffDays === 1) {
+      return '昨天 ' + hm
+    }
+    return (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + hm
+  }
+
+  // EmulatorActivity delete flow: confirm first, then delete and reopen the
+  // picker (deleteSave already refreshes via openLoadDialog).
+  private confirmDeleteSave(slot: number, timeSecs: number): void {
+    AlertDialog.show({
+      title: '删除该存档？',
+      message: this.fmtSlotTime(timeSecs) + ' 的存档将被删除，此操作不可撤销。',
+      primaryButton: {
+        value: '取消',
+        action: () => {
+        }
+      },
+      secondaryButton: {
+        value: '删除',
+        fontColor: '#C62828',
+        action: () => {
+          this.deleteSave(slot)
+        }
+      }
+    })
   }
 
   // EmulatorActivity.confirmRestart()
@@ -2156,6 +2434,7 @@ struct EmulatorSpike {
         this.showToast('本游戏暂无金手指')
         return
       }
+      this.cheatInfos = list
       const rows: CheatRow[] = list.map((c: CheatInfo): CheatRow => {
         const hasChoice = !!(c.options && c.options.length > 0)
         const sel = c.selected ?? 0
@@ -2177,7 +2456,8 @@ struct EmulatorSpike {
           choiceLabels: labels,
           choiceCodes: codes,
           choiceSel: sel,
-          code: code
+          code: code,
+          info: c
         }
       })
       this.cheatRows = rows
@@ -2189,7 +2469,9 @@ struct EmulatorSpike {
   }
 
   // Push the current toggle/choice state into the native cheat interface.
-  private applyCheats(): void {
+  // When `persist` is true (a user toggle), mirror the state back into
+  // cheats.json so it survives a dialog close / app restart (Android parity).
+  private applyCheats(persist: boolean = false): void {
     const out: Array<[string, boolean]> = []
     for (const r of this.cheatRows) {
       if (r.enabled && r.code.length > 0) {
@@ -2197,6 +2479,120 @@ struct EmulatorSpike {
       }
     }
     setCheats(JSON.stringify(out))
+    if (persist) this.persistCheats()
+  }
+
+  // Write the current toggle/choice state into <cfgDir>/library/cheats.json under
+  // the loaded ROM's CRC key. Local store wins over cloud_cheats.json in GetCheats,
+  // so reopening the dialog (and seeding at next launch) reflects the saved state.
+  private persistCheats(): void {
+    try {
+      const crc = getRomCrc() as string
+      if (!crc || crc === '00000000') return
+      const path = this.configDir() + '/library/cheats.json'
+      let byCrc: Record<string, CheatInfo[]> = {}
+      if (fs.accessSync(path)) {
+        const obj = JSON.parse(fs.readTextSync(path)) as CheatStore
+        if (obj && obj.byCrc) byCrc = obj.byCrc
+      }
+      for (const r of this.cheatRows) {
+        if (!r.info) continue
+        r.info.enabled = r.enabled
+        if (r.hasChoice) r.info.selected = r.choiceSel
+      }
+      byCrc[crc] = this.cheatInfos
+      const file: fs.File = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC)
+      fs.writeSync(file.fd, JSON.stringify({ version: 1, byCrc } as CheatStore))
+      fs.closeSync(file.fd)
+      console.info(`[EmulatorSpike] persistCheats crc=${crc} n=${this.cheatInfos.length}`)
+    } catch (e) {
+      console.warn('[EmulatorSpike] persistCheats failed: ' + (e as Error).message)
+    }
+  }
+
+  // Android parity: re-apply the persisted/enabled cheats right after the core
+  // loads, so a previously-enabled cheat is active without re-opening the dialog.
+  private seedCheats(): void {
+    try {
+      const raw = getCheats() as string
+      const list = JSON.parse(raw) as CheatInfo[]
+      if (!list || list.length === 0) return
+      const out: Array<[string, boolean]> = []
+      for (const c of list) {
+        if (c.enabled && c.code && c.code.length > 0) {
+          out.push([c.code, true])
+        } else if (c.options && c.options.length > 0 && (c.selected ?? -1) >= 0) {
+          const opt = c.options[c.selected!]
+          if (opt && opt.code && opt.code.length > 0) out.push([opt.code, true])
+        }
+      }
+      if (out.length > 0) setCheats(JSON.stringify(out))
+    } catch (e) {
+      console.warn('[EmulatorSpike] seedCheats failed: ' + (e as Error).message)
+    }
+  }
+
+  // The core finishes loading on a render thread, so wait for it to be live
+  // (mirrors the netplay bootstrap gate) before seeding.
+  private seedCheatsWhenReady(deadline: number): void {
+    let ready = false
+    try { ready = isCoreReady() as boolean } catch (e) { ready = false }
+    if (ready) {
+      this.seedCheats()
+      return
+    }
+    if (Date.now() > deadline) return
+    setTimeout((): void => { this.seedCheatsWhenReady(deadline) }, 100)
+  }
+
+  /// Mirror of seedCheatsWhenReady: once the core is live, auto-load the most
+  /// recent save state for this ROM (当 记住上次进度 is on). The persisted slot is
+  /// ROM-specific via crc, so a slot from a different game is never loaded.
+  private seedSaveWhenReady(deadline: number): void {
+    if (!this.rememberLastGame || this.resumeSlot < 0 || !this.resumeCrc) {
+      return
+    }
+    let ready = false
+    try { ready = isCoreReady() as boolean } catch (e) { ready = false }
+    if (ready) {
+      const crc = getRomCrc() as string
+      if (crc === this.resumeCrc) {
+        if (loadStateSlot(this.resumeSlot)) {
+          this.showToast('已恢复上次存档 槽 ' + (this.resumeSlot + 1))
+        } else {
+          this.showToast('上次存档恢复失败')
+        }
+      }
+      return
+    }
+    if (Date.now() > deadline) return
+    setTimeout((): void => { this.seedSaveWhenReady(deadline) }, 100)
+  }
+
+  /// Persist the just-written save slot (per-ROM crc) so the next launch of the
+  /// same game can resume it. When 记住上次进度 is off, drop the file instead.
+  private persistLastSave(slot: number): void {
+    if (!this.rememberLastGame) {
+      this.clearLastSaveFile()
+      return
+    }
+    const dir = (this.cfgDir && this.cfgDir.length > 0) ? this.cfgDir : (getFilesDir() as string)
+    const path = dir + '/last_slot.json'
+    try {
+      const crc = getRomCrc() as string
+      const file: fs.File = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC)
+      fs.writeSync(file.fd, JSON.stringify({ crc: crc, slot: slot, time: Date.now() }))
+      fs.closeSync(file.fd)
+      console.info(`[EmulatorSpike] persistLastSave crc=${crc} slot=${slot}`)
+    } catch (e) {
+      console.warn('[EmulatorSpike] persistLastSave failed: ' + (e as ESObject)?.message)
+    }
+  }
+
+  private clearLastSaveFile(): void {
+    const dir = (this.cfgDir && this.cfgDir.length > 0) ? this.cfgDir : (getFilesDir() as string)
+    const path = dir + '/last_slot.json'
+    try { fs.unlinkSync(path) } catch (e) { /* not present */ }
   }
 
   @Builder
@@ -2212,51 +2608,62 @@ struct EmulatorSpike {
         Text('本游戏暂无金手指')
           .fontColor('#888888')
           .fontSize(14)
+          .margin({ bottom: this.ref() * 0.01 })
       }
-      ForEach(this.cheatRows, (r: CheatRow, i: number) => {
-        Row() {
-          Column() {
-            Text(r.name)
-              .fontColor('#222222')
-              .fontSize(15)
-              .maxLines(2)
-          }
-          .layoutWeight(1)
-          .alignSelf(ItemAlign.Center)
-          if (r.hasChoice) {
+      // Scroll keeps the list bounded so the 关闭 button (footer below) is always
+      // reachable even when a ROM has dozens of cheats.
+      Scroll() {
+        Column() {
+          ForEach(this.cheatRows, (r: CheatRow, i: number) => {
             Row() {
-              ForEach(r.choiceLabels, (lab: string, oi: number) => {
-                Text(lab)
-                  .fontSize(12)
-                  .fontColor(r.choiceSel === oi ? C_TEXT_ACTIVE : C_TEXT)
-                  .backgroundColor(r.choiceSel === oi ? C_FILL_ACTIVE : C_FILL)
-                  .borderRadius(this.ref() * 0.02)
-                  .padding({ left: (this.ref() * 0.012) + 'px', right: (this.ref() * 0.012) + 'px',
-                    top: (this.ref() * 0.006) + 'px', bottom: (this.ref() * 0.006) + 'px' })
-                  .margin({ right: (this.ref() * 0.008) + 'px' })
-                  .onClick(() => {
-                    this.cheatRows[i].choiceSel = oi
-                    this.cheatRows[i].code = this.cheatRows[i].choiceCodes[oi] ?? ''
-                    this.cheatRows = this.cheatRows.slice()
-                    this.applyCheats()
-                  })
-              }, (lab: string, oi: number) => 'opt' + i + '_' + oi)
+              Column() {
+                Text(r.name)
+                  .fontColor('#222222')
+                  .fontSize(15)
+                  .maxLines(2)
+              }
+              .layoutWeight(1)
+              .alignSelf(ItemAlign.Center)
+              if (r.hasChoice) {
+                Row() {
+                  ForEach(r.choiceLabels, (lab: string, oi: number) => {
+                    Text(lab)
+                      .fontSize(12)
+                      .fontColor(r.choiceSel === oi ? C_TEXT_ACTIVE : C_TEXT)
+                      .backgroundColor(r.choiceSel === oi ? C_FILL_ACTIVE : C_FILL)
+                      .borderRadius(this.ref() * 0.02)
+                      .padding({ left: (this.ref() * 0.012) + 'px', right: (this.ref() * 0.012) + 'px',
+                        top: (this.ref() * 0.006) + 'px', bottom: (this.ref() * 0.006) + 'px' })
+                      .margin({ right: (this.ref() * 0.008) + 'px' })
+                      .onClick(() => {
+                        this.cheatRows[i].choiceSel = oi
+                        this.cheatRows[i].code = this.cheatRows[i].choiceCodes[oi] ?? ''
+                        this.cheatRows = this.cheatRows.slice()
+                        this.applyCheats(true)
+                      })
+                  }, (lab: string, oi: number) => 'opt' + i + '_' + oi)
+                }
+                .layoutWeight(1)
+              }
+              Toggle({ type: ToggleType.Switch, isOn: r.enabled })
+                .onChange((on: boolean) => {
+                  this.cheatRows[i].enabled = on
+                  this.cheatRows = this.cheatRows.slice()
+                  this.applyCheats(true)
+                })
             }
-            .layoutWeight(1)
-          }
-          Toggle({ type: ToggleType.Switch, isOn: r.enabled })
-            .onChange((on: boolean) => {
-              this.cheatRows[i].enabled = on
-              this.cheatRows = this.cheatRows.slice()
-              this.applyCheats()
-            })
+            .width('100%')
+            .padding(this.ref() * 0.01)
+            .margin({ bottom: this.ref() * 0.01 })
+            .backgroundColor('rgba(255,255,255,0.92)')
+            .borderRadius(this.ref() * 0.02)
+          }, (r: CheatRow, i: number) => 'cheat' + i)
         }
         .width('100%')
-        .padding(this.ref() * 0.01)
-        .margin({ bottom: this.ref() * 0.01 })
-        .backgroundColor('rgba(255,255,255,0.92)')
-        .borderRadius(this.ref() * 0.02)
-      }, (r: CheatRow, i: number) => 'cheat' + i)
+      }
+      .layoutWeight(1)
+      .width('100%')
+      .margin({ top: this.ref() * 0.004, bottom: this.ref() * 0.004 })
       Button('关闭')
         .width('100%')
         .fontSize(15)
@@ -2267,7 +2674,7 @@ struct EmulatorSpike {
         .onClick(() => { this.cheatsOpen = false })
     }
     .width('82%')
-    .constraintSize({ maxHeight: (this.ref() * 0.82) + 'px' })
+    .height((this.ref() * 0.82) + 'px')
     .padding(this.ref() * 0.025)
     .backgroundColor('#FFFFFF')
     .borderRadius(this.ref() * 0.03)

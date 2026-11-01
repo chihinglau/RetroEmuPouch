@@ -11,7 +11,7 @@
        (GitHub contents API, 按平台目录分次拉取, 结果本地缓存 7 天)。
     2. 用归一化名字 + 前缀 + 相似度三级打分, 为 ROM 找到候选 .cht。
     3. 下载候选 .cht, 解析成 GamePouch 的 CheatInfo 列表。
-    4. 落地:  ``chats/<ROM 主干>.cht``  +  合并进 ``chats/cheats.json``
+    4. 落地:  ``cheats/<ROM 主干>.cht``  +  合并进 ``cheats/cheats.json``
        (按 ROM 的 CRC32 键控, 与手机端完全一致)。
 
 数据源
@@ -303,8 +303,8 @@ _SAVE_LOCK = threading.Lock()
 def adapt(root: str, game: dict, text: str, source: str = '') -> dict:
     """把下载到的 .cht 文本落地到本地库。
 
-    写入 ``<root>/chats/<ROM 主干>.cht`` 并把命令合并进
-    ``<root>/chats/cheats.json`` 的 ``byCrc[CRC32]``。
+    写入 ``<root>/cheats/<ROM 主干>.cht`` 并把命令合并进
+    ``<root>/cheats/cheats.json`` 的 ``byCrc[CRC32]``。
     返回 {'ok':bool, 'count':int, 'crc':str, 'cht':str, 'reason':str}
     """
     cheats = parse_cht_text(text)
@@ -318,23 +318,23 @@ def adapt(root: str, game: dict, text: str, source: str = '') -> dict:
     if not crc:
         return {'ok': False, 'count': 0, 'reason': '缺少 CRC32'}
 
-    chats = os.path.join(root, 'chats')
-    os.makedirs(chats, exist_ok=True)
-    cht_path = os.path.join(chats, (game.get('stem') or 'game') + '.cht')
+    cheats = os.path.join(root, 'cheats')
+    os.makedirs(cheats, exist_ok=True)
+    cht_path = os.path.join(cheats, (game.get('stem') or 'game') + '.cht')
     with open(cht_path, 'w', encoding='utf-8') as f:
         f.write(to_cht_text(cheats))
 
     # 以下两处都是「读-改-写」, 多线程批量适配时必须串行,
     # 否则会出现条目丢失 / 临时文件互相踩踏。
     with _SAVE_LOCK:
-        cj = os.path.join(chats, 'cheats.json')
+        cj = os.path.join(cheats, 'cheats.json')
         data = load_cheats_json(cj)
         data['byCrc'][str(crc).upper()] = cheats
         save_cheats_json(cj, data)
 
         # 记录来源, 便于回溯与撤销
         try:
-            rep = os.path.join(chats, '_online_report.json')
+            rep = os.path.join(cheats, '_online_report.json')
             repd = {}
             if os.path.isfile(rep):
                 with open(rep, 'r', encoding='utf-8') as f:
@@ -358,7 +358,7 @@ def game_display(game: dict) -> str:
 
 
 def online_report_path(root: str) -> str:
-    return os.path.join(root, 'chats', '_online_report.json')
+    return os.path.join(root, 'cheats', '_online_report.json')
 
 
 def load_online_report(root: str) -> dict:
@@ -381,16 +381,16 @@ def undo_online(root: str, stems=None) -> int:
     if not rep:
         return 0
     targets = [s for s in rep if (stems is None or s in stems)]
-    chats = os.path.join(root, 'chats')
+    cheats = os.path.join(root, 'cheats')
     with _SAVE_LOCK:
-        cj = os.path.join(chats, 'cheats.json')
+        cj = os.path.join(cheats, 'cheats.json')
         data = load_cheats_json(cj)
         n = 0
         for s in targets:
             crc = str(rep[s].get('crc', '')).upper()
             if crc:
                 data['byCrc'].pop(crc, None)
-            p = os.path.join(chats, s + '.cht')
+            p = os.path.join(cheats, s + '.cht')
             if os.path.isfile(p):
                 try:
                     os.remove(p)
@@ -521,14 +521,14 @@ DIR_PLATFORM = {
 def scan_missing(root: str, platform: str = '', limit: int = 0) -> list:
     """扫出本地库里「没有对应 .cht」的游戏(命令行用, 不依赖 GUI)。"""
     roms_root = os.path.join(root, 'roms')
-    chats = os.path.join(root, 'chats')
+    cheats = os.path.join(root, 'cheats')
     have = set()
-    if os.path.isdir(chats):
-        for n in os.listdir(chats):
+    if os.path.isdir(cheats):
+        for n in os.listdir(cheats):
             if n.lower().endswith('.cht'):
                 have.add(os.path.splitext(n)[0].lower())
     try:
-        with open(os.path.join(chats, 'cheats.json'), 'r',
+        with open(os.path.join(cheats, 'cheats.json'), 'r',
                   encoding='utf-8') as f:
             by_crc = (json.load(f) or {}).get('byCrc', {})
     except Exception:

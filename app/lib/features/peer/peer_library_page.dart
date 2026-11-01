@@ -1113,6 +1113,158 @@ class _ImportFlowPageState extends State<_ImportFlowPage> {
   int get _selectedCount =>
       _sel.values.where((s) => s.rom || s.cheats || s.saveKinds.isNotEmpty).length;
 
+  // ----- batch "select all" helpers for the configure step -----
+
+  /// Save-kind tokens a game actually exposes.
+  List<String> _gameSaveKinds(RemoteGame g) {
+    final ks = <String>[];
+    if (g.hasBattery) {
+      ks.add('battery');
+    }
+    if (g.hasAuto) {
+      ks.add('auto');
+    }
+    for (final slot in g.slots) {
+      ks.add('slot${slot.slot}');
+    }
+    return ks;
+  }
+
+  /// Tri-state aggregate for one resource type across every game that exposes
+  /// it: true = all selected, false = none, null = partial (indeterminate).
+  bool? _typeState(
+    bool Function(PeerGameSelection s, RemoteGame g) test, {
+    bool Function(RemoteGame)? avail,
+  }) {
+    var any = false, all = true;
+    for (final g in widget.games) {
+      if (avail != null && !avail(g)) {
+        continue;
+      }
+      final s = _sel[g.crc]!;
+      if (test(s, g)) {
+        any = true;
+      } else {
+        all = false;
+      }
+    }
+    if (!any) {
+      return false;
+    }
+    return all ? true : null;
+  }
+
+  /// Flip one resource type for every game that exposes it.
+  void _applyType(
+    bool next,
+    void Function(PeerGameSelection s, RemoteGame g) apply, {
+    bool Function(RemoteGame)? avail,
+  }) {
+    setState(() {
+      for (final g in widget.games) {
+        if (avail != null && !avail(g)) {
+          continue;
+        }
+        apply(_sel[g.crc]!, g);
+      }
+    });
+  }
+
+  bool? _romState() => _typeState((s, g) => s.rom);
+  bool? _cheatsState() =>
+      _typeState((s, g) => s.cheats, avail: (g) => g.hasCheats);
+  bool? _savesState() => _typeState(
+        (s, g) => _gameSaveKinds(g).every((k) => s.saveKinds.contains(k)),
+        avail: (g) => _gameSaveKinds(g).isNotEmpty,
+      );
+  bool? _biosState() => _neededBios.isEmpty
+      ? false
+      : _selectedBios.length == _neededBios.length
+          ? true
+          : (_selectedBios.isEmpty ? false : null);
+
+  Widget _typeToggle(String label, bool? state, void Function(bool) onChanged) {
+    return InkWell(
+      onTap: () => onChanged(state != true),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Checkbox(
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+              tristate: true,
+              value: state,
+              onChanged: (_) => onChanged(state != true),
+            ),
+            Text(label, style: const TextStyle(fontSize: 13)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Sticky "select all" row so users don't have to tick ROM / cheats / saves /
+  /// BIOS per game when importing many titles at once.
+  Widget _selectAllBar(ThemeData theme) {
+    final anyCheats = widget.games.any((g) => g.hasCheats);
+    final anySaves = widget.games.any((g) => _gameSaveKinds(g).isNotEmpty);
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('批量选择', style: theme.textTheme.labelMedium),
+            const SizedBox(height: 2),
+            Wrap(
+              spacing: 2,
+              runSpacing: 0,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _typeToggle('ROM', _romState(),
+                    (v) => _applyType(v, (s, g) => s.rom = v)),
+                if (anyCheats)
+                  _typeToggle(
+                    '金手指',
+                    _cheatsState(),
+                    (v) => _applyType(v, (s, g) => s.cheats = v,
+                        avail: (g) => g.hasCheats),
+                  ),
+                if (anySaves)
+                  _typeToggle(
+                    '存档',
+                    _savesState(),
+                    (v) => _applyType(
+                      v,
+                      (s, g) {
+                        final ks = _gameSaveKinds(g);
+                        s.saveKinds = v ? {...ks} : {};
+                      },
+                      avail: (g) => _gameSaveKinds(g).isNotEmpty,
+                    ),
+                  ),
+                if (_neededBios.isNotEmpty)
+                  _typeToggle(
+                    'BIOS',
+                    _biosState(),
+                    (v) => setState(() {
+                      _selectedBios.clear();
+                      if (v) {
+                        _selectedBios.addAll(_neededBios);
+                      }
+                    }),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Future<void> _buildConflictPlan() async {
     final plan = await _importer.buildPlan(
       games: widget.games,
@@ -1369,6 +1521,7 @@ class _ImportFlowPageState extends State<_ImportFlowPage> {
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
             child: _biosCard(),
           ),
+        _selectAllBar(Theme.of(context)),
         Expanded(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),

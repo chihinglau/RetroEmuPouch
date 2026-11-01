@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-sync_cheats.py — 把游戏元数据索引里的金手指搬运到 GamePouch 的 `.tools/gstest/chats`,
+sync_cheats.py — 把游戏元数据索引里的金手指搬运到 GamePouch 的 `.tools/gstest/cheats`,
 以 `roms/` 里的真实游戏文件为基准做关联, 并输出可直接被 GamePouch 消费的
 `cheats.json`(按 ROM 的 zlib CRC32 键控)。
 
@@ -22,11 +22,11 @@ sync_cheats.py — 把游戏元数据索引里的金手指搬运到 GamePouch �
      文件名是**英文全称**(`CT Special Forces (USA, Europe) (Code Breaker).cht`),
      而 GamePouch 的 ROM 是中文名(`CT特种部队.gba`), 字面匹配必然为 0。
      -> GBA 通过读 ROM 内部 12 字节 ASCII 标题(偏移 0xA0)桥接到英文金手指名。
-2. 输出与 ROM 一一对应: `chats/<ROM 主干>.cht`。
+2. 输出与 ROM 一一对应: `cheats/<ROM 主干>.cht`。
 3. 妥善处理两端:
    * 无金手指的游戏 -> 不建文件, 计入 `report.missing`
-   * 无对应游戏的金手指 -> 保留到 `chats/_orphans/`, 绝不静默丢弃
-4. 额外产出 `chats/cheats.json`, 结构与 GamePouch `library/cheats.json` 完全一致
+   * 无对应游戏的金手指 -> 保留到 `cheats/_orphans/`, 绝不静默丢弃
+4. 额外产出 `cheats/cheats.json`, 结构与 GamePouch `library/cheats.json` 完全一致
    (`{"version":1,"byCrc":{"<8位大写CRC32>":[{name,code,enabled,options,selected}]}}`),
    可直接 push 到手机使用。
 
@@ -68,7 +68,7 @@ else:
 
 ROMS_DIR = os.path.join(GSTEST, 'roms')
 BIOS_DIR = os.path.join(GSTEST, 'bios')
-CHATS_DIR = os.path.join(GSTEST, 'chats')
+CHEATS_DIR = os.path.join(GSTEST, 'cheats')
 
 # 索引: 内置布局 game_index.json, 旧布局 library/index.json
 MGS_INDEX = os.path.join(MGS, 'game_index.json')
@@ -451,14 +451,14 @@ def match_nes(rom: dict, chts: dict):
 # ---------------------------------------------------------------- 主流程
 
 def main():
-    ap = argparse.ArgumentParser(description='同步游戏元数据索引金手指到 GamePouch chats/')
+    ap = argparse.ArgumentParser(description='同步游戏元数据索引金手指到 GamePouch cheats/')
     ap.add_argument('--dry-run', action='store_true', help='只统计不写盘')
     ap.add_argument('--roms', default=ROMS_DIR, help='ROM 根目录')
-    ap.add_argument('--out', default=CHATS_DIR, help='输出 chats 目录')
+    ap.add_argument('--out', default=CHEATS_DIR, help='输出 cheats 目录')
     args = ap.parse_args()
 
     roms_dir = args.roms
-    chats_dir = args.out
+    cheats_dir = args.out
 
     if not os.path.isdir(roms_dir):
         print('[!] ROM 目录不存在: %s' % roms_dir)
@@ -564,16 +564,16 @@ def main():
         return 0
 
     print('[4/4] 写出 ...')
-    # 清空 chats 旧内容(保留目录本身), 保证一一对应、不留陈旧文件
-    if os.path.isdir(CHATS_DIR):
-        for n in os.listdir(CHATS_DIR):
-            p = os.path.join(chats_dir, n)
+    # 清空 cheats 旧内容(保留目录本身), 保证一一对应、不留陈旧文件
+    if os.path.isdir(CHEATS_DIR):
+        for n in os.listdir(CHEATS_DIR):
+            p = os.path.join(cheats_dir, n)
             if os.path.isdir(p):
                 shutil.rmtree(p)
             else:
                 os.remove(p)
     else:
-        os.makedirs(chats_dir, exist_ok=True)
+        os.makedirs(cheats_dir, exist_ok=True)
 
     # 每个命中游戏一个 .cht
     crc_map = OrderedDict()
@@ -581,7 +581,7 @@ def main():
         hit = matched.get(r['stem'])
         if not hit:
             continue
-        out = os.path.join(chats_dir, r['stem'] + '.cht')
+        out = os.path.join(cheats_dir, r['stem'] + '.cht')
         with open(out, 'w', encoding='utf-8') as f:
             f.write(to_cht_text(hit['infos']))
         crc_map[r['crc']] = hit['infos']
@@ -593,7 +593,7 @@ def main():
     # 端会把整个 dict 当成一条命令而解析失败。
     bycrc_out = {c: v['infos'] for c, v in inline_crc.items()}
     bycrc_out.update(crc_map)      # ROM 已匹配的优先(用的是真实 ROM 的 CRC)
-    with open(os.path.join(chats_dir, 'cheats.json'), 'w', encoding='utf-8') as f:
+    with open(os.path.join(cheats_dir, 'cheats.json'), 'w', encoding='utf-8') as f:
         json.dump({'version': 1, 'byCrc': bycrc_out}, f,
                   ensure_ascii=False, indent=2)
     print('      cheats.json byCrc 共 %d 条(含内联 %d + 已匹配 %d)'
@@ -601,7 +601,7 @@ def main():
 
     # 孤立金手指保留, 不静默丢弃
     if orphans:
-        od = os.path.join(chats_dir, '_orphans')
+        od = os.path.join(cheats_dir, '_orphans')
         os.makedirs(od, exist_ok=True)
         for o in orphans:
             if o['kind'] == 'cht':
@@ -659,7 +659,7 @@ def main():
         hit = sum(1 for r in roms if r['platform'] == plat and r['stem'] in matched)
         report['byPlatform'][plat] = {'total': tot, 'matched': hit}
 
-    with open(os.path.join(chats_dir, 'report.json'), 'w', encoding='utf-8') as f:
+    with open(os.path.join(cheats_dir, 'report.json'), 'w', encoding='utf-8') as f:
         json.dump(report, f, ensure_ascii=False, indent=2)
 
     print('      写出 %d 个 .cht + cheats.json + report.json' % len(matched))

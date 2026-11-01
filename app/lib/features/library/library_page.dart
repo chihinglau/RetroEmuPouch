@@ -625,9 +625,46 @@ class _LibraryPageState extends State<LibraryPage>
     } catch (e) {
       _gameActive = false;
       rethrow;
+    } finally {
+      // Record last-played for the just-opened game. Resolve it by relative path
+      // (not the captured entry reference): when the emulator route pops back,
+      // didPopNext() reloads `_entries` from disk and REPLACES the entry object
+      // we were handed with a fresh one. Writing to the captured reference would
+      // update a detached object and the disk save would silently drop it — which
+      // is exactly why the 「继续游戏」 banner stayed stuck on the previous game.
+      if (_gameActive) {
+        await _markPlayed(entry.relativePath);
+      }
     }
-    setState(() => entry.lastPlayedAt = DateTime.now());
-    await _library?.save(_entries);
+  }
+
+  /// Marks [path] as just-played by writing `lastPlayedAt` to disk and refreshing
+  /// the in-memory list. Resolves the entry by relative path (not object identity)
+  /// so it survives the `_entries` reload that [didPopNext] triggers on route pop.
+  Future<void> _markPlayed(String path) async {
+    final now = DateTime.now();
+    RomEntry? live;
+    for (final e in _entries) {
+      if (e.relativePath == path) {
+        live = e;
+        break;
+      }
+    }
+    if (live != null) live.lastPlayedAt = now;
+    final lib = _library;
+    if (lib == null) return;
+    try {
+      final entries = await lib.load();
+      for (final e in entries) {
+        if (e.relativePath == path) e.lastPlayedAt = now;
+      }
+      await lib.save(entries);
+      // Refresh in-memory from the freshly written file so the banner is correct
+      // even if didPopNext()'s reload raced ahead of this write.
+      if (mounted) setState(() => _entries = entries);
+    } catch (_) {
+      // Best effort: keep whatever in-memory update we applied above.
+    }
   }
 
   Future<void> _confirmDelete(RomEntry entry) async {
@@ -963,11 +1000,13 @@ class _LibraryPageState extends State<LibraryPage>
           selected: _platformFilter,
           onChanged: (p) => setState(() => _platformFilter = p),
         ),
-        if (_query.trim().isEmpty &&
-            _genreFilter == null &&
-            _categoryFilter == null &&
-            _platformFilter == null &&
-            _continueEntry != null)
+        // 「继续游戏」 is a global resume affordance pinned above the grid, so it
+        // must remain visible even when the user has filtered the grid below
+        // (e.g. by platform to find a specific ROM) — only an active text search
+        // hides it. Without this, the last-played game was invisible whenever any
+        // filter was set, making the banner look broken for non-GBA games that
+        // users typically reach through a platform filter.
+        if (_query.trim().isEmpty && _continueEntry != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 4, 12, 8),
             child: _ContinueCard(

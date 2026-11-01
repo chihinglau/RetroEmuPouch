@@ -54,8 +54,8 @@ try:
     # 3) _merge_cheats_json 写入 app 兼容格式
     tmp = tempfile.mkdtemp(prefix='gp_cheat_')
     app.root_dir.set(tmp)
-    chats = os.path.join(tmp, 'chats')
-    os.makedirs(chats, exist_ok=True)
+    cheats = os.path.join(tmp, 'cheats')
+    os.makedirs(cheats, exist_ok=True)
     game = {'stem': 'T', 'cheat_file': '', 'crc': '0AA11AA2', 'path': 'x',
             'platform': 'gba',
             'cheats': [{'name': '无限生命', 'code': '1111 2222',
@@ -64,13 +64,13 @@ try:
     app.cur_cheat_items = game['cheats']
     app._save_cheat_target()
 
-    cht = os.path.join(chats, 'T.cht')
+    cht = os.path.join(cheats, 'T.cht')
     check('.cht 已生成', os.path.isfile(cht))
     back = sync_cheats.parse_cht_text(open(cht, encoding='utf-8').read())
     check('.cht 回读一致', back and back[0]['name'] == '无限生命'
           and back[0]['code'] == '1111 2222', str(back))
 
-    cj = os.path.join(chats, 'cheats.json')
+    cj = os.path.join(cheats, 'cheats.json')
     cjobj = json.load(open(cj, encoding='utf-8'))
     check('cheats.json 含 byCrc', 'byCrc' in cjobj)
     check('byCrc[CRC] 内容正确', cjobj['byCrc']['0AA11AA2'][0]['name']

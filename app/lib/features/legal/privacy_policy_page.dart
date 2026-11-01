@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:gamepouch/features/legal/legal_constants.dart';
+import 'package:retroemupouch/features/legal/legal_constants.dart';
 
 /// 隐私政策（占位模板，正式发布前须经合规审查与 PIPL 个人信息保护影响评估）。
 class PrivacyPolicyPage extends StatelessWidget {

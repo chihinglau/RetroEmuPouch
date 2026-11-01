@@ -25,6 +25,9 @@ export const loadState: () => boolean;
 export const getLoadError: () => string;
 export const getFps: () => number;
 export const getFilesDir: () => string;
+// Absolute path of the saves directory (== app files dir / saves); mirrors
+// Android's filesDir/saves/. Used to locate per-game CRC-keyed save-state slots.
+export const getSavesDir: () => string;
 export const saveStateSlot: (slot: number) => boolean;
 export const loadStateSlot: (slot: number) => boolean;
 export const listSaves: () => string;

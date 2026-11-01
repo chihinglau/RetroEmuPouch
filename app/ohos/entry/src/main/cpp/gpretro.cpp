@@ -103,6 +103,7 @@ static std::string g_appDir;
 // error blob (`getLoadError`) that the ArkTS page renders as an explanation.
 static std::mutex g_errMutex;
 static std::string g_loadError;                  // JSON, empty == no error
+static std::string SoloSaveCrc();  // per-game save/cheat key = rom_index.json crc32 (mirrors Android CheatStore.crcKey)
 static std::deque<std::string> g_coreLogTail;    // last kCoreLogTailMax lines
 static const size_t kCoreLogTailMax = 24;
 // MAME/arcade system (BIOS), content (ROM lookup) and save directories, derived
@@ -141,7 +142,10 @@ static struct {
   void* (*retro_get_memory_data)(unsigned id);
   size_t (*retro_get_memory_size)(unsigned id);
   void (*retro_cheat_reset)(void);
-  void (*retro_set_cheat)(unsigned index, bool enabled, const char* code);
+  // Standard libretro cheat API is `retro_cheat_set` (plural). Some cores also
+  // export the older singular `retro_set_cheat`; try both so cheats apply on any
+  // core build (Android resolves `retro_cheat_set`, which is what actually works).
+  void (*retro_cheat_set)(unsigned index, bool enabled, const char* code);
 } g_core = {};
 
 static enum retro_pixel_format g_pixFmt = RETRO_PIXEL_FORMAT_XRGB8888;
@@ -195,6 +199,10 @@ static std::vector<uint8_t> g_netState0;
 // Battery-RAM save path for the active netplay session (host serves /sram and
 // /sram-final). Built from <appDir>/saves/<saveKey>.sav.
 static std::string g_netSramPath;
+// CRC key for the solo (1P) game's battery RAM. Set at retro_load_game time so
+// StopEmulator can flush to <appDir>/saves/<crc>.sav — the same CRC-keyed
+// location the cross-platform partner importer (and Android) read/write.
+static std::string g_soloSaveKey;
 // Defined below (in the netplay NAPI block); forward-declared so the pace loop
 // (which runs earlier in this translation unit) can call it at frame 0.
 static void CaptureNetState0();
@@ -1069,7 +1077,11 @@ static bool LoadCore() {
   g_core.retro_get_memory_size = (size_t (*)(unsigned))dlsym(g_coreLib, "retro_get_memory_size");
   // Cheat interface is optional (cores that don't support cheats leave these null).
   g_core.retro_cheat_reset = (void (*)(void))dlsym(g_coreLib, "retro_cheat_reset");
-  g_core.retro_set_cheat = (void (*)(unsigned, bool, const char*))dlsym(g_coreLib, "retro_set_cheat");
+  g_core.retro_cheat_set = (void (*)(unsigned, bool, const char*))dlsym(g_coreLib, "retro_cheat_set");
+  if (!g_core.retro_cheat_set) {
+    // Fallback for cores that only export the older singular symbol.
+    g_core.retro_cheat_set = (void (*)(unsigned, bool, const char*))dlsym(g_coreLib, "retro_set_cheat");
+  }
   if (!g_core.retro_set_environment || !g_core.retro_run || !g_core.retro_load_game) {
     GPRETRO_ERROR("GPRETRO: missing core symbols");
     return false;
@@ -1183,6 +1195,16 @@ static bool LoadCore() {
     MkDirs(g_systemDir);
   }
 
+  // Solo (1P): mirror Android (gs_runner.cpp) — the libretro save directory is
+  // the flat <appDir>/saves. The core's own auto-SRAM lands at
+  // <saveDir>/<romBasename>.sav, which we migrate into the CRC-keyed canonical
+  // file below. (Do NOT scope per-CRC here; Android keeps this flat and relies
+  // on the CRC-keyed canonical for isolation.)
+  if (g_netSramPath.empty()) {
+    g_saveDir = g_appDir + "/saves";
+    MkDirs(g_saveDir);
+  }
+
   struct retro_game_info info;
   memset(&info, 0, sizeof(info));
   info.path = g_romPath.c_str();
@@ -1204,6 +1226,71 @@ static bool LoadCore() {
                g_romPath.c_str(), av.geometry.base_width, av.geometry.base_height,
                (float)av.timing.fps, (int)av.timing.sample_rate);
   StartAudio(av.timing.sample_rate, 2);
+  // HarmonyOS solo play: mirror Android's gs_runner.cpp exactly. The canonical
+  // battery RAM is CRC-keyed at <appDir>/saves/<crc>.sav (the same location the
+  // cross-platform partner importer and Android read/write). The libretro core
+  // also auto-saves <saveDir>/<romBasename>.sav (<appDir>/saves/<basename>.sav);
+  // when no CRC-keyed save exists we migrate that one into the canonical file
+  // (rename, matching Android's one-time migration) so existing saves carry over
+  // without a stale shared file ever being used. Netplay keeps its own
+  // g_netSramPath and loads via the frame-0 bootstrap.
+  if (g_netSramPath.empty()) {
+    // Per-game key = the CRC32 stored in rom_index.json for this ROM's
+    // relativePath (mirrors Android's CheatStore.crcKey). Different devices may
+    // carry different dumps (different disk bytes -> different Crc32File), but
+    // they share the same synced rom_index.json, so the key stays identical and
+    // imported saves load. Falls back to the disk CRC for unindexed ROMs.
+    g_soloSaveKey = SoloSaveCrc();
+    if (!g_soloSaveKey.empty() && !g_appDir.empty() &&
+        g_core.retro_get_memory_data != nullptr && g_core.retro_get_memory_size != nullptr) {
+      std::string sp = g_appDir + "/saves/" + g_soloSaveKey + ".sav";
+      // legacy = <saveDir>/<romBasename>.sav (the core's own auto-save location)
+      std::string base = g_romPath.substr(g_romPath.find_last_of('/') + 1);
+      auto dot = base.find_last_of('.');
+      if (dot != std::string::npos) base = base.substr(0, dot);
+      std::string legacy = g_saveDir + "/" + base + ".sav";
+      // Mirror Android: if the canonical CRC-keyed save exists, load it;
+      // otherwise migrate the legacy <basename>.sav into the canonical path.
+      std::string loadFrom;
+      FILE* probe = fopen(sp.c_str(), "rb");
+      if (probe != nullptr) {
+        loadFrom = sp;
+        fclose(probe);
+      } else {
+        FILE* lg = fopen(legacy.c_str(), "rb");
+        if (lg != nullptr) {
+          fclose(lg);
+          loadFrom = legacy;
+        }
+      }
+      if (!loadFrom.empty()) {
+        FILE* f = fopen(loadFrom.c_str(), "rb");
+        if (f != nullptr) {
+          fseek(f, 0, SEEK_END);
+          long sz = ftell(f);
+          fseek(f, 0, SEEK_SET);
+          if (sz > 0) {
+            std::vector<uint8_t> buf(static_cast<size_t>(sz));
+            if (fread(buf.data(), 1, buf.size(), f) == buf.size()) {
+              void* d = g_core.retro_get_memory_data(0);
+              size_t cap = g_core.retro_get_memory_size(0);
+              if (d != nullptr && cap >= buf.size()) {
+                memcpy(d, buf.data(), buf.size());
+                // Migrate the legacy file into the canonical path so it is not
+                // reused / shared across games (matches Android's rename).
+                if (loadFrom != sp) {
+                  fclose(f);
+                  f = nullptr;
+                  rename(legacy.c_str(), sp.c_str());
+                }
+              }
+            }
+          }
+          if (f) fclose(f);
+        }
+      }
+    }
+  }
   return true;
 }
 
@@ -1431,7 +1518,34 @@ static void OnSurfaceChanged(OH_NativeXComponent* component, void* window) {
 // parked before the surface goes away.
 static void StopEmulator() {
   GPRETRO_INFO("GPRETRO: StopEmulator");
-  g_running.store(false);
+  // Flush solo battery RAM to the CRC-keyed <appDir>/saves/<crc>.sav — the same
+  // location the partner importer (and Android) read/write. Must run while the
+  // render thread is alive and frozen: take g_coreMtx (released between frames),
+  // stop the loop, snapshot SAVE_RAM, then release. Netplay flushes its own path.
+  if (g_netSramPath.empty() && !g_soloSaveKey.empty() && !g_appDir.empty() &&
+      g_core.retro_get_memory_data != nullptr && g_core.retro_get_memory_size != nullptr) {
+    std::lock_guard<std::mutex> lk(g_coreMtx);
+    g_running.store(false, std::memory_order_relaxed);
+    void* p = g_core.retro_get_memory_data(0);
+    size_t sz = g_core.retro_get_memory_size(0);
+    if (p != nullptr && sz > 0) {
+      std::string sp = g_appDir + "/saves/" + g_soloSaveKey + ".sav";
+      MkDirs(g_appDir + "/saves");
+      std::string tmp = sp + ".np-tmp";
+      FILE* f = fopen(tmp.c_str(), "wb");
+      if (f != nullptr) {
+        if (fwrite(p, 1, sz, f) == sz) {
+          fclose(f);
+          rename(tmp.c_str(), sp.c_str());
+        } else {
+          fclose(f);
+          remove(tmp.c_str());
+        }
+      }
+    }
+  } else {
+    g_running.store(false, std::memory_order_relaxed);
+  }
   if (g_renderThread.joinable()) {
     g_renderThread.join();
   }
@@ -1541,6 +1655,8 @@ static napi_value SetEmulatorTarget(napi_env env, napi_callback_info info) {
   else unsetenv("GP_NETPLAY_COLD_BOOT");
   g_netColdBoot = coldBoot;
   g_npSaveDir.clear();
+  g_netSramPath.clear();
+  g_soloSaveKey.clear();
   g_netPrimeDone = false;
   g_emuRunCount.store(0);
   g_romPath = rom;
@@ -2181,22 +2297,38 @@ static napi_value GetFps(napi_env env, napi_callback_info info) {
   return out;
 }
 
-// Absolute path of the ROM directory (== app files dir / roms), so ArkTS can
-// locate the persisted save slots + thumbnails.
+// Absolute path of the ROM directory (== app files dir / roms).
 static napi_value GetFilesDir(napi_env env, napi_callback_info info) {
   napi_value out = nullptr;
   napi_create_string_utf8(env, g_filesDir.c_str(), NAPI_AUTO_LENGTH, &out);
   return out;
 }
 
+// Absolute path of the saves directory (== app files dir / saves) — the same
+// place battery RAM lives. Mirrors Android's `filesDir/saves/` so ArkTS can
+// locate the per-game CRC-keyed save-state slot thumbnails / meta files.
+static napi_value GetSavesDir(napi_env env, napi_callback_info info) {
+  napi_value out = nullptr;
+  napi_create_string_utf8(env, (g_appDir + "/saves").c_str(), NAPI_AUTO_LENGTH, &out);
+  return out;
+}
+
+// Save-state slots are keyed by the loaded ROM's CRC (== Android's
+// `$saveKey.slot$i.state`), so each game keeps its own 3 slots and the load
+// dialog never cross-loads another game's state. (g_soloSaveKey is the CRC for
+// solo play; netplay falls back to "shared" since it manages state itself.)
+static std::string SlotPrefix() {
+  const std::string& key = g_soloSaveKey.empty() ? std::string("shared") : g_soloSaveKey;
+  return g_appDir + "/saves/" + key + ".slot";
+}
 static std::string StatePath(int slot) {
-  return g_filesDir + "/state" + std::to_string(slot) + ".sav";
+  return SlotPrefix() + std::to_string(slot) + ".state";
 }
 static std::string ThumbPath(int slot) {
-  return g_filesDir + "/thumb" + std::to_string(slot) + ".rgba";
+  return SlotPrefix() + std::to_string(slot) + ".rgba";
 }
 static std::string MetaPath(int slot) {
-  return g_filesDir + "/thumb" + std::to_string(slot) + ".meta";
+  return SlotPrefix() + std::to_string(slot) + ".meta";
 }
 
 // Serialize the running game into on-disk slot 0..2 (Android has 3 slots).
@@ -2326,10 +2458,84 @@ static uint32_t Crc32File(const std::string& path) {
   return crc ^ 0xFFFFFFFFu;
 }
 
-// CRC32 (8-hex uppercase) of the currently loaded ROM — the cheats.json key.
-static napi_value GetRomCrc(napi_env env, napi_callback_info info) {
+// Per-game save/cheat key: the CRC32 recorded in rom_index.json for the loaded
+// ROM's relativePath. Mirrors Android's CheatStore.crcKey(filesDir, romRel) so
+// the same game yields the same key on every device (saves/cheats line up
+// across dumps), instead of Crc32File() which depends on on-disk bytes.
+static std::string SoloSaveCrc() {
+  std::vector<std::string> candidates;
+  if (!g_romPath.empty()) {
+    candidates.push_back(g_romPath);
+    if (!g_appDir.empty() && g_romPath.size() > g_appDir.size() + 1 &&
+        g_romPath.compare(0, g_appDir.size(), g_appDir) == 0) {
+      candidates.push_back(g_romPath.substr(g_appDir.size() + 1));
+    }
+  }
+  std::string json;
+  FILE* f = fopen((g_appDir + "/rom_index.json").c_str(), "rb");
+  if (f) {
+    char buf[65536];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof(buf), f)) > 0) json.append(buf, n);
+    fclose(f);
+  }
+  // Scan every "relativePath" entry. The index is pretty-printed JSON with a
+  // SPACE after the colon, so a rigid `"relativePath":"..."` needle would never
+  // match and we'd wrongly fall back to the disk CRC (a different value across
+  // dumps) — that is exactly what made imported saves/thumbnails invisible.
+  // Match the entry whose relativePath equals one of our candidates, then read
+  // the following "crc32".
+  const std::string relKey = "\"relativePath\"";
+  const std::string crcKey = "\"crc32\"";
+  size_t pos = 0;
+  while (true) {
+    size_t kpos = json.find(relKey, pos);
+    if (kpos == std::string::npos) break;
+    size_t vstart = json.find('"', kpos + relKey.size());
+    if (vstart == std::string::npos) break;
+    vstart++;
+    size_t vend = json.find('"', vstart);
+    if (vend == std::string::npos) break;
+    std::string rel = json.substr(vstart, vend - vstart);
+    bool match = false;
+    for (const auto& c : candidates) {
+      if (c == rel) { match = true; break; }
+    }
+    pos = vend + 1;
+    if (!match) continue;
+    size_t cpos = json.find(crcKey, vend);
+    if (cpos == std::string::npos) break;
+    cpos += crcKey.size();
+    while (cpos < json.size() && json[cpos] != '-' &&
+           (json[cpos] < '0' || json[cpos] > '9')) cpos++;
+    bool neg = false;
+    if (cpos < json.size() && json[cpos] == '-') { neg = true; cpos++; }
+    long long v = 0;
+    while (cpos < json.size() && json[cpos] >= '0' && json[cpos] <= '9') {
+      v = v * 10 + (json[cpos] - '0'); cpos++;
+    }
+    uint32_t u = (uint32_t)(neg ? -v : v);
+    char hex[16];
+    snprintf(hex, sizeof(hex), "%08X", u);
+    return std::string(hex);
+  }
+  // Unindexed / sideloaded ROM: Android falls back to the file base name; keep
+  // the historical disk-CRC behaviour to avoid regressing those local saves.
   char hex[16];
   snprintf(hex, sizeof(hex), "%08X", Crc32File(g_romPath));
+  return std::string(hex);
+}
+
+// CRC32 (8-hex uppercase) of the currently loaded ROM. Must equal the key the
+// native save paths use (g_soloSaveKey, resolved at load from the rom_index.json
+// crc32 — mirroring Android's CheatStore.crcKey). listSaves/deleteSave/thumbnail
+// all build paths from this value, so returning anything else (e.g. a freshly
+// recomputed disk CRC) would make delete target a different CRC than the list,
+// silently no-op'ing and leaving the dialog stale until page re-entry.
+static napi_value GetRomCrc(napi_env env, napi_callback_info info) {
+  std::string key = g_soloSaveKey.empty() ? SoloSaveCrc() : g_soloSaveKey;
+  char hex[16];
+  snprintf(hex, sizeof(hex), "%s", key.c_str());
   napi_value out = nullptr;
   napi_create_string_utf8(env, hex, NAPI_AUTO_LENGTH, &out);
   return out;
@@ -2390,7 +2596,7 @@ static napi_value SetCheats(napi_env env, napi_callback_info info) {
   size_t argc = 1;
   napi_value args[1] = { nullptr };
   napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
-  if (!g_core.retro_set_cheat || !g_core.retro_cheat_reset) {
+  if (!g_core.retro_cheat_set || !g_core.retro_cheat_reset) {
     napi_value r = nullptr;
     napi_get_boolean(env, false, &r);
     return r;
@@ -2420,7 +2626,10 @@ static napi_value SetCheats(napi_env env, napi_callback_info info) {
         if (nl == std::string::npos) nl = code.size();
         std::string line = code.substr(start, nl - start);
         if (!line.empty() && line.back() == '\r') line.pop_back();
-        if (!line.empty()) g_core.retro_set_cheat(idx++, true, line.c_str());
+        if (!line.empty()) {
+          g_core.retro_cheat_set(idx, true, line.c_str());
+          idx++;
+        }
         if (nl == code.size()) break;
         start = nl + 1;
       }
@@ -2481,6 +2690,7 @@ static napi_value Init(napi_env env, napi_value exports) {
       { "loadState", nullptr, LoadState, nullptr, nullptr, nullptr, napi_default, nullptr },
       { "getFps", nullptr, GetFps, nullptr, nullptr, nullptr, napi_default, nullptr },
       { "getFilesDir", nullptr, GetFilesDir, nullptr, nullptr, nullptr, napi_default, nullptr },
+      { "getSavesDir", nullptr, GetSavesDir, nullptr, nullptr, nullptr, napi_default, nullptr },
       { "saveStateSlot", nullptr, SaveStateSlot, nullptr, nullptr, nullptr, napi_default, nullptr },
       { "loadStateSlot", nullptr, LoadStateSlot, nullptr, nullptr, nullptr, napi_default, nullptr },
       { "listSaves", nullptr, ListSaves, nullptr, nullptr, nullptr, napi_default, nullptr },

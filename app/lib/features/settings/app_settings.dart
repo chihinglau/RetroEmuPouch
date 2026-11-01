@@ -152,7 +152,7 @@ class AppSettings {
   }
 
   /// Clears the "last save slot" pointer so the next emulator entry won't
-  /// auto-load the previous game. Called when 「记住上次游戏」 is switched off.
+  /// auto-load the previous game. Called when 「记住上次进度」 is switched off.
   ///
   /// Goes through the same shared_preferences-then-file-store ladder as
   /// [save] — a bare `SharedPreferences.getInstance()` throws on OHOS (no

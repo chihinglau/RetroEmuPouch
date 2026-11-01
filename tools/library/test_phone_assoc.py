@@ -72,12 +72,12 @@ def main():
         with open(os.path.join(mgs, 'index.json'), 'w', encoding='utf-8') as f:
             json.dump(index, f, ensure_ascii=False)
 
-        chats = os.path.join(tmp, 'chats')
+        cheats = os.path.join(tmp, 'cheats')
 
         # ---- 让 sync_cheats 指向合成数据源 ----
         sync_cheats.MGS_INDEX = os.path.join(mgs, 'index.json')
         sync_cheats.ROMS_DIR = os.path.join(tmp, 'roms')
-        sync_cheats.CHATS_DIR = chats
+        sync_cheats.CHEATS_DIR = cheats
         # index.json 里平台是小写 'nes', 而 PLATFORM_DIRS 用 'NES' 作为子目录名;
         # 这里 roms 子目录我们直接叫 NES, 需要让 scan_roms 认到。
         sync_cheats.PLATFORM_DIRS['NES'] = ('nes', '.nes', False)
@@ -85,13 +85,13 @@ def main():
         check('sync_cheats 返回 0', rc == 0, 'rc=%s' % rc)
 
         # ---- 验证 PC 侧关联产物 ----
-        cj = os.path.join(chats, 'cheats.json')
+        cj = os.path.join(cheats, 'cheats.json')
         check('cheats.json 已生成', os.path.isfile(cj))
         bycrc = json.load(open(cj, encoding='utf-8'))['byCrc']
         check('byCrc 含该 CRC', crc in bycrc)
         check('该游戏金手指命令数=3', len(bycrc.get(crc, [])) == 3,
               str(len(bycrc.get(crc, []))))
-        cht = os.path.join(chats, '吞食天地II.cht')
+        cht = os.path.join(cheats, '吞食天地II.cht')
         check('.cht 已生成', os.path.isfile(cht))
         # 代码格式原样保留(上游索引直接可用)
         back = sync_cheats.parse_cht_text(open(cht, encoding='utf-8').read())

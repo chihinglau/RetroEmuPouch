@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import '../membership/membership_card.dart';
+import 'my_pc_section.dart';
 
 import '../../data/cloud/cloud_client.dart';
 import '../../data/cloud/cloud_config.dart';
@@ -602,6 +604,12 @@ class _AccountPageState extends State<AccountPage> {
           ),
         ),
         _section(
+          icon: Icons.computer,
+          title: '我的 PC（局域网存档/设置同步）',
+          child: MyPcSection(pal: widget.pal),
+        ),
+        const MembershipSection(),
+        _section(
           icon: Icons.swap_horiz,
           title: '发现伙伴（手机面对面互传）',
           child: Column(
@@ -811,7 +819,7 @@ class _AccountPageState extends State<AccountPage> {
               OutlinedButton.icon(
                 onPressed: _busy ? null : _openPeers,
                 icon: const Icon(Icons.connect_without_contact),
-                label: const Text('发现伙伴：手机面对面互传游戏'),
+                label: const Text('发现伙伴：手机面对面互传文件'),
               ),
               const SizedBox(height: 18),
               FilledButton.icon(

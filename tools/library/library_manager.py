@@ -10,11 +10,11 @@ GamePouch 本地游戏库管理器 (桌面版)
 功能
 ----
 * 扫描本地目录: 任选根目录, 自动识别 roms/ (含 GBA/NES/NeoGeo/CPS1/CPS2 子目录
-  或任意扁平目录)、bios/、chats/。
+  或任意扁平目录)、bios/、cheats/。
 * 分类展示: 按平台(GBA/NES/NeoGeo/CPS1/CPS2)归类, 列出名称/平台/大小/CRC32/
   内部标题/金手指数/依赖 BIOS。
 * 关联展示:
-  - 金手指与游戏按「文件名主干」一一对应 (chats/<主干>.cht),
+  - 金手指与游戏按「文件名主干」一一对应 (cheats/<主干>.cht),
     并回退到 GamePouch 原生 cheats.json (按 ROM 的 CRC32 键控)。
   - BIOS 按平台标注被谁需要 (NeoGeo<-neogeo.zip, CPS1/2<-qsound.zip)。
 * 检索: 名称/内部标题 模糊搜索 + 平台/分类筛选 + 列排序 + 「仅显示有金手指」。
@@ -651,7 +651,7 @@ class App(tk.Tk):
                    'libretro/libretro-database 的 cht/ 目录。匹配采用'
                    '「归一化名称 → 前缀 → 相似度」三级打分, 低于阈值的'
                    '一律放弃; 同一个在线文件被多个 ROM 争抢时全部放弃。'
-                   '结果写入 chats/<游戏名>.cht 与 chats/cheats.json, '
+                   '结果写入 cheats/<游戏名>.cht 与 cheats/cheats.json, '
                    '可一键撤销。', 'info')
 
         bar = ttk.Frame(parent, padding=(0, 6))
@@ -953,7 +953,7 @@ class App(tk.Tk):
         root = self.root_dir.get()
         by_crc = {}
         if self.push_cheat.get():
-            cj = os.path.join(root, 'chats', 'cheats.json')
+            cj = os.path.join(root, 'cheats', 'cheats.json')
             try:
                 with open(cj, 'r', encoding='utf-8') as f:
                     by_crc = (json.load(f) or {}).get('byCrc', {})
@@ -1235,7 +1235,7 @@ class App(tk.Tk):
                 if i % 8 == 0 or i + 1 == total:
                     self._q.put(('progress', i + 1, total))
             # 阶段3: 按 CRC 关联 GamePouch 原生 cheats.json
-            cj = os.path.join(root, 'chats', 'cheats.json')
+            cj = os.path.join(root, 'cheats', 'cheats.json')
             if os.path.isfile(cj):
                 try:
                     with open(cj, 'r', encoding='utf-8') as f:
@@ -1261,7 +1261,7 @@ class App(tk.Tk):
             self._q.put(('error', str(ex)))
 
     def _collect(self, root):
-        """枚举 roms/、bios/、chats/。"""
+        """枚举 roms/、bios/、cheats/。"""
         games, bios, orphans = [], [], []
 
         # --- ROM: 优先 roms/<子目录>, 否则整个根目录扁平扫描
@@ -1306,13 +1306,13 @@ class App(tk.Tk):
             if g['platform'] == 'gba':
                 g['internal'] = gba_internal_title(g['path'])
 
-        # --- 金手指: chats/<主干>.cht
-        chats = os.path.join(root, 'chats')
-        if os.path.isdir(chats):
+        # --- 金手指: cheats/<主干>.cht
+        cheats = os.path.join(root, 'cheats')
+        if os.path.isdir(cheats):
             idx = {}
-            for name in os.listdir(chats):
+            for name in os.listdir(cheats):
                 if name.lower().endswith('.cht'):
-                    idx[os.path.splitext(name)[0]] = os.path.join(chats, name)
+                    idx[os.path.splitext(name)[0]] = os.path.join(cheats, name)
             for g in games:
                 cf = idx.get(g['stem'])
                 if cf:
@@ -1324,7 +1324,7 @@ class App(tk.Tk):
                         pass
             # 未关联到游戏的孤立金手指
             used = {g['stem'] for g in games if g['cheat_file']}
-            od = os.path.join(chats, '_orphans')
+            od = os.path.join(cheats, '_orphans')
             for k, v in idx.items():
                 if k not in used:
                     try:
@@ -1333,7 +1333,7 @@ class App(tk.Tk):
                     except Exception:
                         cs = []
                     orphans.append({'name': k, 'file': v, 'cheats': cs,
-                                    'from': 'chats'})
+                                    'from': 'cheats'})
             if os.path.isdir(od):
                 for name in os.listdir(od):
                     if name.lower().endswith('.cht'):
@@ -1571,7 +1571,7 @@ class App(tk.Tk):
             stem = getattr(self, 'cur_cheat_display', '') or ''
             tv2.insert('', 'end', iid='hint',
                        values=('（该游戏未关联金手指）',
-                               'chats/%s.cht 未找到且 cheats.json 无匹配'
+                               'cheats/%s.cht 未找到且 cheats.json 无匹配'
                                % stem))
             return
         for i, c in enumerate(self.cur_cheat_items):
@@ -1636,29 +1636,29 @@ class App(tk.Tk):
         root = self.root_dir.get()
         if not root:
             return
-        chats = os.path.join(root, 'chats')
-        os.makedirs(chats, exist_ok=True)
+        cheats = os.path.join(root, 'cheats')
+        os.makedirs(cheats, exist_ok=True)
         items = self.cur_cheat_items
         if not items:
             return
         kind, target = self.cur_cheat_target
         if kind == 'G':
             g = target
-            cf = g.get('cheat_file') or os.path.join(chats, g['stem'] + '.cht')
+            cf = g.get('cheat_file') or os.path.join(cheats, g['stem'] + '.cht')
             with open(cf, 'w', encoding='utf-8') as f:
                 f.write(to_cht_text(items))
             g['cheat_file'] = cf
             crc = str(g.get('crc') or '').upper()
             if crc:
-                self._merge_cheats_json(chats, crc, items)
+                self._merge_cheats_json(cheats, crc, items)
                 self.cheat_by_crc[crc] = items
         else:  # 孤立金手指: 只回写 .cht
             o = target
             with open(o['file'], 'w', encoding='utf-8') as f:
                 f.write(to_cht_text(items))
 
-    def _merge_cheats_json(self, chats, crc, items):
-        cj = os.path.join(chats, 'cheats.json')
+    def _merge_cheats_json(self, cheats, crc, items):
+        cj = os.path.join(cheats, 'cheats.json')
         data = {'version': 1, 'byCrc': {}}
         if os.path.isfile(cj):
             try:
@@ -1703,7 +1703,7 @@ class App(tk.Tk):
         line('缺金手指   : %d' % (total - len(with_cheat)), 'bad')
         line('命令合计   : %d' % n_cmd, 'ok')
         line('BIOS 文件  : %d' % len(self.bios), 'warn')
-        line('孤立金手指 : %d (无对应游戏, 已保留在 chats/_orphans/)'
+        line('孤立金手指 : %d (无对应游戏, 已保留在 cheats/_orphans/)'
              % len(self.orphan_cheats), 'warn')
         rep = online_cheats.load_online_report(self.root_dir.get())
         if rep:
@@ -1832,8 +1832,8 @@ class App(tk.Tk):
             messagebox.showerror('缺少脚本', '未找到 sync_cheats.py')
             return
         if not messagebox.askyesno('重新关联金手指',
-                                   '将执行 sync_cheats.py 重建 chats/ 目录, '
-                                   '会清空现有 chats 内容。继续?'):
+                                   '将执行 sync_cheats.py 重建 cheats/ 目录, '
+                                   '会清空现有 cheats 内容。继续?'):
             return
         self.status.set('正在重新关联金手指…')
         self.update_idletasks()

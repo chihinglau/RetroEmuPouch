@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gamepouch/features/settings/app_settings.dart';
+import 'package:retroemupouch/features/settings/app_settings.dart';
 
 // Covers the OHOS settings-persistence fallback: `shared_preferences` has no
 // native handler on OpenHarmony, so `AppSettings` routes load()/save() through a
@@ -92,7 +92,7 @@ void main() {
     });
 
     test('clearLastSaveSlot() drops the slot via the fallback store', () async {
-      // The settings sheet calls this when 「记住上次游戏」 is switched off. On
+      // The settings sheet calls this when 「记住上次进度」 is switched off. On
       // OHOS a bare SharedPreferences.getInstance() throws, so it must fall
       // through to the file store instead of crashing the sheet.
       final store = <String, Object>{...AppSettings().toMap()};

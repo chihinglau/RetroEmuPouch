@@ -52,7 +52,7 @@ try:
          len(app.tv_bios.get_children())))
 
     # 与 sync_cheats 写出的 report.json 对照
-    rp = os.path.join(root, 'chats', 'report.json')
+    rp = os.path.join(root, 'cheats', 'report.json')
     if os.path.isfile(rp):
         with open(rp, 'r', encoding='utf-8') as f:
             rep = json.load(f)

@@ -109,7 +109,7 @@ finally:
 # ============================================================ ② 联网检索
 print('\n== ② 联网检索端到端(写入临时目录) ==')
 tmp = tempfile.mkdtemp(prefix='gp_e2e_')
-os.makedirs(os.path.join(tmp, 'chats'), exist_ok=True)
+os.makedirs(os.path.join(tmp, 'cheats'), exist_ok=True)
 try:
     idx = online_cheats.ChtIndex(log=lambda s: print('   ·', s))
     miss = [g for g in online_cheats.scan_missing(REAL)
@@ -129,14 +129,14 @@ try:
         on_log=lambda s: print('   ', s))
     check('批量适配成功 >= 2', len(res.ok) >= 2, str(res.as_dict()))
     for g, _c in picked:
-        p = os.path.join(tmp, 'chats', g['stem'] + '.cht')
+        p = os.path.join(tmp, 'cheats', g['stem'] + '.cht')
         if os.path.isfile(p):
             n = len(online_cheats.parse_cht_text(
                 open(p, encoding='utf-8').read()))
             check('已生成 %s.cht (%d 条)' % (g['stem'], n), n > 0)
     import json  # noqa: E402
 
-    with open(os.path.join(tmp, 'chats', 'cheats.json'), encoding='utf-8') as f:
+    with open(os.path.join(tmp, 'cheats', 'cheats.json'), encoding='utf-8') as f:
         by = json.load(f)['byCrc']
     check('cheats.json 键数与成功数一致', len(by) == len(res.ok),
           '%d vs %d' % (len(by), len(res.ok)))
@@ -147,10 +147,10 @@ try:
 
     n = online_cheats.undo_online(tmp)
     check('撤销数量一致', n == len(res.ok), '%d' % n)
-    left = os.listdir(os.path.join(tmp, 'chats'))
+    left = os.listdir(os.path.join(tmp, 'cheats'))
     check('撤销后无 .cht 残留',
           not any(x.endswith('.cht') for x in left), str(left))
-    with open(os.path.join(tmp, 'chats', 'cheats.json'), encoding='utf-8') as f:
+    with open(os.path.join(tmp, 'cheats', 'cheats.json'), encoding='utf-8') as f:
         check('撤销后 byCrc 已清空', not json.load(f)['byCrc'])
 finally:
     shutil.rmtree(tmp, ignore_errors=True)

@@ -523,53 +523,6 @@ class PeerImporter {
     return dot > 0 ? name.substring(0, dot) : name;
   }
 
-  static final List<int> _crcTable = _buildCrcTable();
-  static List<int> _buildCrcTable() {
-    final t = List<int>.filled(256, 0);
-    for (var n = 0; n < 256; n++) {
-      var c = n;
-      for (var k = 0; k < 8; k++) {
-        c = (c & 1) != 0 ? (0xEDB88320 ^ (c >> 1)) : (c >> 1);
-      }
-      t[n] = c;
-    }
-    return t;
-  }
-
-  /// zlib/PNG CRC-32 of [f], streamed in 1 MiB chunks (fast, low memory).
-  int _crc32OfFile(File f) {
-    var crc = 0xFFFFFFFF;
-    final raf = f.openSync();
-    try {
-      const chunkSize = 1 << 20;
-      while (true) {
-        final chunk = raf.readSync(chunkSize);
-        if (chunk.isEmpty) break;
-        for (var i = 0; i < chunk.length; i++) {
-          crc = (crc >> 8) ^ _crcTable[(crc ^ chunk[i]) & 0xFF];
-        }
-        if (chunk.length < chunkSize) break;
-      }
-    } finally {
-      raf.closeSync();
-    }
-    return (crc ^ 0xFFFFFFFF) & 0xFFFFFFFF;
-  }
-
-  /// Throws when [f]'s CRC-32 does not equal the advertised [crcHex] (8
-  /// upper-hex). Guards every ROM transfer against truncation/corruption so a
-  /// bad local copy is detectable and repairable. No-op when [crcHex] is
-  /// missing/malformed (nothing to check against).
-  void _verifyCrc(File f, String crcHex) {
-    final want = int.tryParse(crcHex, radix: 16);
-    if (want == null) return;
-    final actual = _crc32OfFile(f);
-    if (actual != (want & 0xFFFFFFFF)) {
-      final hex = actual.toRadixString(16).padLeft(8, '0').toUpperCase();
-      throw Exception('ROM 校验失败（数据不完整或已损坏）：期望 $crcHex，实际 $hex');
-    }
-  }
-
   /// Throws when [f]'s size does not equal the advertised [expected]. Used for
   /// resources without an advertised CRC (BIOS, saves, covers) as a
   /// completeness gate. No-op when [expected] <= 0.
@@ -636,10 +589,11 @@ class PeerImporter {
     await dest.parent.create(recursive: true);
     try {
       await client.downloadRom(item.crc, part, onProgress: progress);
-      // Integrity gate: reject a truncated/corrupt transfer before it can
-      // replace (or sit beside) a good file. This is what makes a broken local
-      // ROM repairable — the received bytes must hash to the advertised CRC.
-      _verifyCrc(part, item.crc);
+      // ROM transfer integrity is now verified inside downloadRom() against the
+      // SOURCE's actual on-disk CRC (X-File-Crc header), NOT the index crc32 —
+      // the index crc is a dump-agnostic game-identity key (used for saves/
+      // cheats) and intentionally differs from a given dump's file CRC. Checking
+      // the file against it rejected every cross-dump import.
       await _replaceFile(part, dest);
     } catch (e) {
       await _deleteQuiet(part);

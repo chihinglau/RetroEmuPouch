@@ -22,7 +22,7 @@ SRC = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                    '..', '..', '.tools', 'gstest'))
 tmp = tempfile.mkdtemp(prefix='gslib_')
 try:
-    # 构造小规模根目录: 12 个 NES(小文件) + bios + chats
+    # 构造小规模根目录: 12 个 NES(小文件) + bios + cheats
     nes_src = os.path.join(SRC, 'roms', 'NES')
     tmp_nes = os.path.join(tmp, 'roms', 'NES')
     os.makedirs(tmp_nes)
@@ -35,10 +35,10 @@ try:
     for n in sorted(os.listdir(os.path.join(SRC, 'bios'))):
         shutil.copy2(os.path.join(SRC, 'bios', n), os.path.join(tmp_bios, n))
 
-    # 只放 5 个 chats, 避免孤立数被放大
-    tmp_ch = os.path.join(tmp, 'chats')
+    # 只放 5 个 cheats, 避免孤立数被放大
+    tmp_ch = os.path.join(tmp, 'cheats')
     os.makedirs(tmp_ch)
-    src_ch = os.path.join(SRC, 'chats')
+    src_ch = os.path.join(SRC, 'cheats')
     for n in sorted(os.listdir(src_ch))[:5]:
         if n.lower().endswith('.cht'):
             shutil.copy2(os.path.join(src_ch, n), os.path.join(tmp_ch, n))

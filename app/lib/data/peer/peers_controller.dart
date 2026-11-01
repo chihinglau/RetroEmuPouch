@@ -80,6 +80,13 @@ class PeersController extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _refreshTimer;
   int _generation = 0;
 
+  /// Device IDs the user has 「忘记」ed during this controller's lifetime. A
+  /// still-broadcasting partner is re-discovered on every scan and would
+  /// otherwise bounce straight back as a fresh unpaired candidate, making forget
+  /// look like it did nothing. We hide it from the list until the peers page is
+  /// reopened (a new controller starts with an empty set).
+  final Set<String> _forgotten = {};
+
   /// Native EmulatorActivity → local PlaySession terminal bridge, and the
   /// watcher that releases retained services once a retained session ends
   /// while no peers page owns this controller (Task 9).
@@ -423,6 +430,21 @@ class PeersController extends ChangeNotifier with WidgetsBindingObserver {
       } catch (_) {/* mDNS best-effort */}
     }
 
+    // A partner may answer both the UDP broadcast and mDNS, and the PC tool
+    // advertises on both transports — collapse to one entry per deviceId so the
+    // phone never shows two identical 「伙伴」. Drop any device the user just
+    // 「忘记」ed this session: a still-broadcasting partner would otherwise
+    // immediately reappear as a fresh unpaired candidate.
+    final seen = <String>{};
+    final deduped = <PeerEndpoint>[];
+    for (final ep in found) {
+      if (seen.contains(ep.deviceId)) continue;
+      seen.add(ep.deviceId);
+      if (_forgotten.contains(ep.deviceId)) continue;
+      deduped.add(ep);
+    }
+    found = deduped;
+
     if (gen != _generation || !active) return;
 
     // Refresh mutable address/name bookkeeping for paired devices.
@@ -472,6 +494,7 @@ class PeersController extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   Future<void> unpair(String deviceId) async {
+    _forgotten.add(deviceId);
     await store?.remove(deviceId);
     peers.removeWhere((p) => p.id == deviceId);
     notifyListeners();
@@ -488,6 +511,7 @@ class PeersController extends ChangeNotifier with WidgetsBindingObserver {
     required String ip,
     required int httpPort,
   }) async {
+    _forgotten.remove(deviceId);
     await store?.upsert(
       deviceId: deviceId,
       name: name,

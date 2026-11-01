@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""校验 chats/ 产物: 汇总 + 抽样, 结果写入 UTF-8 文本便于查看。"""
+"""校验 cheats/ 产物: 汇总 + 抽样, 结果写入 UTF-8 文本便于查看。"""
 import os, json, io
 
 GSTEST = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                       '..', '..', '.tools', 'gstest'))
-CH = os.path.join(GSTEST, 'chats')
+CH = os.path.join(GSTEST, 'cheats')
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'verify_report.txt')
 
 buf = io.StringIO()
@@ -36,7 +36,7 @@ for m in rep['matchedList'][:8]:
 # 实际文件一致性
 files = [f for f in os.listdir(CH) if f.endswith('.cht')]
 w('\n=== 磁盘 ===\n')
-w('  chats/*.cht 实际数量: %d (报告命中 %d)\n' % (len(files), rep['matched']))
+w('  cheats/*.cht 实际数量: %d (报告命中 %d)\n' % (len(files), rep['matched']))
 
 sample = sorted(files)[0]
 with open(os.path.join(CH, sample), 'r', encoding='utf-8') as f:
