@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../pal/platform_pal.dart';
 import '../peer/peers_page.dart';
 import '../settings/settings_sheet.dart';
+import 'account_backend.dart';
+import 'http_account.dart';
 import 'mock_account.dart';
 
 /// 「网络」模块：云端账号（仅云端登录，不连本地 PC）、云存档（会员权益占位）、
@@ -20,16 +24,20 @@ class AccountPage extends StatefulWidget {
 }
 
 class _AccountPageState extends State<AccountPage> {
-  final _svc = MockAccountService();
+  AccountBackend _svc = MockAccountService();
   AccountUser? _user;
   final _busy = false;
 
   @override
   void initState() {
     super.initState();
-    _svc.load().then((u) {
-      if (mounted) setState(() => _user = u);
-    });
+    _init();
+  }
+
+  Future<void> _init() async {
+    _svc = await createAccountBackend();
+    final u = await _svc.load();
+    if (mounted) setState(() => _user = u);
   }
 
   Future<void> _openLogin() async {
@@ -98,6 +106,74 @@ class _AccountPageState extends State<AccountPage> {
     ));
   }
 
+  // ---------------------------------------------------------- 联调调试入口
+  /// 仅 debug 构建可见：切换"本地桩 / 真实后端"并填写后端地址，
+  /// 让 store 包无需改代码即可联调真实服务（配合后台 HTTPS 本地脚本使用）。
+  Future<void> _openDebug() async {
+    final prefs = await SharedPreferences.getInstance();
+    final useHttp = ValueNotifier<bool>(
+        prefs.getBool(kUseHttpBackend) ?? buildUseHttpBackend());
+    final urlCtl = TextEditingController(
+        text: prefs.getString(kAccountBaseUrl) ?? 'https://127.0.0.1:8000');
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          title: const Text('调试：账号后端'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ValueListenableBuilder<bool>(
+                valueListenable: useHttp,
+                builder: (c, v, _) => SwitchListTile(
+                  title: const Text('使用真实后端 (HTTP/HTTPS)'),
+                  value: v,
+                  onChanged: (b) => setSt(() => useHttp.value = b),
+                ),
+              ),
+              TextField(
+                controller: urlCtl,
+                decoration: const InputDecoration(
+                  labelText: '后端地址',
+                  hintText: 'https://127.0.0.1:8000',
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('取消')),
+            FilledButton(
+              onPressed: () async {
+                await prefs.setBool(kUseHttpBackend, useHttp.value);
+                await prefs.setString(kAccountBaseUrl, urlCtl.text.trim());
+                if (!ctx.mounted) return;
+                Navigator.pop(ctx);
+                await _switchBackend();
+              },
+              child: const Text('保存'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _switchBackend() async {
+    _svc = await createAccountBackend();
+    final u = await _svc.load();
+    if (mounted) setState(() => _user = u);
+  }
+
+  Widget _debugTile() => ListTile(
+        leading: const Icon(Icons.bug_report_outlined),
+        title: const Text('调试：账号后端'),
+        subtitle: Text(_svc is HttpAccountService ? '真实后端' : '本地桩'),
+        onTap: _openDebug,
+      );
+
   // ---------------------------------------------------------------- UI
   @override
   Widget build(BuildContext context) {
@@ -137,6 +213,7 @@ class _AccountPageState extends State<AccountPage> {
       children: [
         _accountSection(),
         _cloudSaveSection(),
+        if (kDebugMode) _debugTile(),
         _section(
           icon: Icons.swap_horiz,
           title: '发现伙伴（手机面对面互传）',
@@ -299,18 +376,25 @@ class _AccountPageState extends State<AccountPage> {
 /// 登录界面：支持「一键快捷登录」与「账号密码」两种方式。
 class _LoginDialog extends StatefulWidget {
   const _LoginDialog({required this.service});
-  final MockAccountService service;
+  final AccountBackend service;
 
   @override
   State<_LoginDialog> createState() => _LoginDialogState();
 }
 
 class _LoginDialogState extends State<_LoginDialog> {
-  var _mode = 'quick'; // quick | password
+  var _mode = 'quick'; // quick | password | register
   final _nameCtl = TextEditingController();
   final _passCtl = TextEditingController();
   var _busy = false;
   String? _err;
+
+  @override
+  void initState() {
+    super.initState();
+    // 真实后端不支持一键快捷登录，默认进入账号密码模式。
+    if (widget.service is HttpAccountService) _mode = 'password';
+  }
 
   Future<void> _submit() async {
     setState(() {
@@ -320,8 +404,11 @@ class _LoginDialogState extends State<_LoginDialog> {
     try {
       final u = _mode == 'quick'
           ? await widget.service.quickLogin()
-          : await widget.service.login(
-              _nameCtl.text.trim(), _passCtl.text);
+          : _mode == 'register'
+              ? await widget.service.register(
+                  _nameCtl.text.trim(), _passCtl.text)
+              : await widget.service.login(
+                  _nameCtl.text.trim(), _passCtl.text);
       if (!mounted) return;
       Navigator.pop(context, u);
     } catch (e) {
@@ -334,25 +421,27 @@ class _LoginDialogState extends State<_LoginDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('登录'),
+      title: Text(_mode == 'register' ? '注册账号' : '登录'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SegmentedButton<String>(
-            segments: const [
-              ButtonSegment(value: 'quick', label: Text('一键快捷登录')),
-              ButtonSegment(value: 'password', label: Text('账号密码')),
+            segments: [
+              if (widget.service is! HttpAccountService)
+                const ButtonSegment(value: 'quick', label: Text('一键快捷')),
+              const ButtonSegment(value: 'password', label: Text('账号密码')),
+              const ButtonSegment(value: 'register', label: Text('注册')),
             ],
             selected: {_mode},
             onSelectionChanged: (s) => setState(() => _mode = s.first),
           ),
           const SizedBox(height: 12),
-          if (_mode == 'password') ...[
+          if (_mode != 'quick') ...[
             TextField(
               controller: _nameCtl,
               decoration: const InputDecoration(
-                labelText: '用户名',
+                labelText: '用户名或邮箱',
                 prefixIcon: Icon(Icons.person_outline),
                 border: OutlineInputBorder(),
               ),
@@ -389,7 +478,7 @@ class _LoginDialogState extends State<_LoginDialog> {
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('登录'),
+              : Text(_mode == 'register' ? '注册' : '登录'),
         ),
       ],
     );
@@ -399,7 +488,7 @@ class _LoginDialogState extends State<_LoginDialog> {
 /// 修改密码（演示）：校验两次输入一致与长度，调用桩服务。
 class _ChangePasswordDialog extends StatefulWidget {
   const _ChangePasswordDialog({required this.service});
-  final MockAccountService service;
+  final AccountBackend service;
 
   @override
   State<_ChangePasswordDialog> createState() => _ChangePasswordDialogState();

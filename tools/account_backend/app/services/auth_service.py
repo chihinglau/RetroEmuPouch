@@ -54,3 +54,25 @@ def refresh(db: Session, refresh_token: str) -> str:
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user_not_found")
     return create_access_token(sub=user.id)
+
+
+def change_password(
+    db: Session, user_id: str, old_password: str, new_password: str
+) -> User:
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user_not_found")
+    if not verify_password(old_password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="wrong_old_password")
+    user.password_hash = hash_password(new_password)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+def delete_user(db: Session, user_id: str) -> None:
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="user_not_found")
+    db.delete(user)
+    db.commit()
