@@ -1318,13 +1318,45 @@ release 包也能用；配对记录存 `tools/library/.peer_devices.json`（已 
     「`useDpadUi || stickMode == DPAD4`」，使切换真正改变屏上十字键/摇杆外观与命中。
   - `layoutDpad()` 本就在 `layoutButtons` 中无条件执行，切到 DPAD4 时几何已就绪。
 
+### 15.4 设置页重构：分类主菜单 + 子页面（2026-11-01）
+
+参照 iOS 设置页（彩色圆角入口行 + 子页面），把原来**单页长滚动**的 `SettingsSheet`
+（`app/lib/features/settings/settings_sheet.dart`）重构为**分类主菜单**，入口行逐项推送
+全屏子页面。共享 Flutter Dart，Android / OHOS 同一套。
+
+- **信息架构**
+  - **6 个子页面**：使用教程（静态入门 5 步：导入游戏/BIOS/开始/一键招式/同步备份）、
+    会员 / 去广告（内嵌 `MembershipSection`，兼作订阅管理入口）、游戏体验
+    （FPS 浮窗 / 高刷新率 / 加速音频）、控制与手柄（摇杆 / 布局 / 一键招式）、
+    BIOS 管理（`_BiosManagerCard`）、通用（记住上次进度 / 深色主题）、
+    关于与支持（应用信息卡 / 客服中心 / 开源许可 / 隐私政策×2 / 备案号）。
+  - **4 个直执行项**：分享应用（复制推荐文案到剪贴板，零依赖）、
+    给个好评（`PlatformPal.openStore()`，异常兜底复制反馈链接）、
+    意见反馈（复制 `LegalConstants.feedbackUrl`）、还原设置（确认对话框 →
+    把 `AppSettings().toMap()` 应用回 `AppSettings.current` 并保存，
+    **不触碰存档 / BIOS / lastSaveSlot**，深色主题变更实时生效）。
+- **按用户要求排除**「存档管理」「iCloud 同步」（App 已有独立的「我的 PC」LAN 同步体系）；
+  「管理订阅」「客服中心」分别并入会员页与关于页，避免空壳页面。
+- **关键实现**：推送出去的子页面不在 Sheet 的 element 树内，`setState` 刷不到 ——
+  新增 `_SettingsNotifier`（封装 protected `notifyListeners`），`_patch` 后 `ping()`，
+  子页面正文用 `ListenableBuilder` 包裹实时重建。主菜单头部保留紧凑版（应用名 + 版本号 chip），
+  完整应用信息卡移入「关于与支持」。推送走 `widget.hostCtx` 的 host navigator
+  （弹窗本身保持打开，返回即回菜单，与招式编辑器同样的坑）。
+- **发布可配置**：`app/lib/features/legal/legal_constants.dart` 新增
+  `feedbackUrl`（GitHub Issues，反馈 / 客服中心复制给用户）、`shareMessage`
+  （分享文案），上线时一处替换为邮箱 / 商店链接即可。
+- **验证**：`flutter analyze` 0 error（回到既有 14 个 issue，无新增）；
+  `flutter test` 19/19 绿；APK 构建安装成功、真机启动正常。真机 UI 走查待装包验证。
+
 ---
 
 ## 16. 安卓包名重命名 + 华为应用市场（AppGallery Connect）接入（2026-10）
 
 > 本项目（RetroEmuPouch）是 GamePouch 的**重命名派生项目**。Android 包名已从
 > `com.gamepouch.app` 改为 **`com.retroemupouch.app`**（与 `agconnect-services.json`
-> 的 `package_name` 一致）。⚠️ **OHOS bundleName 仍是 `com.gamepouch.gamepouch`**（未改名）。
+> 的 `package_name` 一致）。✅ **OHOS bundleName 已一并改为 `com.retroemupouch.app`**
+> （经 DevEco 重签后，`hdc ... aa start -b com.retroemupouch.app` 实测可启动；旧
+> `com.gamepouch.gamepouch` 已失效，勿再用）。
 
 ### 16.1 包名重命名的完整清单（漏一处就运行时崩）
 
