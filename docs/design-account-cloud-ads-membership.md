@@ -160,7 +160,7 @@
 | 子项 | 说明 | 状态 | 备注 |
 |---|---|---|---|
 | 1 总体架构 | 上述拓扑 | 已采纳-进行中（骨架） | |
-| 2 AdPal 分平台 | Android AdMob / OHOS 华为广告 | 进行中（Android AdMob 测试ID已接；OHOS 待 HMS 签名+广告位ID） | **OHOS 不可用 AdMob**，走华为/Petals Ads（原生通道，待接入） |
+| 2 AdPal 分平台 | Android AdMob / OHOS 华为广告 | 进行中（Android AdMob 测试ID已接 + **Android APK 已构建验证**；OHOS 待 HMS 签名+广告位ID） | **OHOS 不可用 AdMob**，走华为/Petals Ads（原生通道，待接入） |
 | 3 广告位与频控 | Banner/Interstitial/Rewarded + 频控 | 进行中（Interstitial+退出游戏断点已接；Banner 已接；频控=每日≤3+冷却1min；Rewarded 未做） | 不在模拟运行中插广告 |
 | 4 会员模型 | 免费/7天试用/月/年/终身 | 未开始 | |
 | 5 BillingPal 分平台 | Play Billing / 华为 IAP | 未开始 | |
@@ -204,8 +204,9 @@
 
 - **Phase 1 收尾：LAN mDNS 发现（2026-11-01）**：在 `tools/library/peer_host.py` 的 `PeerHost` 新增 mDNS 广播（`_retroemupouch._tcp.local`，zeroconf，缺依赖自动降级为仅 UDP），并加 `run_peer_server.py --no-mdns` 开关；App 侧新建 `lib/pal/pairing_pal.dart`（`PairingPal` 接口 + `MdnsPairingPal` 纯 Dart 实现 + `NoOpPairingPal`），在 `PeersController.refresh()` 合并 mDNS 发现的 PC（与现有 UDP 广播并存，互为兜底）；新增依赖 `multicast_dns`。设备端 E2E 需在手机「发现伙伴」连同一 Wi-Fi 的真机验证（当前设备离线，未跑）。
 - **Phase 2 广告接入：Android AdMob（2026-11-01）**：`lib/pal/ad_pal.dart` 新增 `GoogleMobileAdsAdPal`（`google_mobile_ads`，默认 **Google 测试广告位 ID**，真实 ID 待发布时替换），`createAdPal()` 按 `Platform.operatingSystem` 在 Android 走 AdMob、OHOS 走 `NoOpAdPal`（华为/Petals Ads 待 HMS 签名+广告位 ID）；`AdService` 频控升级为「每日≤3 + 冷却 1min + 跨会话按日重置」。`LibraryPage` 接入**安全断点**：退出游戏回库页（`didChangeAppLifecycleState.resumed`）经 `AdService.maybeShowInterstitial()` 弹插屏（绝不在模拟运行中插广告），并在库页底部挂载 `bannerWidget()` 横幅。新增依赖 `google_mobile_ads`；AndroidManifest 加 AdMob APP_ID（测试 ID）。OHOS 因 NoOp 对该平台完全无副作用；真机 E2E（Android 调试 + OHOS 华为广告）待凭证与设备。
+- **Phase 2 验证：Android APK 构建打通（2026-11-01）**：此前卡在 Gradle 配置阶段，根因有二——(1) `gradle.properties` 设 `android.builtInKotlin=false`（AGP 9.x 不再内置 Kotlin），但 `app/android/app/build.gradle.kts` 的 `plugins{}` 漏 apply `org.jetbrains.kotlin.android`，导致 `kotlin { compilerOptions { jvmTarget } }` 解析失败（`Unresolved reference: compilerOptions/jvmTarget`）；补上后通过。(2) `google_mobile_ads 5.3.1` 的 `android/build.gradle` 用了 `configurations.all` 属性访问（Gradle 9.x 已移除该 API，报 `Could not get unknown property 'all'`）；升级到 `^9.2.0`（Flutter 3.41.10 满足其 SDK 约束，`flutter analyze` 0 error、Dart 侧 API 无破坏）后插件脚本兼容 Gradle 9。`flutter build apk --debug --flavor store` 现已成功产出 `app-store-debug.apk`（约 250MB，含全部原生内核），并 `adb install` 到已连接 Android 设备（OXF AN10，Android 12 arm64）成功。构建链路打通，后续改动可用该命令做 Android 侧回归。
 
-**待办（下一阶段）**：OHOS 华为/Petals 广告原生通道、Play Billing / 华为 IAP、后端账号与收据校验（Android AdMob 已接测试 ID，待真实广告位 ID + OHOS HMS 签名）。
+**待办（下一阶段）**：OHOS 华为/Petals 广告原生通道、Play Billing / 华为 IAP、后端账号与收据校验（Android AdMob 已接测试 ID 且 **Android APK 已可构建**；真实广告位 ID + OHOS HMS 签名待发布）。
 
 ## 决策记录（供跟踪）
 
@@ -215,6 +216,7 @@
 | 2026-11-01 | 实施者 | Phase 1 收尾：LAN mDNS 发现 | 新增 PC 端 mDNS 广播 + App 侧 `PairingPal`(multicast_dns)；自托管配对闭环打通（UDP/mDNS 双通道） |
 | 2026-11-01 | 实施者 | Phase 2 广告接入：Android AdMob | `google_mobile_ads` + Google 测试广告位 ID 接 Android 插屏/横幅；`createAdPal()` 按平台分流，OHOS 暂 NoOp（华为广告待 HMS）；退出游戏断点 + 频控（每日≤3+冷却1min） |
 | 2026-11-01 | 实施者 | Bug 修复：OHOS 金手指无法启用 | `gpretro.cpp` `GetCheats` 原读 `g_filesDir(=appRoot/roms)/library/cheats.json`（路径错，应为 `g_appDir(=appRoot)/library/`），且只读 `cheats.json` 不读 `cloud_cheats.json`；PC 下载的金手指落在 `cloud_cheats.json` 故永远「本游戏暂无金手指」。改为用 `g_appDir` 并合并 `cloud_cheats.json` 兜底（Android `CheatStore.load` 同语义）。Switch/Choice 两类均经此路径修复。 |
+| 2026-11-01 | 实施者 | Phase 2 验证：Android APK 构建打通 | 卡点二修复：`build.gradle.kts` 漏 apply `org.jetbrains.kotlin.android`（配 `android.builtInKotlin=false` 必现 DSL 解析失败）；`google_mobile_ads` 5.3.1→9.2.0（Gradle 9 移除 `configurations.all` 属性访问致插件脚本报错）。`flutter build apk --debug --flavor store` 产出 `app-store-debug.apk`（~250MB）并 `adb install` 到 OXF AN10 成功。 |
 
 ---
 
