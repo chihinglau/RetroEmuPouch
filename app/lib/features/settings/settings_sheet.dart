@@ -23,14 +23,22 @@ import 'special_moves_editor.dart';
 /// Configurable settings are loaded on open and saved on every toggle
 /// change, so closing the sheet (or the app) never loses work.
 class SettingsSheet extends StatefulWidget {
-  const SettingsSheet({super.key, required this.hostCtx, required this.pal});
+  const SettingsSheet(
+      {super.key,
+      required this.hostCtx,
+      required this.pal,
+      this.deepLink});
 
-  static Future<void> show(BuildContext context, {required PlatformPal pal}) {
+  /// [deepLink] 非空时，设置页打开后自动跳转到对应子页（如 'membership'
+  /// 直达「会员 / 去广告」），用于从「网络」页等位置深链进入。
+  static Future<void> show(BuildContext context,
+      {required PlatformPal pal, String? deepLink}) {
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
-      builder: (sheetCtx) => SettingsSheet(hostCtx: context, pal: pal),
+      builder: (sheetCtx) =>
+          SettingsSheet(hostCtx: context, pal: pal, deepLink: deepLink),
     );
   }
 
@@ -41,6 +49,9 @@ class SettingsSheet extends StatefulWidget {
 
   /// Used to read the real installed version for the App-info card.
   final PlatformPal pal;
+
+  /// 深链目标：'membership' 打开后直达「会员 / 去广告」子页。
+  final String? deepLink;
 
   @override
   State<SettingsSheet> createState() => _SettingsSheetState();
@@ -63,6 +74,11 @@ class _SettingsSheetState extends State<SettingsSheet> {
     widget.pal.appVersion().then((v) {
       if (mounted) setState(() => _version = v);
     });
+    if (widget.deepLink == 'membership') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openMembership();
+      });
+    }
   }
 
   @override

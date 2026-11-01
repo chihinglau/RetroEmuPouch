@@ -800,7 +800,7 @@ class _LibraryPageState extends State<LibraryPage>
               ]
             : [
                 IconButton(
-                  tooltip: '账号 / 云服务 / 升级',
+                  tooltip: '网络',
                   onPressed: _openAccount,
                   icon: const Icon(Icons.cloud_outlined),
                 ),

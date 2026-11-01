@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.env
+
+# Alembic
+alembic/versions/*.pyc
+
+# IDE
+.idea/
+.vscode/
+
+# 生产 secrets —— 绝对不能提交
+secrets/
+*.secret.json
+*.pem
+
+# 测试 / 日志
+.pytest_cache/
+*.log
