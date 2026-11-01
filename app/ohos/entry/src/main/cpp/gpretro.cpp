@@ -2577,12 +2577,21 @@ static std::string CheatsForCrc(const std::string& path, const char* key) {
 static napi_value GetCheats(napi_env env, napi_callback_info info) {
   const char* empty = "[]";
   napi_value out = nullptr;
-  char key[16];
-  snprintf(key, sizeof(key), "\"%08X\"", Crc32File(g_romPath));
+  // Key MUST match GetRomCrc()/persistCheats(): the rom_index.json CRC32 (or the
+  // disk CRC for unindexed ROMs). The old `Crc32File(g_romPath)` was the raw disk
+  // CRC and differed from the canonical key, so every lookup missed and the dialog
+  // always reported "本游戏暂无金手指". Also fall back to the disk CRC so a
+  // database keyed either way still resolves.
+  std::string crc = g_soloSaveKey.empty() ? SoloSaveCrc() : g_soloSaveKey;
+  char diskHex[16];
+  snprintf(diskHex, sizeof(diskHex), "%08X", Crc32File(g_romPath));
   std::string base = g_appDir + "/library/";
-  // Local store wins; cloud sync snapshot is the fallback (Android parity).
-  std::string arr = CheatsForCrc(base + "cheats.json", key);
-  if (arr.empty()) arr = CheatsForCrc(base + "cloud_cheats.json", key);
+  std::string arr = CheatsForCrc(base + "cheats.json", ("\"" + crc + "\"").c_str());
+  if (arr.empty()) arr = CheatsForCrc(base + "cloud_cheats.json", ("\"" + crc + "\"").c_str());
+  if (arr.empty()) arr = CheatsForCrc(base + "cheats.json", ("\"" + std::string(diskHex) + "\"").c_str());
+  if (arr.empty()) arr = CheatsForCrc(base + "cloud_cheats.json", ("\"" + std::string(diskHex) + "\"").c_str());
+  GPRETRO_INFO("GPRETRO: GetCheats crc=%{public}s base=%{public}s found=%{public}d",
+               crc.c_str(), base.c_str(), !arr.empty());
   napi_create_string_utf8(env, arr.empty() ? empty : arr.c_str(),
                           NAPI_AUTO_LENGTH, &out);
   return out;
@@ -2616,21 +2625,32 @@ static napi_value SetCheats(napi_env env, napi_callback_info info) {
     size_t q2 = s.find('"', q1 + 1);
     if (q2 == std::string::npos) break;
     std::string code = s.substr(q1 + 1, q2 - q1 - 1);
+    // JSON serializes real newlines as the two-char "\n"; restore them so each
+    // cheat line becomes its own retro_cheat_set index (multi-line Game Genie /
+    // ROM patches were otherwise passed as one bogus line).
+    std::string codeU;
+    for (size_t ci = 0; ci < code.size(); ci++) {
+      if (code[ci] == '\\' && ci + 1 < code.size() && code[ci + 1] == 'n') {
+        codeU.push_back('\n'); ci++;
+      } else {
+        codeU.push_back(code[ci]);
+      }
+    }
     size_t after = s.find_first_of("tf", q2);
     if (after == std::string::npos) break;
     bool enabled = (s[after] == 't');
-    if (enabled && !code.empty()) {
+    if (enabled && !codeU.empty()) {
       size_t start = 0;
-      while (start <= code.size()) {
-        size_t nl = code.find('\n', start);
-        if (nl == std::string::npos) nl = code.size();
-        std::string line = code.substr(start, nl - start);
+      while (start <= codeU.size()) {
+        size_t nl = codeU.find('\n', start);
+        if (nl == std::string::npos) nl = codeU.size();
+        std::string line = codeU.substr(start, nl - start);
         if (!line.empty() && line.back() == '\r') line.pop_back();
         if (!line.empty()) {
           g_core.retro_cheat_set(idx, true, line.c_str());
           idx++;
         }
-        if (nl == code.size()) break;
+        if (nl == codeU.size()) break;
         start = nl + 1;
       }
     }
