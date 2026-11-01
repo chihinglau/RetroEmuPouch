@@ -436,13 +436,27 @@ class _SpecialMovesEditorPageState extends State<SpecialMovesEditorPage> {
             icon: const Icon(Icons.restart_alt_outlined),
             onPressed: _resetToDefault,
           ),
+          // 未修改时用 icon-only 紧凑按钮：带「已保存」文字会在窄屏把
+          // AppBar actions 撑爆 21px（出现 OVERFLOWED BY n PIXELS 调试斜纹）。
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: FilledButton.icon(
-              onPressed: _saving || !_dirty ? null : _save,
-              icon: const Icon(Icons.save_outlined),
-              label: Text(_dirty ? '保存' : '已保存'),
-            ),
+            padding: const EdgeInsets.only(right: 8),
+            child: _dirty
+                ? FilledButton.icon(
+                    onPressed: _saving ? null : _save,
+                    icon: const Icon(Icons.save_outlined),
+                    label: const Text('保存'),
+                  )
+                : Tooltip(
+                    message: '已保存',
+                    child: FilledButton.tonal(
+                      onPressed: null,
+                      style: FilledButton.styleFrom(
+                        minimumSize: const Size(48, 40),
+                        padding: const EdgeInsets.all(8),
+                      ),
+                      child: const Icon(Icons.check, size: 20),
+                    ),
+                  ),
           ),
         ],
       ),
@@ -469,6 +483,9 @@ class _SpecialMovesEditorPageState extends State<SpecialMovesEditorPage> {
                     const SizedBox(height: 8),
                     DropdownButtonFormField<String>(
                       initialValue: _config.activeProfileId,
+                      // isExpanded + ellipsis：预设名过长时（如「KOF97（默认）(6 个按键)」）
+                      // 截断省略，否则下拉内部 Row 超宽出现 OVERFLOWED BY n PIXELS。
+                      isExpanded: true,
                       decoration: const InputDecoration(
                         border: OutlineInputBorder(),
                         isDense: true,
@@ -476,7 +493,11 @@ class _SpecialMovesEditorPageState extends State<SpecialMovesEditorPage> {
                       items: _config.profiles.values
                           .map((p) => DropdownMenuItem(
                                 value: p.id,
-                                child: Text('${p.label}  (${p.moves.length} 个按键)'),
+                                child: Text(
+                                  '${p.label}  (${p.moves.length} 个按键)',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
                               ))
                           .toList(),
                       onChanged: (v) {
