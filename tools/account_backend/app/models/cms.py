@@ -1,6 +1,6 @@
-from .database import Base
+﻿from ..database import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import String, DateTime, Text, Integer, UniqueConstraint, Index
+from sqlalchemy import String, DateTime, Text, Integer, ForeignKey, UniqueConstraint, Index
 from datetime import datetime, timezone
 import uuid
 

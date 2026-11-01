@@ -1,4 +1,4 @@
-from .database import Base
+﻿from ..database import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, DateTime, Boolean, ForeignKey
 from datetime import datetime, timezone
@@ -6,6 +6,15 @@ from datetime import datetime, timezone
 
 def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _ensure_utc(dt: datetime | None) -> datetime | None:
+    """SQLite / 部分 DB 不保留 tzinfo —— 统一视为 UTC 补上。"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 class Entitlement(Base):
@@ -29,7 +38,8 @@ class Entitlement(Base):
     def is_trial_active(self) -> bool:
         if not self.trial_start or self.tier != "free":
             return False
-        return (datetime.now(timezone.utc) - self.trial_start).days < 7
+        trial_start = _ensure_utc(self.trial_start)
+        return (datetime.now(timezone.utc) - trial_start).days < 7
 
     @property
     def is_premium_active(self) -> bool:
@@ -37,7 +47,8 @@ class Entitlement(Base):
             return True
         if not self.expiry_at:
             return False
-        return datetime.now(timezone.utc) < self.expiry_at
+        expiry = _ensure_utc(self.expiry_at)
+        return datetime.now(timezone.utc) < expiry
 
     @property
     def is_vip_active(self) -> bool:
