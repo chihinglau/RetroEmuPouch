@@ -61,6 +61,12 @@ class Entitlement {
   /// Tier to display: a lapsed trial/subscription degrades to [free].
   MembershipTier get effectiveTier => isAdFree ? tier : MembershipTier.free;
 
+  /// Cloud-save benefit (design doc §二.4): paid tiers unlock enhanced,
+  /// server-backed save sync (more slots / larger backups). Free and trial users
+  /// keep only local LAN sync via their own PC. Drives UI copy + (later) the
+  /// server-side quota check; it never gates the local sync itself.
+  bool get cloudSaveEnabled => tier.isPaid;
+
   Entitlement copyWith({
     MembershipTier? tier,
     DateTime? trialStart,

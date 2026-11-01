@@ -25,4 +25,19 @@ class NoOpBillingPal implements BillingPal {
   Future<bool> restore() async => false;
 }
 
-BillingPal createBillingPal() => NoOpBillingPal();
+/// Returns the platform-appropriate [BillingPal].
+///
+/// The real billing providers are wired in a later phase and require store-console
+/// configuration + a backend receipt-verification endpoint (see design doc §二.5):
+///   Android -> PlayBillingPal (`in_app_purchase` / `google_play_billing`),
+///              SKUs `premium_monthly` / `premium_yearly` / `premium_lifetime`.
+///   OHOS    -> HuaweiIapPal (IapKit), same SKU set; lifetime is a
+///              non-consumable one-time SKU (§二.5).
+/// [BillingService] hands the resulting token to [ReceiptVerifier] for the
+/// authoritative grant. Until then the safe default keeps the app ad-supported
+/// and never blocks the purchase flow.
+BillingPal createBillingPal() {
+  // TODO(platform): `if (Platform.operatingSystem == 'android') return PlayBillingPal();`
+  //                 `if (Platform.operatingSystem == 'ohos') return HuaweiIapPal();`
+  return NoOpBillingPal();
+}

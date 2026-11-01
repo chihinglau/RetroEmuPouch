@@ -69,6 +69,17 @@ class _MembershipCardState extends State<_MembershipCard> {
               '当前状态：${tier.label}${e.isAdFree ? '（已去广告）' : '（含广告）'}',
               style: theme.textTheme.titleMedium,
             ),
+            const SizedBox(height: 4),
+            Text(
+              e.current.cloudSaveEnabled
+                  ? '已开通云存档（更多备份位 / 更大存档）'
+                  : '升级会员解锁云存档权益',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: e.current.cloudSaveEnabled
+                    ? theme.colorScheme.primary
+                    : theme.colorScheme.outline,
+              ),
+            ),
             const SizedBox(height: 8),
             if (tier == MembershipTier.free && e.current.trialStart == null)
               FilledButton(

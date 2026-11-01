@@ -5,6 +5,7 @@ import 'ad_service.dart';
 import '../../pal/billing_pal.dart';
 import 'billing_service.dart';
 import 'entitlement_service.dart';
+import 'receipt_verifier.dart';
 
 /// Lazily-initialised singleton bundling the membership subsystems so UI and
 /// other services share one [EntitlementService] instance.
@@ -20,10 +21,12 @@ class Membership {
   static Future<Membership> get instance async {
     if (_instance != null) return _instance!;
     final e = await EntitlementService.create();
+    // NoOp verifier until the operator's backend verify endpoint exists; the
+    // real ReceiptVerifier is dropped in without touching call sites.
     _instance = Membership._(
       e,
       AdService(createAdPal(), e),
-      BillingService(createBillingPal(), e),
+      BillingService(createBillingPal(), e, NoOpReceiptVerifier()),
     );
     return _instance!;
   }

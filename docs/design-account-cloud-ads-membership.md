@@ -162,13 +162,13 @@
 | 1 总体架构 | 上述拓扑 | 已采纳-进行中（骨架） | |
 | 2 AdPal 分平台 | Android AdMob / OHOS 华为广告 | 进行中（Android AdMob 测试ID已接 + **Android APK 已构建验证**；OHOS 待 HMS 签名+广告位ID） | **OHOS 不可用 AdMob**，走华为/Petals Ads（原生通道，待接入） |
 | 3 广告位与频控 | Banner/Interstitial/Rewarded + 频控 | 进行中（Interstitial+退出游戏断点已接；Banner 已接；频控=每日≤3+冷却1min；Rewarded 未做） | 不在模拟运行中插广告 |
-| 4 会员模型 | 免费/7天试用/月/年/终身 | 未开始 | |
-| 5 BillingPal 分平台 | Play Billing / 华为 IAP | 未开始 | |
-| 6 收据服务端校验 | 防作弊 | 未开始 | |
-| 7 试用/过期/终身逻辑 | trialStart 权威 | 未开始 | |
+| 4 会员模型 | 免费/7天试用/月/年/终身 | 已完成（骨架：`Entitlement`+`EntitlementService` 本地持久化、7天试用 `ensureTrialStarted`、`isAdFree`/`effectiveTier` 判定、新增 `cloudSaveEnabled` 云存档权益） | 真实权益由后端下发（Phase 3） |
+| 5 BillingPal 分平台 | Play Billing / 华为 IAP | 进行中（接口 `BillingPal`+`BillingService`+SKU 映射+本地授予已接；`createBillingPal()` 已标注 Android/OHOS 真实实现接入点） | **真实 Play Billing/华为 IAP 待商店配置 + 凭证（Phase 3）** |
+| 6 收据服务端校验 | 防作弊 | 已接（骨架：`ReceiptVerifier` 接口 + `NoOpReceiptVerifier` seam，`BillingService` 先校验后授予、无后端时本地兜底） | 真实后端校验端点待 Phase 3 |
+| 7 试用/过期/终身逻辑 | trialStart 权威 | 已完成（`Entitlement.isAdFree`：终身/有效订阅/7天试用窗内均免广告；过窗降级 free；终身无到期） | |
 | 8 entitlement 容错 | 失败回退显示广告 | 已接（AdService 按 isAdFree 门控 + 失败默认显示广告不锁死；后端校验待 Phase 3） | 不锁死 App |
-| 9 隐私与商店合规 | 隐私政策/同意/非个性化 | 未开始 | |
-| 10 UI 与代码映射 | AccountPage/exitToLibrary 接入 | 未开始 | |
+| 9 隐私与商店合规 | 隐私政策/同意/非个性化 | 暂缓（非个性化默认/同意 UI 待 Phase 3，与真实 AdMob/HMS 广告一起） | |
+| 10 UI 与代码映射 | AccountPage/exitToLibrary 接入 | 已完成（`MembershipSection` 已嵌入 `AccountPage`：状态/7天试用/月年终身购买/云存档权益展示） | |
 
 ---
 
@@ -206,7 +206,9 @@
 - **Phase 2 广告接入：Android AdMob（2026-11-01）**：`lib/pal/ad_pal.dart` 新增 `GoogleMobileAdsAdPal`（`google_mobile_ads`，默认 **Google 测试广告位 ID**，真实 ID 待发布时替换），`createAdPal()` 按 `Platform.operatingSystem` 在 Android 走 AdMob、OHOS 走 `NoOpAdPal`（华为/Petals Ads 待 HMS 签名+广告位 ID）；`AdService` 频控升级为「每日≤3 + 冷却 1min + 跨会话按日重置」。`LibraryPage` 接入**安全断点**：退出游戏回库页（`didChangeAppLifecycleState.resumed`）经 `AdService.maybeShowInterstitial()` 弹插屏（绝不在模拟运行中插广告），并在库页底部挂载 `bannerWidget()` 横幅。新增依赖 `google_mobile_ads`；AndroidManifest 加 AdMob APP_ID（测试 ID）。OHOS 因 NoOp 对该平台完全无副作用；真机 E2E（Android 调试 + OHOS 华为广告）待凭证与设备。
 - **Phase 2 验证：Android APK 构建打通（2026-11-01）**：此前卡在 Gradle 配置阶段，根因有二——(1) `gradle.properties` 设 `android.builtInKotlin=false`（AGP 9.x 不再内置 Kotlin），但 `app/android/app/build.gradle.kts` 的 `plugins{}` 漏 apply `org.jetbrains.kotlin.android`，导致 `kotlin { compilerOptions { jvmTarget } }` 解析失败（`Unresolved reference: compilerOptions/jvmTarget`）；补上后通过。(2) `google_mobile_ads 5.3.1` 的 `android/build.gradle` 用了 `configurations.all` 属性访问（Gradle 9.x 已移除该 API，报 `Could not get unknown property 'all'`）；升级到 `^9.2.0`（Flutter 3.41.10 满足其 SDK 约束，`flutter analyze` 0 error、Dart 侧 API 无破坏）后插件脚本兼容 Gradle 9。`flutter build apk --debug --flavor store` 现已成功产出 `app-store-debug.apk`（约 250MB，含全部原生内核），并 `adb install` 到已连接 Android 设备（OXF AN10，Android 12 arm64）成功。构建链路打通，后续改动可用该命令做 Android 侧回归。
 
-**待办（下一阶段）**：OHOS 华为/Petals 广告原生通道、Play Billing / 华为 IAP、后端账号与收据校验（Android AdMob 已接测试 ID 且 **Android APK 已可构建**；真实广告位 ID + OHOS HMS 签名待发布）。
+- **Phase 3 会员/计费客户端骨架（2026-11-01）**：无需外部凭证即可落地的纯客户端骨架已补齐并接线。既有骨架（`EntitlementService`/`BillingService`/`AdService`/`Membership` 单例/`MembershipSection` 已嵌入 `AccountPage`）经核验已完整接线。`Entitlement` 新增 `cloudSaveEnabled`（付费档解锁云存档权益，免费/试用仅本地 LAN 同步）；新增 `ReceiptVerifier` 接口 + `NoOpReceiptVerifier`（后端收据校验接入点 seam），`BillingService` 改「先 `BillingPal` 购买 → 再 `ReceiptVerifier` 校验 → 授予 entitlement」，无后端时本地兜底（标 TODO(server)）；`createBillingPal()` 标注 Android `PlayBillingPal` / OHOS `HuaweiIapPal` 真实实现接入点；`MembershipSection` 展示云存档权益状态。新增单测 `test/features/membership/entitlement_test.dart`（10/10 绿，覆盖 isAdFree/cloudSaveEnabled/effectiveTier/试用窗）；`flutter analyze` 0 error，无新增依赖。
+
+**待办（下一阶段）**：OHOS 华为/Petals 广告原生通道、Play Billing / 华为 IAP（商店配置+凭证）、后端账号与收据校验（会员/计费客户端骨架已完成，真实计费与后端校验待 Phase 3 凭证）。
 
 ## 决策记录（供跟踪）
 
