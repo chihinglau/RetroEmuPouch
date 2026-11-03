@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -5,13 +6,16 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/play/multiplayer_catalog.dart';
+import 'features/legal/cloud_config_service.dart';
 import 'features/library/library_page.dart';
 import 'features/ads/splash_ad_screen.dart';
 import 'features/membership/entitlement_service.dart';
+import 'features/membership/membership.dart';
 import 'features/legal/consent_gate.dart';
 import 'features/settings/app_settings.dart';
 import 'pal/platform_pal.dart';
 import 'pal/pal_factory.dart';
+import 'features/account/account_backend.dart';
 import 'system_files.dart';
 
 /// App-wide route observer. The library page (the root route) subscribes to it
@@ -57,9 +61,22 @@ Future<void> main() async {
     load: () => pal.loadKeyValueStore('entitlement.json'),
     save: (m) => pal.saveKeyValueStore('entitlement.json', m),
   );
+  // 账号登录态同样需要 OHOS 兜底：否则 createAccountBackend() 在鸿蒙上因
+  // shared_preferences 无 handler 抛异常，会员页"加载失败"且登录态永不恢复。
+  setFallbackStore(
+    load: () => pal.loadKeyValueStore('account.json'),
+    save: (m) => pal.saveKeyValueStore('account.json', m),
+  );
   // Warm the settings cache before the first frame so the Settings sheet
   // can read AppSettings.current synchronously on first open.
   await AppSettings.load().then(AppSettings.cacheFrom);
+  try {
+    await CloudConfigService.instance
+        .load()
+        .timeout(const Duration(seconds: 5));
+  } catch (_) {
+    // 后端不可用时 fallback 到本地 LegalConstants 默认值
+  }
   // Verify (do NOT ship) emulator BIOS files. Users must supply their own
   // legitimate copies (R1 compliance); missing BIOS are surfaced in the UI.
   try {
@@ -74,21 +91,9 @@ Future<void> main() async {
   } catch (_) {
     // Asset unavailable: catalog stays empty (single-player).
   }
-  // R8: first-launch consent gate for privacy policy + EULA.
-  // OHOS has no shared_preferences native handler yet; when prefs is
-  // unavailable default to "consented" so the pure-Dart UI can boot.
-  bool consented = true;
-  try {
-    final prefs = await SharedPreferences.getInstance();
-    consented = prefs.getBool('consent_given') ?? false;
-  } catch (_) {
-    consented = true;
-  }
-  if (consented) {
+  runApp(ConsentGate(onAccept: () {
     runApp(GamePouchApp());
-  } else {
-    runApp(ConsentGate(onAccept: () => runApp(GamePouchApp())));
-  }
+  }));
 
   // TEMP OHOS WIRING SELF-TEST: exercises every Settings-sheet backend path
   // headlessly (the OpenHarmony `uitest` driver cannot reach Flutter widgets),
@@ -330,11 +335,32 @@ class GamePouchAppState extends State<GamePouchApp> {
   /// inside the app, so the theme updates without an app restart.
   late Brightness _brightness;
 
+  /// 当前用户权益（用于门控开屏广告占位）。冷启动异步加载；加载完成前按"未登录"
+  /// 保守显示开屏占位，加载后若为普通 / 超级 VIP 或试用（[Entitlement.blocksInterstitialAds]
+  /// 为真）则跳过开屏——模拟真实广告平台对这类用户的去开屏行为，便于在 OHOS 上验证
+  /// 权益逻辑。加载失败时维持默认（占位开屏照常显示）。
+  EntitlementService? _entitlement;
+  StreamSubscription<Entitlement>? _entSub;
+
   @override
   void initState() {
     super.initState();
     _brightness =
         AppSettings.current.darkTheme ? Brightness.dark : Brightness.light;
+    _initEntitlement();
+  }
+
+  Future<void> _initEntitlement() async {
+    try {
+      final m = await Membership.instance;
+      if (!mounted) return;
+      setState(() => _entitlement = m.entitlement);
+      _entSub = m.entitlement.changes.listen((_) {
+        if (mounted) setState(() {});
+      });
+    } catch (_) {
+      // 会员服务初始化失败：保持默认行为（开屏占位照常显示）。
+    }
   }
 
   /// Switch the running app between dark and light themes.
@@ -346,7 +372,18 @@ class GamePouchAppState extends State<GamePouchApp> {
   }
 
   @override
+  void dispose() {
+    _entSub?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // 开屏广告占位（OHOS 的 NoOpAdPal）：仅当平台使用占位广告、且当前权益未屏蔽
+    // 开屏 / 插屏（blocksInterstitialAds 为假，即免费 / 未登录）时显示。普通 VIP /
+    // 超级 VIP / 试用用户在此直接进主界面，与真实广告平台行为一致。
+    final showSplash = shouldShowSplashTestAd() &&
+        (_entitlement == null || !_entitlement!.blocksInterstitialAds);
     return MaterialApp(
       title: '趣玩匣',
       debugShowCheckedModeBanner: false,
@@ -356,10 +393,7 @@ class GamePouchAppState extends State<GamePouchApp> {
         colorSchemeSeed: const Color(0xFF4FC3F7),
         visualDensity: VisualDensity.standard,
       ),
-      // 开屏广告：仅 OHOS（NoOpAdPal 测试占位）显示；真实广告平台由对应 AdPal
-      // 的 open-ad 实现接管后，本条件返回 false，直接进主界面。冷启动只 build
-      // 一次，后台返回不会重进，符合开屏广告只在启动出现的预期。
-      home: shouldShowSplashTestAd()
+      home: showSplash
           ? SplashAdScreen(pal: widget.pal)
           : LibraryPage(pal: widget.pal),
       navigatorObservers: [appRouteObserver],

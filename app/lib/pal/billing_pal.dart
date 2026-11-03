@@ -25,6 +25,16 @@ class NoOpBillingPal implements BillingPal {
   Future<bool> restore() async => false;
 }
 
+/// Debug-only: simulates a successful platform purchase so the backend verify
+/// path can be exercised during 联调 (no real app store on device). Never used
+/// in release builds — selected only when debug + real backend are active.
+class DebugSuccessBillingPal implements BillingPal {
+  @override
+  Future<bool> purchase(String sku) async => true;
+  @override
+  Future<bool> restore() async => true;
+}
+
 /// Returns the platform-appropriate [BillingPal].
 ///
 /// The real billing providers are wired in a later phase and require store-console

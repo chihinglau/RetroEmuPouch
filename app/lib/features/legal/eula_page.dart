@@ -1,10 +1,57 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
-/// 用户协议（占位模板，含免责与知识产权声明；正式发布前须经法务审核）。
-class EulaPage extends StatelessWidget {
+import 'cloud_config_service.dart';
+
+/// 用户协议页：启动时从后端拉 Markdown 正文，网络失败 fallback 到
+/// 本文件底部的硬编码模板。
+///
+/// 后端 API：`GET /api/cms/docs/eula?lang=zh`
+class EulaPage extends StatefulWidget {
   const EulaPage({super.key});
 
-  static const _text = '''
+  @override
+  State<EulaPage> createState() => _EulaPageState();
+}
+
+class _EulaPageState extends State<EulaPage> {
+  String? _remoteContent;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_fetch());
+  }
+
+  Future<void> _fetch() async {
+    final c = await CloudConfigService.instance.fetchDoc('eula');
+    if (mounted) {
+      setState(() {
+        _remoteContent = c;
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+        appBar: AppBar(title: const Text('用户协议')),
+        body: SafeArea(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(16),
+            child: _loading
+                ? const Center(child: CircularProgressIndicator())
+                : SelectableText(
+                    _remoteContent ?? _fallback,
+                    style: const TextStyle(height: 1.5),
+                  ),
+          ),
+        ),
+      );
+
+  static const _fallback = '''
 趣玩匣 RetroEmuPouch 用户协议（模板）
 
 1. 知识产权
@@ -25,15 +72,4 @@ class EulaPage extends StatelessWidget {
 
 （本协议为占位模板，正式发布前须经法务审核。）
 ''';
-
-  @override
-  Widget build(BuildContext context) => Scaffold(
-        appBar: AppBar(title: const Text('用户协议')),
-        body: const SafeArea(
-          child: SingleChildScrollView(
-            padding: EdgeInsets.all(16),
-            child: SelectableText(_text, style: TextStyle(height: 1.5)),
-          ),
-        ),
-      );
 }

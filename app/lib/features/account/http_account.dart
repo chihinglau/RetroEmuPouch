@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
 
 import '../../data/cloud/security_policy.dart';
 import 'account_backend.dart';
@@ -19,32 +19,55 @@ import 'mock_account.dart';
 /// 注意：真实后端 auth 路由**暂无**"修改密码 / 注销账号"端点，这两个方法先抛明确错误，
 /// 待后台补齐（见设计文档 Phase 5 之外的小增补）。
 class HttpAccountService implements AccountBackend {
-  HttpAccountService(this._prefs);
+  final AccountStore _store;
+  final StreamController<AuthSession?> _authCtrl =
+      StreamController<AuthSession?>.broadcast();
 
-  final SharedPreferences _prefs;
-  AccountUser? _current;
+  HttpAccountService(this._store);
+
+  AuthSession? _session;
+
   @override
-  AccountUser? get current => _current;
+  AuthSession? get session => _session;
 
-  String get _baseUrl => _prefs.getString(kAccountBaseUrl) ?? '';
-  String? get _token => _prefs.getString(kAccountToken);
+  @override
+  AccountUser? get current => _session?.user;
+
+  /// 订阅即先回放当前会话，再转发后续变更（单一真相源）。
+  @override
+  Stream<AuthSession?> get authStateChanges async* {
+    yield _session;
+    await for (final s in _authCtrl.stream) yield s;
+  }
+
+  void _setSession(AuthSession? s) {
+    _session = s;
+    if (!_authCtrl.isClosed) {
+      _authCtrl.add(s);
+    }
+  }
+
+  String get _baseUrl => _store.getString(kAccountBaseUrl) ?? '';
+  String? get _token => _store.getString(kAccountToken);
 
   @override
   Future<AccountUser?> load() async {
     final t = _token;
     if (t == null || t.isEmpty) {
-      _current = null;
+      _setSession(null);
       return null;
     }
     try {
       final j = await _json('GET', '/api/auth/me');
-      _current = _toUser(j);
+      final u = _toUser(j);
       _persistUser(j);
+      _setSession(AuthSession(u, t));
+      return u;
     } catch (_) {
       // token 失效或网络不可达：保守地视为未登录，避免卡死在错误态。
-      _current = null;
+      _setSession(null);
+      return null;
     }
-    return _current;
   }
 
   @override
@@ -65,11 +88,14 @@ class HttpAccountService implements AccountBackend {
     });
     final tok = j['access_token'] as String?;
     if (tok == null || tok.isEmpty) throw Exception('注册失败：未返回 token');
-    await _prefs.setString(kAccountToken, tok);
+    await _store.setString(kAccountToken, tok);
     final me = await _json('GET', '/api/auth/me');
-    _current = _toUser(me);
+    final u = _toUser(me);
     _persistUser(me);
-    return _current!;
+    final s = AuthSession(u, tok);
+    await _maybeStartTrial();
+    _setSession(s);
+    return u;
   }
 
   @override
@@ -85,11 +111,14 @@ class HttpAccountService implements AccountBackend {
         auth: false, body: {'email': email, 'password': password});
     final tok = j['access_token'] as String?;
     if (tok == null || tok.isEmpty) throw Exception('登录失败：未返回 token');
-    await _prefs.setString(kAccountToken, tok);
+    await _store.setString(kAccountToken, tok);
     final me = await _json('GET', '/api/auth/me');
-    _current = _toUser(me);
+    final u = _toUser(me);
     _persistUser(me);
-    return _current!;
+    final s = AuthSession(u, tok);
+    await _maybeStartTrial();
+    _setSession(s);
+    return u;
   }
 
   @override
@@ -99,10 +128,10 @@ class HttpAccountService implements AccountBackend {
     } catch (_) {
       // 客户端清本地 token 即可，服务端无黑名单。
     }
-    await _prefs.remove(kAccountToken);
-    await _prefs.remove(kAccountUserId);
-    await _prefs.remove(kAccountUserName);
-    _current = null;
+    await _store.remove(kAccountToken);
+    await _store.remove(kAccountUserId);
+    await _store.remove(kAccountUserName);
+    _setSession(null);
   }
 
   @override
@@ -114,10 +143,20 @@ class HttpAccountService implements AccountBackend {
   @override
   Future<void> deregister() async {
     await _json('DELETE', '/api/auth/me');
-    await _prefs.remove(kAccountToken);
-    await _prefs.remove(kAccountUserId);
-    await _prefs.remove(kAccountUserName);
-    _current = null;
+    await _store.remove(kAccountToken);
+    await _store.remove(kAccountUserId);
+    await _store.remove(kAccountUserName);
+    _setSession(null);
+  }
+
+  /// 首次登录时在服务端开启 7 天试用（服务端权威、单用判定）。
+  /// 失败不阻断登录（下次刷新会再次尝试，服务端幂等）。
+  Future<void> _maybeStartTrial() async {
+    try {
+      await _json('POST', '/api/billing/trial/start');
+    } catch (_) {
+      // 试用开启失败可忽略。
+    }
   }
 
   // ---------------------------------------------------------------- helpers
@@ -133,8 +172,8 @@ class HttpAccountService implements AccountBackend {
   void _persistUser(Map<String, dynamic> j) {
     final id = (j['user_id'] ?? j['id']);
     final name = j['display_name'] ?? j['email'];
-    if (id != null) _prefs.setString(kAccountUserId, id.toString());
-    if (name != null) _prefs.setString(kAccountUserName, name.toString());
+    if (id != null) _store.setString(kAccountUserId, id.toString());
+    if (name != null) _store.setString(kAccountUserName, name.toString());
   }
 
   /// 统一 JSON 请求；复用 [SecurityPolicy] 作为唯一明文闸门（store 包只放行 HTTPS）。
@@ -149,6 +188,14 @@ class HttpAccountService implements AccountBackend {
     final uri = Uri.parse('$base$path');
     SecurityPolicy.assertSafe(uri);
     final client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+    // dart:io 的 TLS 栈只信任系统证书库；Android/OHOS 的用户 CA（network_security_config
+    // 对 dart:io 均不生效）不被认。debug 联调时，对回环地址与 RFC1918 私网（开发机/局域网
+    // 常在此）放行自签证书，方便在真机用本机或局域网 https 开发服务器联调。仅 debug 放开，
+    // release 不信任自签证书。
+    final h = uri.host;
+    if (kDebugMode && _isPrivateOrLoopback(h)) {
+      client.badCertificateCallback = (cert, host, port) => true;
+    }
     try {
       final req = await client.openUrl(method, uri);
       req.headers.set(HttpHeaders.acceptHeader, 'application/json');
@@ -188,15 +235,14 @@ class HttpAccountService implements AccountBackend {
   }
 }
 
-/// 按"运行期开关 > 编译期开关"选择账号后端实现。
-/// 运行期 override 存于 [kUseHttpBackend]（仅调试构建暴露开关），否则取 [buildUseHttpBackend]。
-Future<AccountBackend> createAccountBackend() async {
-  final prefs = await SharedPreferences.getInstance();
-  final useHttp = prefs.getBool(kUseHttpBackend) ?? buildUseHttpBackend();
-  if (!useHttp) return MockAccountService();
-  // 真实后端需要已配置地址；未配置则退回桩，避免启动即崩溃。
-  if ((prefs.getString(kAccountBaseUrl) ?? '').trim().isEmpty) {
-    return MockAccountService();
-  }
-  return HttpAccountService(prefs);
+/// 回环或 RFC1918 私网地址（开发联调常连的开发机 / 局域网服务器）。
+/// 与 [SecurityPolicy.allowsCleartext] 的私网判定保持一致。
+bool _isPrivateOrLoopback(String host) {
+  if (host == '127.0.0.1' || host == 'localhost' || host == '::1') return true;
+  final p = host.split('.');
+  if (p.length != 4) return false;
+  final a = int.tryParse(p[0]);
+  final b = int.tryParse(p[1]);
+  if (a == null || b == null) return false;
+  return a == 10 || (a == 192 && b == 168) || (a == 172 && b >= 16 && b <= 31);
 }

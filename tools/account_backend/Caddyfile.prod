@@ -1,0 +1,57 @@
+# =================================================================
+# RetroEmuPouch Account Backend — Caddy 生产配置
+# 自动申请/续期 Let's Encrypt SSL 证书
+# 用法：把 DOMAIN 替换成你真实的域名
+# =================================================================
+
+# ── 主域名（自动 HTTPS）──
+api.yourdomain.com {
+    # 反向代理到后端 FastAPI
+    reverse_proxy app:8000 {
+        # 超时设置（收据校验可能调 Google/Huawei API）
+        timeout 120s
+        keepalive 30s
+    }
+
+    # 健康检查端点直接透传，不走额外逻辑
+    handle /healthz {
+        reverse_proxy app:8000
+    }
+
+    # 安全头
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        X-XSS-Protection "1; mode=block"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # CORS（Android/iOS App 都要）
+        Access-Control-Allow-Origin "*"
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        Access-Control-Allow-Headers "Authorization, Content-Type, X-Device-Id, X-Dev-Mock"
+        Access-Control-Max-Age "86400"
+    }
+
+    # 请求体大小限制（云存档加密 blob 上限 5MB）
+    client_max_body_size 10M
+
+    # 访问日志
+    log {
+        output file /data/logs/access.log
+        format json
+    }
+}
+
+# ── HTTP 强制跳转 HTTPS ──
+http://api.yourdomain.com {
+    redir https://api.yourdomain.com{uri} permanent
+}
+
+# ── 裸域名（可选，跳转到 api 子域）──
+yourdomain.com {
+    redir https://api.yourdomain.com{uri} permanent
+}
+
+http://yourdomain.com {
+    redir https://api.yourdomain.com{uri} permanent
+}

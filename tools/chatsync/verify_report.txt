@@ -1,0 +1,91 @@
+=== 汇总 ===
+ROM 总数        : 626
+命中(已生成 .cht): 174
+无金手指        : 452
+孤立金手指      : 26
+命令总数        : 7747
+
+=== 分平台 ===
+  cps1     命中  28 /  29
+  cps2     命中  35 /  36
+  gba      命中  24 / 309
+  neogeo   命中  87 / 154
+  nes      命中   0 /  98
+
+=== 孤立金手指(无对应游戏, 已保留到 _orphans/) ===
+  [arcade] qtono2
+  [arcade] striderfix
+  [arcade] tws96
+  [cht   ] Advanced Dungeons _ Dragons - Dragons of Flame
+  [cht   ] Assimilate
+  [cht   ] Blaster Master
+  [cht   ] City Adventure Touch - Mystery of Triangle
+  [cht   ] Demon Sword
+  [cht   ] Dragon Scroll - Yomigaerishi Maryuu
+  [cht   ] Freedom Force
+  [cht   ] Iron Tank - The Invasion of Normandy
+  [cht   ] Jack Nicklaus' Greatest 18 Holes of Major Championship Golf
+  [cht   ] Kaze no Klonoa G2 - Dream Champ Tournament
+  [cht   ] Konami Krazy Racers
+  [cht   ] Lord of the Rings, The - The Return of the King
+  [cht   ] Monster in My Pocket
+  [cht   ] Mortal Kombat Advance
+  [cht   ] New Ghostbusters II
+  [cht   ] San Guo Zhi 4 - Chi Bi Feng Yun
+  [cht   ] Shrek - Swamp Kart Speedway
+  [cht   ] Snow Brothers
+  [cht   ] Space Invaders
+  [cht   ] Square no Tom Sawyer
+  [cht   ] Tenchi o Kurau II - Shokatsu Koumei Den
+  [cht   ] Virus Cleaner
+  [cht   ] Wizardry - Proving Grounds of the Mad Overlord
+
+=== 命中抽样(前 8) ===
+  CT特种部队                       gba     crc=DE09DCA2  3 条  <- CT Special Forces
+  GAT赛车3                       gba     crc=D72B030A  16 条  <- GT Advance 3 - Pro Concept Racing
+  GTA赛车2                       gba     crc=7C3DE5A6  7 条  <- GT Advance 2 - Rally Racing
+  加菲猫和它的九条命                    gba     crc=7A2D0E55  3 条  <- Garfield and His Nine Lives
+  双刃                           gba     crc=F2E9B90A  10 条  <- Dual Blades
+  合金射击者                        gba     crc=079A1E0C  9 条  <- Metalgun Slinger
+  合金弹头A                        gba     crc=3B6D469F  19 条  <- Metal Slug Advance
+  嘿阿诺德电影版                      gba     crc=E87121F8  7 条  <- Hey Arnold! - The Movie
+
+=== 磁盘 ===
+  cheats/*.cht 实际数量: 218 (报告命中 174)
+
+=== 抽样 .cht 内容: 1941r1.cht ===
+cheats = 16
+
+cheat0_desc = "P1 Inf Vital/Rolls"
+cheat0_code = "FF0DA4:07"
+cheat0_enable = false
+
+cheat1_desc = "P1 Invincible"
+cheat1_code = "FF0DFB:01"
+cheat1_enable = false
+
+cheat2_desc = "P1 Class Level 8"
+cheat2_code = "FF0DCD:07"
+cheat2_enable = false
+
+cheat3_desc = "P1 Inf Weapon Time"
+cheat3_code = "FF0DE6:99"
+cheat3_enable = false
+
+cheat4_desc = "P1 Side Fighters / Left Fighter"
+cheat4_code = "FF9A98:01,FF9A99:01,FF9A45:05"
+cheat4_enable = false
+
+cheat5_desc = "P1 Side Fighters / Right Fighter"
+cheat5_code = "FF9A18:01,FF9A19:01,FF9A1A:01,FF9AC5:05"
+cheat5_enable = false
+
+cheat6_desc = "P1 Side Fighters / Both Fighters"
+cheat6_code = "FF9A98:01,FF9A99:01,FF9A45:05,FF9A18:01,FF9A19:01
+=== cheats.json ===
+  version=1  byCrc 键数=224
+  首键=024088A4  命令数=275
+  首条={"name": "Title / Vampire Hunter 2", "code": "FF8088:00", "enabled": false, "options": [], "selected": -1}
+
+=== _orphans ===
+  文件数: 26

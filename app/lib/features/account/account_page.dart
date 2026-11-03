@@ -1,12 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../pal/platform_pal.dart';
 import '../peer/peers_page.dart';
 import '../settings/settings_sheet.dart';
 import 'account_backend.dart';
 import 'http_account.dart';
-import 'mock_account.dart';
 
 /// 「网络」模块：云端账号（仅云端登录，不连本地 PC）、云存档（会员权益占位）、
 /// 手机面对面互传。会员 / 去广告管理见设置页。
@@ -24,7 +22,7 @@ class AccountPage extends StatefulWidget {
 }
 
 class _AccountPageState extends State<AccountPage> {
-  AccountBackend _svc = MockAccountService();
+  late AccountBackend _svc;
   AccountUser? _user;
   final _busy = false;
 
@@ -38,6 +36,7 @@ class _AccountPageState extends State<AccountPage> {
     _svc = await createAccountBackend();
     final u = await _svc.load();
     if (mounted) setState(() => _user = u);
+    // 会员权益由 Membership 订阅 authStateChanges 自动联动，无需在此手动处理。
   }
 
   Future<void> _openLogin() async {
@@ -45,11 +44,14 @@ class _AccountPageState extends State<AccountPage> {
       context: context,
       builder: (_) => _LoginDialog(service: _svc),
     );
-    if (u != null && mounted) setState(() => _user = u);
+    if (u != null && mounted) {
+      setState(() => _user = u);
+    }
   }
 
   Future<void> _logout() async {
     await _svc.logout();
+    // 会员权益由 Membership 订阅 authStateChanges 自动回落免费，无需手动处理。
     if (mounted) setState(() => _user = null);
   }
 
@@ -110,11 +112,10 @@ class _AccountPageState extends State<AccountPage> {
   /// 仅 debug 构建可见：切换"本地桩 / 真实后端"并填写后端地址，
   /// 让 store 包无需改代码即可联调真实服务（配合后台 HTTPS 本地脚本使用）。
   Future<void> _openDebug() async {
-    final prefs = await SharedPreferences.getInstance();
-    final useHttp = ValueNotifier<bool>(
-        prefs.getBool(kUseHttpBackend) ?? buildUseHttpBackend());
+    final cfg = await readBackendConfig();
+    final useHttp = ValueNotifier<bool>(cfg.useHttp);
     final urlCtl = TextEditingController(
-        text: prefs.getString(kAccountBaseUrl) ?? 'https://127.0.0.1:8000');
+        text: cfg.baseUrl.isEmpty ? 'https://127.0.0.1:8000' : cfg.baseUrl);
     if (!mounted) return;
     await showDialog<void>(
       context: context,
@@ -147,8 +148,7 @@ class _AccountPageState extends State<AccountPage> {
                 child: const Text('取消')),
             FilledButton(
               onPressed: () async {
-                await prefs.setBool(kUseHttpBackend, useHttp.value);
-                await prefs.setString(kAccountBaseUrl, urlCtl.text.trim());
+                await writeBackendConfig(useHttp.value, urlCtl.text.trim());
                 if (!ctx.mounted) return;
                 Navigator.pop(ctx);
                 await _switchBackend();
@@ -162,6 +162,7 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _switchBackend() async {
+    resetAccountBackend(); // 切换桩/后端前清空单例缓存，强制按新开关重建
     _svc = await createAccountBackend();
     final u = await _svc.load();
     if (mounted) setState(() => _user = u);

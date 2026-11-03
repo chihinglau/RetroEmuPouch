@@ -1,0 +1,81 @@
+# =================================================================
+# RetroEmuPouch Account Backend — 生产部署
+# 服务：FastAPI + PostgreSQL + Caddy（自动 HTTPS）
+# 前提：已在 ECS 上跑过 scripts/setup-ecs.sh
+# 用法：docker compose -f docker-compose.prod.yml up -d
+# =================================================================
+version: "3.9"
+
+services:
+  # ── PostgreSQL ──
+  db:
+    image: postgres:16-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: retroemupouch
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}
+      POSTGRES_DB: retroemupouch
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/db-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U retroemupouch"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - internal
+
+  # ── FastAPI App ──
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    image: retroemupouch-account:latest
+    restart: always
+    env_file:
+      - .env.production
+    environment:
+      DATABASE_URL: postgresql+psycopg://retroemupouch:${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}@db:5432/retroemupouch
+      APP_ENV: production
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - internal
+      - web
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/healthz', timeout=3).raise_for_status()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ── Caddy（HTTPS 自动签发 + 反向代理）──
+  caddy:
+    image: caddy:2-alpine
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile.prod:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+    networks:
+      - web
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:
+
+networks:
+  internal:
+    internal: true   # DB 不暴露到外网
+  web:
+    driver: bridge

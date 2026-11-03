@@ -890,3 +890,1059 @@ App 访问地址：`http://<PC局域网IP>:8000`
 - ~~真实后端 `auth` 路由暂无「修改密码 / 注销账号」端点~~ —— **已补齐**（见上）。
 - JWT 当前仅存 access_token（单 token），未实现 refresh 自动续期（Phase 5 上线前需补，详见评估文档）。
 - `X-Dev-Mock` 头与 store/community 无关，属 dev/staging 标志，联调真实后台本就不发。
+
+---
+
+## 生产部署方案（2026-11-03 实施）
+
+### 云服务选型对比
+
+| | **方案 A：华为云 ECS 国内节点（🏆 推荐）** | **方案 B：Render/Railway + Supabase** | **方案 C：自托管 + Cloudflare Tunnel** |
+|---|---|---|---|
+| 价格 | 💰 **0 元 / 12 个月**（新注册用户，2核2G） | 💰 **0 元**（Render 免费 + Supabase 免费 PG） | 💰 **0 元**（已有 PC + 免费穿透） |
+| 国内延迟 | ⚡ **10-30ms（最快！）** | 🐌 150-250ms（美国节点） | ⚡ 家庭宽带 50-100ms |
+| HTTPS | ✅ Caddy 自动（Let's Encrypt） | ✅ 平台自带 | ✅ Cloudflare 免费 |
+| PostgreSQL | ✅ 自托管（Docker Compose） | ✅ Supabase 免费（0.5GB） | ✅ 自托管 |
+| 长期运行 | ✅ **12 个月免费**（到期约 ¥50/月） | ✅ 一直免费但会休眠 | ❌ 电脑必须常开 |
+| App 商场合规 | ✅ **国内节点 = 延迟最低 + 审核秒过** | ❌ 服务器在国外，卡审核 | ❌ 无固定公网 IP |
+| 一键部署 | ✅ `deploy.ps1` 一条搞定 | ⚠️ 两个平台分别配置 | ✅ 注册一次 cloudflared |
+| **适合阶段** | 🏆 **MVP + 小量正式运营** | 🧪 开发测试 | 🧪 开发测试 |
+
+### 方案 A 为什么选华为云国内节点？（2026-11 更新推荐）
+
+1. **💰 12 个月免费** —— 华为云新注册用户 `free.huaweicloud.com`，比阿里云 3 个月多 **4 倍**！
+2. **⚡ 国内延迟最低（10-30ms）** —— 之前推荐香港是"国内低延迟"，但实际上大陆用户访问**国内节点比香港更快**：北京/上海用户访问国内节点 3ms，香港要 30-50ms
+3. **自主可控** —— Docker Compose 一键启动 FastAPI + PostgreSQL + Caddy HTTPS，迁移只需改 IP
+4. **同生态契合** —— 你的手机是华为 Pura70，华为云账号体系更顺
+5. **免费节点** —— 国内地域（华北2-北京/华东2-上海/华南1-广州）跟香港免费额度完全一样，但**大陆用户更快**
+
+### 关键洞察：香港其实没必要
+
+| 节点 | 北京用户 | 广州用户 | 深圳用户 |
+|---|---|---|---|
+| 中国香港 | ~50ms | ~30ms | ~10ms |
+| **华南1-广州（华为云国内）** | ~30ms | **~5ms** | **~3ms** |
+| **华北2-北京（华为云国内）** | **~3ms** | ~30ms | ~30ms |
+
+**MVP 阶段用户都是大陆人 → 选国内节点 → 全国平均延迟反而最低**。有海外用户再考虑香港。
+
+### 项目新增部署文件
+
+```
+tools/account_backend/
+├── Dockerfile.prod              ← 生产镜像（多阶段构建 + gunicorn + 非 root 用户）
+├── docker-compose.prod.yml      ← 生产编排（FastAPI + PostgreSQL + Caddy HTTPS）
+├── Caddyfile.prod               ← Caddy 反向代理 + 自动 HTTPS + CORS 头
+├── .env.production.example      ← 生产环境变量模板（密码/JWT/数据库）
+├── .dockerignore                ← Docker 构建时排除无关文件
+└── scripts/
+    ├── deploy.ps1               ← ⭐ 一键部署（6 个动作：setup/deploy/seed/logs/stop/update）
+    ├── setup-ecs.sh             ← ECS 初始化（装 Docker + Docker Compose）
+    └── db-init/
+        └── 01-extensions.sql    ← PostgreSQL 首次启动时启用 pgcrypto
+```
+
+### 一键部署流程（5 步）
+
+```powershell
+# ══════════════════════════════════════════════════
+# Step 1: 阿里云控制台操作（3 分钟）
+# ══════════════════════════════════════════════════
+# 1. 打开 https://free.aliyun.com → 云服务器 ECS → 立即试用
+# 2. 地域选「香港」（重要！国内低延迟）
+# 3. 规格选「2核2GB」（或 2核4GB，更宽裕）
+# 4. 设置 root 密码 → 创建实例
+# 5. 记下公网 IP（比如 47.xx.xx.xx）
+# 6. ⚠️ 安全组必须放行 80 + 443 + 22（ECS 控制台 → 安全组 → 添加入方向规则）
+
+# ══════════════════════════════════════════════════
+# Step 2: 本地初始化 ECS（装 Docker）
+# ══════════════════════════════════════════════════
+$env:ECS_HOST = "你的公网IP"
+$env:ECS_USER = "root"
+cd tools\account_backend
+.\scripts\deploy.ps1 -Action setup
+# 输出：✅ Docker 安装完成 + 公网 IP
+
+# ══════════════════════════════════════════════════
+# Step 3: 生成 .env.production（生产密钥）
+# ══════════════════════════════════════════════════
+# 首次 deploy 会自动从 .env.production.example 复制一份
+# 然后手动编辑：
+notepad .env.production
+# ── 必须改的 4 项 ──
+# DB_PASSWORD=            ← 至少 32 位随机
+# JWT_SECRET=              ← python -c "import secrets; print(secrets.token_urlsafe(48))"
+# ADMIN_TOKEN_SECRET=      ← 同上，另一个
+# CLOUD_SAVE_KEY_SALT=     ← 同上
+
+# ══════════════════════════════════════════════════
+# Step 4: 上传 + 构建 + 启动（一条命令）
+# ══════════════════════════════════════════════════
+# 有域名的话（推荐）：
+$env:ECS_DOMAIN = "api.yourdomain.com"   # 域名 DNS 先指向 ECS 公网 IP
+.\scripts\deploy.ps1 -Action deploy -Domain "yourdomain.com"
+
+# 没域名的话（先用 IP 测试）：
+.\scripts\deploy.ps1 -Action deploy
+# Caddyfile 里的 yourdomain.com 注释掉 HTTPS 段，临时用 HTTP
+
+# ══════════════════════════════════════════════════
+# Step 5: Seed 初始化（首次启动必须跑）
+# ══════════════════════════════════════════════════
+.\scripts\deploy.ps1 -Action seed
+# 返回：{ app_configs_seeded: 8, cms_docs_seeded: 4 }
+```
+
+### 部署完成验证
+
+| 检查项 | 验证方式 |
+|---|---|
+| 后端健康 | `curl https://api.yourdomain.com/healthz` → `{"ok":true,"env":"production"}` |
+| API 文档 | 浏览器打开 `https://api.yourdomain.com/docs` → Swagger UI |
+| HTTPS 证书 | 浏览器地址栏 🔒 绿色锁 |
+| 数据库迁移 | `./deploy.ps1 -Action logs app` 看日志无 Alembic 错误 |
+| Seed 数据 | `curl https://api.yourdomain.com/api/cms/config` → 8 条 AppConfig |
+| App 端联调 | 手机打开 RetroEmuPouch → 设置 → 后端地址填 `https://api.yourdomain.com` → 开「使用真实后端」 |
+
+### 日常运维命令
+
+```powershell
+# 查看服务状态
+.\scripts\deploy.ps1 -Action logs db      # 数据库日志
+.\scripts\deploy.ps1 -Action logs app     # 后端日志
+
+# 快速更新（改了 Python 代码后）
+.\scripts\deploy.ps1 -Action update       # 只重建 app 容器，DB 不动
+
+# 完整重部署（改了 docker-compose / Caddyfile）
+.\scripts\deploy.ps1 -Action deploy
+
+# 停止
+.\scripts\deploy.ps1 -Action stop
+```
+
+### 安全清单（生产必须检查）
+
+- [ ] `.env.production` 不在 Git 里（`.gitignore` 已包含）
+- [ ] 所有 JWT/密钥至少 48 字节随机（用 `secrets.token_urlsafe(48)` 生成）
+- [ ] Caddyfile CORS 生产环境收紧（`APP_CORS_ORIGINS` 不要留 `*`）
+- [ ] ECS 安全组只放 80/443/22，不放 5432（PostgreSQL 只在 internal 网络）
+- [ ] PostgreSQL `pg_hba.conf` 不允许远程 root 登录（compose 已隔离）
+- [ ] `ALLOW_DEV_MOCK=false`（生产绝对关闭 dev mock）
+- [ ] 云存档数据库备份 —— ECS 上跑定时：`docker compose exec db pg_dump -U retroemupouch retroemupouch | gzip > /root/backup-$(date +%Y%m%d).sql.gz`
+
+### 域名 + HTTPS（推荐）
+
+**没域名能不能上？** 可以，但 App 商场审核可能卡（HTTP 明文不允许）。推荐花 ¥50/年买个 `.xyz` 或 `.top` 域名。
+
+**配置步骤：**
+1. 阿里云/腾讯云买个域名
+2. 域名 DNS → 加 A 记录：`api` → ECS 公网 IP
+3. 等 DNS 生效（几分钟到几小时）
+4. 跑 `.\scripts\deploy.ps1 -Action deploy -Domain "yourdomain.com"`
+5. Caddy 自动申请 Let's Encrypt 证书，完成 HTTPS
+
+### 3 个月后怎么办（长期方案）
+
+| 阶段 | 方案 | 月费 |
+|---|---|---|
+| MVP 验证（0-3 月） | 阿里云 ECS 香港免费试用 | ¥0 |
+| 小量正式运营（3-12 月） | 阿里云/腾讯云轻量应用服务器（2核2G 香港） | ¥50-80/月 |
+| 有一定用户量（12+ 月） | 阿里云 ECS（4核8G + RDS PostgreSQL + CDN） | ¥300+/月 |
+| 大规模 | 上 K8s / Serverless | 按量计费 |
+
+迁移只需在新 ECS 上重新跑 deploy，数据库用 `pg_dump` 导出导入，约 30 分钟。
+
+---
+
+## 阿里云 ECS 香港免费试用 —— 逐步注册指引（2026-11）
+
+### 📌 免费试用核心规则（来自阿里云官方）
+
+| 项 | 值 |
+|---|---|
+| 免费入口 | https://free.aliyun.com/product/product/ecs/freetrial |
+| 试用总额度 | **300 元** |
+| 每小时额度上限 | 0.833 元 |
+| 有效期 | **3 个月**（从创建实例日起算） |
+| 免费地域 | 7 个可选：**北京、杭州、广州、成都、乌兰察布、河源、中国香港** |
+| 可试用规格 | e / u1 实例（约 2核2GB ~ 2核4GB） |
+| 免费台数 | 个人版 1 台（选香港） |
+| 带宽 | 免费自带基础带宽，够 MVP 用 |
+
+### ⚠️ 开始前必读
+
+1. **第一次选地域必须选对香港** —— 创建后不能换地域！如果选错了要释放重开
+2. **需要实名认证** —— 个人身份证即可，5 分钟搞定
+3. **每日限量** —— 免费试用是每日限量的，早上领成功率高
+4. **一个阿里云账号只能领一次免费 ECS** —— 没账号就新注册
+
+---
+
+### Step 1：注册阿里云账号
+
+1. 打开 https://account.aliyun.com/register
+2. 手机号注册（最快）：输入手机号 → 设置密码 → 获取短信验证码 → 填验证码
+3. **实名认证**（必须）：
+   - 进入 https://usercenter.console.aliyun.com/#/manage/realname
+   - 选「个人实名认证」→ 输入姓名 + 身份证号 + 上传身份证正反面
+   - 支付宝实名认证会自动跳转，几秒钟完成
+4. 完成后页面显示「实名认证通过」✅
+
+---
+
+### Step 2：领取免费 ECS
+
+1. 打开 **免费试用专区**：https://free.aliyun.com/product/product/ecs/freetrial
+2. 点击页面中间的 **「立即试用」** 按钮
+3. 进入 **云服务器 ECS 免费试用** 创建页：
+
+| 配置项 | 你要选的值 | 为什么 |
+|---|---|---|
+| **试用地域** | 🔴 **中国香港（cn-hongkong）** | 国内 App 低延迟 30-50ms，App 商场审核秒过 |
+| **实例规格** | ecs.e5.large（2核4GB）或 ecs.e5.medium（2核2GB） | 2核2G 够跑 FastAPI + PostgreSQL；2核4G 更宽裕 |
+| **可用区** | 随机默认即可 | 香港有 3 个可用区，哪个空闲选哪个 |
+| **网络** | 默认 VPC + 自动分配公网 IP | 必须有公网 IP 才能 SSH 上去 |
+| **操作系统** | ✅ **Ubuntu 22.04 LTS（64位）** | 我们的部署脚本用的是 Debian/Ubuntu，兼容性最好 |
+| **安全组** | 🔴 **新建安全组** → 下一步会手动开放 22/80/443 | 重要！默认只开 22，后面要加 80 和 443 |
+| **登录密码** | 📝 **记下来！** 至少 8 位，含字母+数字+符号 | 后面 SSH 要用 |
+| **实例名** | `retroemupouch-account` | 好认就行 |
+
+4. 点击 **「确认试用创建」** → 等几十秒
+5. 创建成功后 **立即复制公网 IP**（比如 `47.xx.xx.xx`），页面上能看到
+
+---
+
+### Step 3：配置安全组（开放 80/443 端口）
+
+**关键！不做这步，外部访问不了你的后端。**
+
+1. 进入 ECS 控制台：https://ecs.console.aliyun.com
+2. 左侧菜单 → **网络与安全** → **安全组**
+3. 找到刚才创建实例时绑定的安全组 → 点击「配置规则」
+4. 点击「入方向」→「手动添加」，加 3 条规则：
+
+| 协议类型 | 端口范围 | 授权对象 | 说明 |
+|---|---|---|---|
+| TCP | 22/22 | 0.0.0.0/0 | SSH 登录（你自己用） |
+| TCP | 80/80 | 0.0.0.0/0 | HTTP（Caddy 重定向到 HTTPS） |
+| TCP | 443/443 | 0.0.0.0/0 | HTTPS（App 实际调用端口） |
+
+5. 保存。**不要开 5432**（PostgreSQL）——我们在 Docker Compose 里只走内部网络，不暴露公网
+
+---
+
+### Step 4：本地验证能 SSH 上去
+
+Windows PowerShell 直接用系统自带 ssh（Win10/11 默认有）：
+
+```powershell
+ssh root@你的公网IP
+# 输入刚才设的密码
+# 看到 root@iZxxx:~# 就成功了
+# 输入 exit 退出
+```
+
+如果 ssh 太慢或超时，检查：
+1. 安全组 22 端口开了没
+2. 公网 IP 对不对
+3. 你本地网络没被阿里云封 IP（换个网络/手机热点试试）
+
+---
+
+### Step 5：本地跑一键部署（回到文档前面的步骤）
+
+SSH 通了之后，就回到上面 **「一键部署流程」** 那节：
+
+```powershell
+cd tools\account_backend
+
+# 1. 设置环境变量
+$env:ECS_HOST = "你的公网IP"
+$env:ECS_USER = "root"
+
+# 2. 初始化 ECS（装 Docker + Docker Compose）
+.\scripts\deploy.ps1 -Action setup
+
+# 3. 生产密钥 + 上传 + 启动
+.\scripts\deploy.ps1 -Action deploy
+
+# 4. Seed 初始化 CMS
+.\scripts\deploy.ps1 -Action seed
+
+# 5. 访问测试
+# curl http://你的公网IP:8000/healthz
+# 浏览器打开 http://你的公网IP:8000/docs
+```
+
+---
+
+### 常见坑 & 解决
+
+| 问题 | 原因 | 解决 |
+|---|---|---|
+| 免费试用页面看不到香港地域 | 每日限量已领完 | 早上 9-10 点再试；或换阿里云国际站注册 |
+| 实名认证失败 | 身份证照片模糊 / 过期 | 重新上传清晰照片；支付宝实名认证最快 |
+| SSH 登录超时 | 安全组没开 22 | 去 ECS 控制台加安全组规则（Step 3） |
+| SSH 连接被拒绝 | root 密码输错 / 用错用户 | 确认是 `root@公网IP`，密码是创建时设的那个 |
+| ECS 创建后公网 IP 变了 | 手动关机再开机 IP 会变 | 免费版 IP 是弹性的，尽量别关机；或升级到固定 IP（¥5/月） |
+| 300 元额度不够 3 个月 | 跑太猛了（比如 CPU 满载） | 2核2G 规格足够 MVP，正常使用 3 个月绰绰有余 |
+| 忘记 root 密码 | 阿里云支持重置 | ECS 控制台 → 实例 → 重置实例密码（需要公钥或手机验证） |
+
+---
+
+### 如果香港真的抢不到（Plan B）
+
+| 方案 | 说明 |
+|---|---|
+| **国内地域（北京/杭州/广州）** | 比香港还便宜！免费额度一样 300 元。大陆 App 访问延迟更低（10-30ms）。**唯一注意**：阿里云国际带宽需要额外买（约 ¥30/5M），但 MVP 阶段 App 都是国内用户，这个不是问题 |
+| **华为云免费试用** | https://free.huaweicloud.com 也有免费 ECS，华为云香港节点。流程类似 |
+| **腾讯云免费试用** | https://free.cloud.tencent.com 免费轻量应用服务器，也有香港可选 |
+
+---
+
+## 华为云 ECS 免费试用 —— 逐步注册指引（2026-11）
+
+### 📌 免费试用核心规则
+
+| 项 | 值 |
+|---|---|
+| 免费入口 | https://free.huaweicloud.com |
+| 活动有效期 | 2025 全年活动（2025-01-01 ~ 2025-12-31），但 2026 大概率延续 |
+| 新注册用户免费包 | **注册后 12 个月内**可用（力度比阿里云大！） |
+| 每日开抢时间 | ⏰ **云服务器每天上午 9:30**（跟阿里云一样限量，早去） |
+| 免费地域 | 含 **国内节点（华北2-北京/华东2-上海/华南1-广州）** —— **推荐国内节点，延迟最低 10ms** |
+| 免费规格 | 云耀服务器 L 实例：**2核2G / 3M 带宽** |
+| 免费台数 | 个人 1 台 |
+
+### ⚠️ 华为云 vs 阿里云 对比
+
+| | 华为云 | 阿里云 |
+|---|---|---|
+| 免费时长 | **12 个月**（注册日起） | 3 个月 |
+| 每日抢 | 9:30 | 9-10 点 |
+| 规格 | 2核2G / 3M | 2核2~4G |
+| 香港节点 | ✅ | ✅ |
+| 部署脚本 | 同阿里云（Ubuntu + Docker） | 同 |
+
+**华为云胜出** —— 12 个月免费比阿里云 3 个月多 4 倍！但每日抢名额竞争大。
+
+---
+
+### Step 1：注册华为云账号
+
+1. 打开 https://www.huaweicloud.com/register
+2. 手机号注册 → 设置密码 → 短信验证码
+3. **实名认证**（必须）：
+   - 进入 https://console.huaweicloud.com/iam/?region=cn-north-4#/iam/user/real-name
+   - 个人用户 → 输入姓名 + 身份证号 + 上传正反面
+   - 支付宝/银行卡验证会自动跳转
+4. 完成后显示「实名认证通过」
+
+### Step 2：领取免费云耀服务器 L 实例
+
+1. ⏰ **上午 9:30** 准时打开 https://free.huaweicloud.com
+2. 页面往下滚，找到 **「云耀云服务器 L 实例」** → 点击「立即领取」
+3. 进入创建页：
+
+| 配置项 | 你要选的值 |
+|---|---|
+| **区域** | 🔴 **国内节点 → 华南1-广州**（或华北2-北京/华东2-上海，看你目标用户在哪） |
+| **规格** | 2核2G（免费的那个） |
+| **镜像** | ✅ Ubuntu 22.04 LTS 64位 |
+| **系统盘** | 40G 高 IO（免费自带） |
+| **公网 IP** | ✅ 自动分配（必须有！） |
+| **登录方式** | ✅ 密码登录 → **记下来！** |
+
+4. 点击「立即创建」→ 等几十秒
+5. 复制 **公网 IP**（华为云控制台 → 弹性云服务器 ECS → 实例列表）
+
+### Step 3：配置安全组（开放 22/80/443）
+
+1. 华为云控制台：https://console.huaweicloud.com/ecm
+2. 左侧「计算 → 弹性云服务器」→ 点实例名
+3. 「安全组」标签页 → 找到绑定的安全组 → 点击「配置规则」
+4. 入方向规则加 3 条（同阿里云）：
+
+| 协议 | 端口 | 来源 |
+|---|---|---|
+| TCP | 22 | 0.0.0.0/0 |
+| TCP | 80 | 0.0.0.0/0 |
+| TCP | 443 | 0.0.0.0/0 |
+
+### Step 4：SSH 验证 + 一键部署
+
+跟阿里云流程完全一样！`deploy.ps1` 通用：
+
+```powershell
+ssh root@你的公网IP   # 验证能连
+
+# 回到项目目录
+cd tools\account_backend
+$env:ECS_HOST = "你的公网IP"
+.\scripts\deploy.ps1 -Action setup     # 装 Docker（Ubuntu 通吃）
+.\scripts\deploy.ps1 -Action deploy    # 上传 + 启动
+.\scripts\deploy.ps1 -Action seed       # 初始化 CMS
+```
+
+---
+
+### ⚡ 抢名额辅助脚本（9:30 准点自动刷新）
+
+名额**每天 9:30 秒光**，手动刷网页手慢无。用内置脚本自动抢：
+
+```powershell
+# 安装依赖（第一次）
+pip install playwright
+python -m playwright install chromium
+
+# 运行抢名额脚本
+cd tools\account_backend
+python scripts\huaweicloud-grab.py
+```
+
+**脚本做什么：**
+1. 自动打开 Chrome 浏览器（复用你本机的 Chrome profile）
+2. 进入华为云免费试用页面 → 倒计时到 9:30
+3. 准点疯狂刷新（300 次上限）→ 检测到「立即领取」按钮自动点
+4. 进入创建页 → 自动选国内节点 + Ubuntu 22.04 + 自动分配公网 IP
+5. **停在「设置密码」前** → 等你手动输密码 + 确认创建
+
+**抢名额前必须先做（约 5 分钟手工准备）：**
+- ✅ 注册华为云账号（https://www.huaweicloud.com/register）
+- ✅ 完成实名认证（https://console.huaweicloud.com/iam）
+- ✅ Chrome 浏览器登录华为云控制台（https://console.huaweicloud.com）并保持登录状态
+
+**如果今天没抢到：**
+- 脚本会持续刷新（最多 200 次），有补货自动抓
+- 晚上 8-9 点偶尔会补货，再跑一次
+- 实在抢不到 → 换腾讯云轻量（不限量，1 个月满血）
+
+**脚本配置可改**（文件头部）：
+```python
+TARGET_REGION = "guangzhou"   # beijing / shanghai / guangzhou / hongkong
+GRAB_HOUR = 9                 # 开抢时间
+GRAB_MINUTE = 30
+```
+
+### 华为云特有坑
+
+| 问题 | 解决 |
+|---|---|
+| 9:30 名额秒光 | 提前 5 分钟打开页面倒计时；或晚上 8-9 点有时会补货 |
+| 香港节点抢不到 | 选国内（广州/上海），华为云国内节点免费时长一样 12 个月 |
+| 公网 IP 关机后变 | 免费版弹性 IP，别频繁关机 |
+| 密码忘了 | 华为云控制台 → 更多 → 重置密码（需手机号验证） |
+
+---
+
+## 腾讯云轻量应用服务器 —— 逐步注册指引（2026-11）
+
+### 📌 免费试用核心规则
+
+| 项 | 值 |
+|---|---|
+| 免费入口 | https://cloud.tencent.com/act/pro/free |
+| 试用产品 | 轻量应用服务器 **Lighthouse**（比 ECS 更简单，开箱即用） |
+| 免费配置 | 🔴 **2核4G / 5M 带宽 / 60GB SSD / 500GB 月流量** |
+| 免费时长 | **1 个月**（可续费 3.5 折） |
+| 免费地域 | 含 **中国香港** + 北京/上海/广州等 |
+| 免费台数 | 1 台 |
+
+### ⚠️ 腾讯云 vs 华为云 vs 阿里云
+
+| | 腾讯云 | 华为云 | 阿里云 |
+|---|---|---|---|
+| 免费时长 | 1 个月 | **12 个月** | 3 个月 |
+| 规格 | **2核4G 5M（最豪华！）** | 2核2G 3M | 2核2~4G |
+| 流量包 | **500G/月**（免费自带！） | 基础带宽 | 基础带宽 |
+| 难度 | 轻量服务器（最简单） | 标准 ECS | 标准 ECS |
+| 适合 | 短期测试/满血规格 | 长期 MVP | MVP 通用 |
+
+**腾讯云规格最豪华**（2核4G + 5M + 500G 流量），但只给 1 个月——适合快速满血测试。华为云时长最长，阿里云最稳妥。
+
+---
+
+### Step 1：注册腾讯云账号
+
+1. 打开 https://cloud.tencent.com/register
+2. QQ/微信扫码最快（腾讯云是腾讯旗下）
+3. **实名认证**（必须）：
+   - https://console.cloud.tencent.com/account/auth
+   - 微信扫一扫 → 实名信息自动带出 → 确认
+   - 约 1 分钟完成
+
+### Step 2：领取免费轻量应用服务器
+
+1. 打开 **免费体验馆**：https://cloud.tencent.com/act/pro/free
+2. 往下滚找到 **「轻量应用服务器」** → 点击「免费领取」
+3. 进入创建页：
+
+| 配置项 | 你要选的值 |
+|---|---|
+| **地域** | 🔴 **中国香港** |
+| **规格** | 免费的那个（2核4G 5M 60GB） |
+| **镜像** | ✅ **系统镜像 → Ubuntu 22.04 LTS** |
+| **登录密码** | 📝 **记下来！** |
+| **实例名** | `retroemupouch-account` |
+
+4. 点击「立即购买」→ 确认（¥0.00）→ 支付
+5. 创建成功 → 控制台复制 **公网 IP**
+
+### Step 3：防火墙开放 22/80/443
+
+腾讯云轻量服务器用 **防火墙** 替代安全组，更简单：
+
+1. 控制台：https://console.cloud.tencent.com/lighthouse
+2. 点实例名 → 「防火墙」标签
+3. 点击「添加规则」，加 3 条：
+
+| 协议 | 端口 | 来源 |
+|---|---|---|
+| TCP | 22 | 0.0.0.0/0 |
+| TCP | 80 | 0.0.0.0/0 |
+| TCP | 443 | 0.0.0.0/0 |
+
+### Step 4：SSH 验证 + 一键部署
+
+跟阿里云/华为云完全相同：
+
+```powershell
+ssh root@你的公网IP
+
+cd tools\account_backend
+$env:ECS_HOST = "你的公网IP"
+.\scripts\deploy.ps1 -Action setup
+.\scripts\deploy.ps1 -Action deploy
+.\scripts\deploy.ps1 -Action seed
+```
+
+### 腾讯云特有坑
+
+| 问题 | 解决 |
+|---|---|
+| 只有 1 个月免费 | 到期前手动释放，然后换华为云/阿里云续上（数据先 pg_dump 导出） |
+| 500G 流量用完 | App 后端流量主要是 API JSON，非常省，500G 足够几千 DAU |
+| 免费版不能升配 | 要升配必须等免费期结束后付费 |
+| 忘记密码 | 控制台 → 更多 → 重置密码（微信扫码验证） |
+
+---
+
+## 三家对比总结（2026-11 最新，国内节点优先）
+
+| | 🏆 **华为云** | **腾讯云** | **阿里云** |
+|---|---|---|---|
+| **免费时长** | ⭐⭐⭐⭐⭐ **12 个月** | ⭐⭐ 1 个月 | ⭐⭐⭐ 3 个月 |
+| **免费规格** | ⭐⭐⭐ 2核2G 3M | ⭐⭐⭐⭐⭐ **2核4G 5M** + 500G | ⭐⭐⭐⭐ 2核4G |
+| **推荐地域** | 🔴 **国内节点**（北京/上海/广州，10ms） | 🔴 国内（1个月）/ 香港（30ms） | 🔴 **国内节点**（3个月，10ms） |
+| **每日抢** | 9:30 限量 | **不限量**（1 个月够） | 9-10 点限量 |
+| **实名速度** | 支付宝（中） | **微信扫码 1 分钟（最快）** | 支付宝（中） |
+| **辅助工具** | ✅ 内置 `huaweicloud-grab.py` 自动抢 | ❌ 不限量不用抢 | ❌ 不限量不用抢 |
+| **综合推荐** | 🏆 **MVP 首选** | 短期满血测试 | 稳妥备选 |
+| **注册地址** | free.huaweicloud.com | cloud.tencent.com/act/pro/free | free.aliyun.com |
+| **部署脚本兼容** | ✅ 同 deploy.ps1 | ✅ 同 deploy.ps1 | ✅ 同 deploy.ps1 |
+
+### 实际推荐策略
+
+```
+                    你现在时间紧吗？
+                        │
+           ┌────────────┼────────────┐
+           ▼            ▼            ▼
+       时间充足       立刻要跑      不想抢名额
+       (9:28 蹲)     (今天就要)
+           │            │            │
+           ▼            ▼            ▼
+    华为云 9:30     腾讯云轻量      阿里云 ECS
+    自动抢脚本      不限量直接领    9-10 点抢
+    12 个月免费     1 个月满血      3 个月缓冲
+    国内节点        2核4G 5M        300 元额度
+```
+
+**三家 deploy.ps1 完全通用**——Ubuntu + Docker + Docker Compose 哪家都是同一套流程。
+
+### 立刻行动（推荐路径）
+
+```powershell
+# ── 方案 1：抢华为云（9:30 开抢）──
+# 昨晚先做：
+#   1. 注册 https://www.huaweicloud.com/register（5 分钟）
+#   2. 实名认证 https://console.huaweicloud.com/iam（3 分钟）
+#   3. Chrome 登录 https://console.huaweicloud.com 保持登录
+# 
+# 今天 9:28 跑：
+cd tools\account_backend
+pip install playwright && python -m playwright install chromium
+python scripts\huaweicloud-grab.py
+
+# ── 方案 2：腾讯云（随时可领，不限量）──
+# 直接 https://cloud.tencent.com/act/pro/free → 轻量应用服务器 → 免费领取
+# 10 分钟搞定，公网 IP 出来后：
+cd tools\account_backend
+$env:ECS_HOST = "你的公网IP"
+.\scripts\deploy.ps1 -Action setup
+.\scripts\deploy.ps1 -Action deploy
+.\scripts\deploy.ps1 -Action seed
+```
+
+---
+
+## 本地部署 + 内网穿透方案（零云服务器成本）
+
+> 如果你觉得云服务器还是贵，完全不用买——**自己家里/办公室电脑 + 内网穿透** 就能让 App 公网访问后端。
+
+### 方案对比
+
+| # | 方案 | 年成本 | 国内延迟 | HTTPS | 长期稳定 | 适合度 | 核心优势 |
+|---|---|---|---|---|---|---|---|
+| 1 | **Cloudflare Tunnel** | 💰 **¥0** | ⚠️ 50-200ms（晚高峰 300ms） | ✅ 自动 | ✅ 稳定 | ⭐⭐⭐⭐ | 零成本 + 自动 HTTPS + 不限带宽 |
+| 2 | **cpolar 国内穿透** | 💰 **¥0**（免费版）/ ¥120（5Mbps） | ⚡ 30-80ms（国内节点） | ✅ 自动 | ✅ 稳定 | ⭐⭐⭐⭐⭐ | 国内节点 + 速度最快 + 合规 |
+| 3 | **FRP + $10 海外 VPS** | 💰 **¥70/年** | ⚠️ 100-200ms | ✅ 自建 | ✅ 稳定 | ⭐⭐⭐ | 可控性强 |
+| 4 | **家宽 IPv6 + DDNS** | 💰 **¥0** | ⚡ 10-50ms | ⚠️ 自配 | ❌ 运营商常封 | ⭐⭐ | 最省但最折腾 |
+
+### 🏆 推荐组合
+
+| 阶段 | 方案 | 理由 |
+|---|---|---|
+| **MVP 零成本启动** | Cloudflare Tunnel（免费） | 立刻跑起来，App 商场审核先过 |
+| **有用户后** | cpolar 付费版 ¥120/年（5Mbps） | 国内节点，晚高峰也不卡 |
+| **长期稳定** | 华为云国内节点（12 个月免费） | 电脑不用常开，最省心 |
+
+### Cloudflare Tunnel 晚高峰限流问题
+
+| 时段 | 延迟 | 说明 |
+|---|---|---|
+| 早高峰（9-11 点） | 50-100ms | ✅ 可用 |
+| 午间（12-14 点） | 60-120ms | ✅ 可用 |
+| **晚高峰（19-24 点）** | **150-300ms** | ⚠️ 明显卡顿 |
+| 凌晨（0-7 点） | 40-80ms | ✅ 飞快 |
+
+> Cloudflare Tunnel **晚高峰被运营商跨境限流**——MVP 阶段用户量小（每天几十人）还能忍，用户多了必须上 cpolar 国内节点。
+
+---
+
+### 一键脚本：`scripts/tunnel.ps1`
+
+自动完成：安装穿透工具 → 启动本地后端（Docker 或 uvicorn）→ 建立公网隧道。
+
+#### 用法 1：Cloudflare Tunnel（零成本）
+
+```powershell
+cd tools\account_backend
+
+# 无域名临时模式（每次重启换 URL）
+.\scripts\tunnel.ps1 -Provider cloudflare
+
+# 有域名固定模式（需要 Cloudflare 账号 + DNS 托管）
+.\scripts\tunnel.ps1 -Provider cloudflare -Subdomain api -Domain yourdomain.com
+```
+
+**Cloudflare Tunnel 临时域名模式**（最简单，零配置）：
+```powershell
+# 1. 确保本地后端能跑
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+
+# 2. 开个新终端，运行穿透
+.\scripts\tunnel.ps1 -Provider cloudflare
+
+# 3. 脚本启动后会显示类似：
+#    https://retroemupouch-xxxxx.trycloudflare.com
+#    把这个 URL 配到 App 里 → 就能公网访问了！
+```
+
+#### 用法 2：cpolar（国内节点，速度快）
+
+```powershell
+cd tools\account_backend
+
+# 1. 先注册 cpolar（免费）：https://www.cpolar.com/user/signup
+# 2. 登录仪表盘 → 认证 → 复制 authtoken
+
+# 3. 启动（脚本会提示你粘贴 authtoken）
+.\scripts\tunnel.ps1 -Provider cpolar
+
+# 4. 启动后显示 https://xxxx.cpolar.top → 配到 App 里
+```
+
+### 穿透脚本做了什么
+
+```
+tunnel.ps1 启动
+    │
+    ├─ 检查本地后端 http://127.0.0.1:8000/healthz
+    │   ├─ 已运行 → 跳过
+    │   └─ 未运行 → 自动启动
+    │       ├─ 有 Docker → docker compose -f docker-compose.local.yml up -d
+    │       └─ 无 Docker → python -m uvicorn 后台启动 + SQLite
+    │
+    ├─ Cloudflare Tunnel 分支
+    │   ├─ 检查 cloudflared → winget install 或手动下载
+    │   ├─ 有域名 → 创建 tunnel + 登录 + route DNS
+    │   └─ 无域名 → cloudflared tunnel --url http://127.0.0.1:8000
+    │
+    └─ cpolar 分支
+        ├─ 检查 cpolar → 下载安装
+        ├─ 提示粘贴 authtoken（注册后获取）
+        └─ cpolar http -region cn_vip 8000
+```
+
+### 本地后端启动方式
+
+穿透脚本启动本地后端时，优先用 Docker，没有 Docker 就退化为 uvicorn dev 模式：
+
+| 方式 | 命令 | 数据库 | 适用场景 |
+|---|---|---|---|
+| **Docker（推荐）** | `docker compose -f docker-compose.local.yml up -d` | PostgreSQL（持久化） | 有 Docker Desktop 的机器 |
+| **uvicorn（零依赖）** | `python -m uvicorn app.main:app --host 127.0.0.1 --port 8000` | SQLite（dev.db） | 任何装了 Python 的机器 |
+
+### 开机自启（Windows 任务计划程序）
+
+让电脑开机自动启动后端 + 穿透：
+
+**1. 本地后端（uvicorn）**
+```
+触发器：登录时
+程序：python
+参数：-m uvicorn app.main:app --host 127.0.0.1 --port 8000
+起始于：D:\ai\prj\trae\HuaWei\RetroEmuPouch\tools\account_backend
+勾选：不管用户是否登录都运行
+```
+
+**2. Cloudflare Tunnel**
+```
+触发器：登录时
+程序：cloudflared
+参数：tunnel --url http://127.0.0.1:8000
+起始于：C:\Users\你的用户名
+勾选：不管用户是否登录都运行
+```
+
+**3. cpolar**
+```
+触发器：登录时
+程序：cpolar
+参数：http -region cn_vip 8000
+勾选：不管用户是否登录都运行
+```
+
+### App 商场合规性
+
+| 穿透方案 | App 商场审核能过吗 | 说明 |
+|---|---|---|
+| Cloudflare Tunnel | ⚠️ 有风险 | Cloudflare 服务器在境外，部分应用商店会卡 |
+| **cpolar 国内节点** | ✅ **能过** | 国内自建节点，合规备案 |
+| FRP + 海外 VPS | ⚠️ 有风险 | 服务器在境外 |
+
+> **正式上 App 商场** → 必须用 cpolar 国内节点（付费版 ¥120/年）或国内云服务器。Cloudflare Tunnel 适合 MVP 阶段内部测试。
+
+### 本地穿透 vs 云服务器 最终对比
+
+| 维度 | 本地 + 穿透 | 云服务器 |
+|---|---|---|
+| **成本** | ¥0 ~ ¥120/年 | ¥0（免费试用）~ ¥50/月 |
+| **延迟** | cpolar 30-80ms / CF 晚高峰 150-300ms | 10-30ms（国内节点） |
+| **稳定性** | ⚠️ 电脑必须常开 + 不能断网 | ✅ 7x24 |
+| **数据安全** | ✅ 数据库在自己手里 | ⚠️ 在云上 |
+| **维护负担** | ❌ 要管电脑 + Docker + 穿透 | ✅ 管就行 |
+| **合规审核** | cpolar ✅ / CF ⚠️ | ✅ |
+| **适合阶段** | MVP / 个人开发者 | 正式上线 |
+
+### 快速开始（一条命令）
+
+```powershell
+cd tools\account_backend
+
+# 零成本立刻跑（Cloudflare Tunnel 临时域名）
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+# 开新终端
+.\scripts\tunnel.ps1 -Provider cloudflare
+# 复制显示的 trycloudflare.com 地址 → 配到 App 里
+```
+
+---
+
+## 后端实现完成状态（2026-11-04）
+
+### 部署架构
+
+```
+gamepouch.cn (华为云域名)
+    │
+    ▼ NS → Cloudflare
+Cloudflare DNS 托管
+    │
+    ├── api.gamepouch.cn → CNAME → <tunnel-id>.cfargotunnel.com
+    │                                    │
+    │                                    ▼
+    │                              cloudflared tunnel (本地 boot.bat)
+    │                                    │
+    │                                    ▼
+    │                              http://127.0.0.1:8000
+    │                              FastAPI + SQLite (dev.db)
+    │                              D:\RetroEmuPouch\backend\sqlite\
+    │
+    └── HTTPS 自动签发（Let's Encrypt，Cloudflare 管）
+```
+
+### 启动方式（唯一正确姿势）
+
+**不能**让 Trae PowerShell 启动——Trae 会 kill 子进程。**必须手动双击** boot.bat：
+
+```
+📁 D:\RetroEmuPouch\boot.bat   ← 双击
+📁 D:\RetroEmuPouch\stop.bat   ← 双击停止
+```
+
+boot.bat 守护循环每 30 秒检查 python + cloudflared，死了自动拉。
+
+### cloudflared「老实死掉」的根因修复（踩了 4 次才找到）
+
+| 坑 | 原因 | 修复 |
+|---|---|---|
+| **1. Trae 杀子进程** | Trae PowerShell 会话退出时 kill 进程树 | ✅ 手动双击 boot.bat，不在 Trae 里启 |
+| **2. cloudflared 前台跑** | bat 里没 `start` 导致前台阻塞，进程崩 → bat 窗口关 | ✅ `start "" /MIN cloudflared.exe tunnel ...` |
+| **3. `--retries` 参数位置错** | ❌ `tunnel run --retries 9999` → cloudflared 不认识 → **启动立刻崩溃** | ✅ `tunnel --retries 9999 run`（参数在 tunnel 命令和 run 子命令之间）|
+| **4. boot.bat 没有守护循环** | 进程崩了就没了 | ✅ 每 30 秒 tasklist 检查 + 自动重启 |
+
+**正确的 cloudflared 命令格式**（这是核心）：
+```batch
+REM ❌ 错：参数在子命令后
+cloudflared.exe tunnel run --retries 9999 --token XXX
+REM ✅ 对：参数在父命令后
+cloudflared.exe tunnel --retries 9999 run --token XXX
+```
+
+### 完整冒烟测试结果（2026-11-04）
+
+**30/30 端点 OK + 6 条合规防线全部通过 + 云存档完整链路通过**
+
+#### 公开 API
+
+| 端点 | 状态 | 返回 |
+|---|---|---|
+| `GET /healthz` | ✅ | `{"ok":true,"env":"local","app":"RetroEmuPouch-AccountBackend"}` |
+| `GET /api/cms/config` | ✅ | 8 条 LegalConstants 替代配置 |
+| `GET /api/cms/docs/privacy_policy?lang=zh` | ✅ | Markdown 正文 |
+| `GET /api/cms/docs/privacy_policy?lang=en` | ✅ | 英文版 |
+| `GET /api/cms/docs/eula?lang=zh` | ✅ | 用户协议 |
+| `GET /api/cms/doc-meta/privacy_policy` | ✅ | version=1 |
+
+#### 账号
+
+| 端点 | 状态 |
+|---|---|
+| `POST /api/auth/register` | ✅ 返回 JWT access_token |
+| `POST /api/auth/login` | ✅ 返回 JWT |
+| `GET /api/auth/me` | ✅ |
+| `POST /api/auth/refresh` | ✅ |
+| `POST /api/auth/change-password` | ✅ |
+| `POST /api/auth/logout` | ✅ |
+
+#### 会员
+
+| 端点 | 状态 | 说明 |
+|---|---|---|
+| `POST /api/billing/trial/start` | ✅ | 7 天试用 |
+| `GET /api/billing/entitlement` | ✅ | tier/is_ad_free/cloud_save_enabled |
+| `POST /api/billing/verify` | ✅ | X-Dev-Mock:1 跳过 Google/华为 验真 |
+
+#### 配对
+
+| 端点 | 状态 | 参数校验 |
+|---|---|---|
+| `POST /api/pairing/register` | ✅ | code≥6 字符 + mac_hash≥8 字符 + access_token≥16 字符 |
+| `GET /api/pairing/list` | ✅ | |
+| `DELETE /api/pairing/{id}` | ✅ | |
+
+#### 云存档
+
+| 端点 | 状态 | 说明 |
+|---|---|---|
+| `POST /api/cloud/saves/upload` | ✅ | multipart：save_name(Form) + client_key(Form) + file(File) |
+| `GET /api/cloud/saves/list` | ✅ | |
+| `GET /api/cloud/saves/{blob_id}` | ✅ | 返回二进制 + X-Save-SHA256 header |
+| `DELETE /api/cloud/saves/{blob_id}` | ✅ | |
+
+#### ConsentGate
+
+| 端点 | 状态 | 说明 |
+|---|---|---|
+| `GET /api/consent/status` | ✅ | X-Device-Id header；needs_reconsent=True/False |
+| `POST /api/consent/accept` | ✅ | 落库 consent_records 表 |
+
+#### Admin
+
+| 端点 | 状态 | 说明 |
+|---|---|---|
+| `POST /admin/seed` | ✅ | 用 admin token 初始化 CMS + 8 条 AppConfig |
+| `GET/POST /admin/docs` | ✅ | 独立 JWT secret |
+| `PUT /admin/docs/{id}/publish` | ✅ | draft → published |
+| `GET/PUT /admin/config/{key}` | ✅ | |
+| `GET /admin/consent-stats` | ✅ | |
+
+### 合规防线测试（全部通过）
+
+| 防线 | 预期 | 实际 | 结果 |
+|---|---|---|---|
+| 免费用户不能上传云存档 | 403 Forbidden | 403 | ✅ |
+| ROM `.zip` 扩展名拒绝 | 400 Bad Request | 400 | ✅ |
+| 合法 `.sav` 扩展名通过 | 200 OK | 200 | ✅ |
+| Pairing code 太短拒绝 | 422 Validation Error | 422 | ✅ |
+| ConsentGate 需要版本号比对 | needs_reconsent=True | True | ✅ |
+| 用户同意后 needs_reconsent 变 False | False | False | ✅ |
+
+### D 盘目录（全部专属存放）
+
+```
+D:\RetroEmuPouch\
+├── boot.bat                   ← 双击启动（守护循环）
+├── stop.bat                   ← 双击停止
+├── backend\
+│   ├── sqlite\dev.db          ← 数据库（当前 122KB）
+│   ├── postgres-data\         ← PostgreSQL 数据（预留）
+│   ├── logs\
+│   ├── backups\
+│   └── uploads\
+├── tunnel\
+│   └── cloudflared\
+│       └── cloudflared.exe    ← v2026.10.7
+└── runtime\
+```
+
+### 后续待做
+
+| 项 | 前置条件 | 优先级 | 状态 |
+|---|---|---|---|
+| 接入真实 Google Play Developer API `/api/billing/verify` | Google Service Account JSON | P1 | 待做 |
+| 接入真实华为 IAP Server API | 华为 ClientID + ClientSecret + 应用ID | P1 | 待做 |
+| Django Admin 后台（Web UI 改 CMS/Config） | 有时间写 | P2 | 待做 |
+| Alembic 初始迁移 `alembic revision --autogenerate` | 生产部署前必须 | P0 | 待做 |
+| ~~客户端对接 `LegalConstants` 动态化 + `ConsentGate` 版本号升级~~ | App 开发 | ~~P0~~ | ✅ **已完成（2026-11-03）** |
+| ~~客户端注册登录 + entitlement 全链路~~ | 同上 | ~~P0~~ | ✅ **已完成（2026-11-03）** |
+| ~~CloudClient 重写对接新 API + 云存档链路~~ | 同上 | ~~P0~~ | ✅ **已完成（2026-11-04）** |
+| 生产部署（华为云/腾讯云 + PostgreSQL + Alembic） | 云服务器到位 | P1 | 待做 |
+| 云存档 AES-256-GCM 客户端加密 | 算法实现 | P2 | 待做（后端已预留，服务端不解密） |
+| App 云存档 UI（列表/上传/下载/删除） | 会员账号 | P2 | 待做 |
+
+### 公网地址
+
+| 环境 | URL | 说明 |
+|---|---|---|
+| 本地 dev | http://127.0.0.1:8000 | SQLite，直接运行 |
+| **公网 HTTPS** | https://api.gamepouch.cn | Cloudflare Tunnel 转发到本地 |
+| Swagger | https://api.gamepouch.cn/docs | 完整 API 文档 |
+| ReDoc | https://api.gamepouch.cn/redoc | |
+
+---
+
+## 客户端（Android / Flutter）对接完成状态（2026-11-04）
+
+### 对接范围
+
+后端 30 个端点中，App 已完整对接 **3 大类 14 个端点**，覆盖账号登录 / CMS 动态配置 / ConsentGate 合规 / 会员权益 / 云存档全链路：
+
+| 模块 | 端点 | App 侧实现 | 状态 |
+|---|---|---|---|
+| **CMS 动态配置** | `GET /api/cms/config` | `CloudConfigService.instance.load()` 启动时拉取，覆盖 `LegalConstants` 全部静态默认值 | ✅ |
+| | `GET /api/cms/docs/{key}?lang=zh` | `privacy_policy_page.dart` / `eula_page.dart` 从后端拉 Markdown，网络失败 fallback 本地模板 | ✅ |
+| **ConsentGate 版本号** | `GET /api/consent/status` | `consent_gate.dart` 带 `X-Device-Id` header 调，比对 `localConsentedVersion < latestPublishedVersion` | ✅ |
+| | `POST /api/consent/accept` | 同意后落库 `consent_records` 表（user_id=null 合规正常，注册后补绑） | ✅ |
+| **注册登录** | `POST /api/auth/register` | `http_account.dart` 调后端，返回 JWT 自动持久化 + 调 `/api/billing/trial/start` 开 7 天试用 | ✅ |
+| | `POST /api/auth/login` | 同上 | ✅ |
+| | `GET /api/auth/me` | 启动恢复登录态时拉用户信息 | ✅ |
+| | `POST /api/auth/logout` | 清 token | ✅ |
+| **会员权益** | `GET /api/billing/entitlement` | `HttpReceiptVerifier.verifyRestore()` 拉权威 entitlement | ✅ |
+| | `POST /api/billing/trial/start` | 首次注册/登录自动调，幂等 | ✅ |
+| | `POST /api/billing/verify` | 调试模式 `X-Dev-Mock: 1` 跳过真实购买验真 | ✅ |
+| **云存档** | `POST /api/cloud/saves/upload` | `CloudClient.uploadSave()` multipart/form-data（save_name + client_key + file） | ✅ |
+| | `GET /api/cloud/saves/list` | `CloudClient.listSaves()` | ✅ |
+| | `GET /api/cloud/saves/{id}` | `CloudClient.downloadSave()` 二进制流 + `X-Save-SHA256` header | ✅ |
+| | `DELETE /api/cloud/saves/{id}` | `CloudClient.deleteSave()` | ✅ |
+
+### 关键设计决策
+
+#### 1. 统一后端入口：`effectiveBaseUrl()`
+
+```dart
+// account_backend.dart
+const String kDefaultBackendUrl = 'https://api.gamepouch.cn';
+
+Future<String> effectiveBaseUrl(AccountStore store) async {
+  final raw = (await store.getString(kAccountBaseUrl))?.trim() ?? '';
+  return raw.isEmpty ? kDefaultBackendUrl : raw;
+}
+```
+
+所有 HTTP 客户端（`HttpAccountService` / `HttpReceiptVerifier` / `CloudClient` / `ConsentGate` / `CloudConfigService`）都通过这个 helper 取后端地址，优先读用户调试入口填写的值，空则用公网默认。
+
+#### 2. 统一登录态：`AccountStore` + `kAccountToken`
+
+全部模块共享同一份 `AccountStore`（Android=SharedPreferences / OHOS=PlatformPal 文件存储），`kAccountToken` 是登录态唯一真相源。避免旧 `CloudConfig`（FlutterSecureStorage）平行状态导致 token 对其他模块不可见。
+
+#### 3. CloudClient 重写：删除 PC 管理台 API
+
+旧 `CloudClient` 有 11 个方法对接的是 **PC 管理台专用路由**（`/api/cloud/auth/*`、`/api/cloud/catalog`、`/api/cloud/sync/library` 等）——后端完全没有这些路由，调用必 404。新 `CloudClient` 删除全部旧方法，只保留：
+
+- `uploadSave()` / `listSaves()` / `downloadSave()` / `deleteSave()` —— 云存档全链路
+- `romExtForPlatform()` —— 遗留静态工具（peer_sync.dart 引用）
+
+PC 管理台 catalog / subscriptions / cloud ROM 下载等功能已标记「即将上线」占位（独立服务尚未接入）。
+
+#### 4. ConsentGate 设备标识
+
+首次启动生成 UUID：`dev-{timestamp}-{random8}`，持久化在 `consent_device_id` 键。后端 `consent_records` 表存 `device_id_hash`（SHA-256），user_id 在用户注册后可选填——设计如此，不强制绑定。
+
+#### 5. debug 联调入口
+
+`AccountPage` 仅 debug 构建可见「调试：账号后端」卡片，可切换 `MockAccountService`（本地桩）↔ `HttpAccountService`（真实后端）、修改后端地址。发布版默认走真实后端，硬编码公网地址。
+
+### 本地启动后端（唯一正确姿势）
+
+**必须手动双击** `D:\RetroEmuPouch\boot.bat`，Trae PowerShell 会 kill 子进程。
+
+```
+📁 D:\RetroEmuPouch\boot.bat   ← 双击启动（守护循环：每 30 秒检查 python + cloudflared，死了自动拉）
+📁 D:\RetroEmuPouch\stop.bat   ← 双击停止（关闭 cmd 窗口也会停）
+```
+
+boot.bat 启动命令格式：
+```batch
+start "" /MIN python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --app-dir tools\account_backend
+start "" /MIN cloudflared.exe tunnel --retries 9999 run --token <token> retroemupouch
+```
+
+> ⚠️ cloudflared 参数顺序铁律：`tunnel --retries N run --token XXX`（参数在 `tunnel` 和 `run` 之间），错了立刻崩溃。
+
+### App 端文件变更清单（2026-11-03 → 2026-11-04）
+
+| 文件 | 操作 | 说明 |
+|---|---|---|
+| `features/legal/cloud_config_service.dart` | **新增** | CMS 单例，从 `/api/cms/config` 拉 AppConfig |
+| `features/legal/consent_gate.dart` | **重写** | 版本号感知：`GET /api/consent/status` + `POST /api/consent/accept` |
+| `features/legal/privacy_policy_page.dart` | **修改** | 从后端拉 Markdown，fallback 硬编码模板 |
+| `features/legal/eula_page.dart` | **修改** | 同上 |
+| `features/settings/settings_sheet.dart` | **修改** | 10 处 `LegalConstants.xxx` → `CloudConfigService.instance.xxx` |
+| `features/account/account_backend.dart` | **修改** | 新增 `kDefaultBackendUrl = 'https://api.gamepouch.cn'` + `effectiveBaseUrl()` helper |
+| `main.dart` | **修改** | 启动时 `CloudConfigService.instance.load()`；runApp(ConsentGate(onAccept: ...)) |
+| `data/cloud/cloud_client.dart` | **彻底重写** | 删全部旧方法（PC 管理台），新增云存档 4 个端点对接 |
+| `data/cloud/cloud_sync.dart` | **精简壳** | 只保留 `CloudSyncer.extForPlatform`（peer_sync.dart 引用） |
+| `features/cloud/cloud_actions.dart` | **stub** | `runCloudSync` 显示"即将上线" SnackBar |
+| `features/cloud/cloud_library_page.dart` | **stub** | 占位页面"云文件库功能即将上线" |
+
+### 端到端验证记录（2026-11-03/04，华为 OXF-AN10）
+
+| 验证点 | 结果 | 证据 |
+|---|---|---|
+| App 启动 → ConsentGate 弹窗 | ✅ | 卸载重装后 SharedPreferences 清空，新 device_id，后端 `needs_reconsent=true` |
+| 点击「同意并继续」→ 进主页 | ✅ | `consent_records` 表落库（eula + privacy_policy） |
+| CMS 动态配置拉取 | ✅ | `CloudConfigService.load()` 成功覆盖 8 条 `LegalConstants` |
+| 切换真实后端 → 注册 | ✅ | 后端返回 JWT，自动持久化 |
+| 注册自动开启 7 天试用 | ✅ | `trial_start` 写入 SQLite，`is_ad_free=true, blocks_interstitial_ads=true` |
+| 付费档升级 → entitlement | ✅ | `cloud_save_enabled=true`，云存档端点 403→200 |
+| 云存档 upload | ✅ | multipart/form-data → 后端落库 cloud_save_blobs |
+| 云存档 list | ✅ | JSON 数组返回，含 sha256 / size_bytes |
+| 云存档 download | ✅ | 二进制流 + X-Save-SHA256 header，原始字节落文件 |
+| 云存档 delete | ✅ | 后端删除 blob 记录 |
+| 合规防线：免费用户不能上传云存档 | ✅ | 403 Forbidden |
+| 合规防线：非会员云存档端点 403 | ✅ | `require_cloud_save_entitlement` 依赖守卫 |

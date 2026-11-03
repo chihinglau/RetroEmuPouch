@@ -1,0 +1,77 @@
+# =================================================================
+# RetroEmuPouch Account Backend —— 本地生产级部署
+# （家里/办公室电脑 + Docker Desktop + 内网穿透）
+#
+# 所有数据统一存 D:\RetroEmuPouch\（Windows）
+#
+# 前置：先运行 scripts\init-d-drive.bat 创建 D 盘目录
+# =================================================================
+version: "3.9"
+
+services:
+  # ── PostgreSQL ──
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: retroemupouch
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}
+      POSTGRES_DB: retroemupouch
+      PGDATA: /var/lib/postgresql/data/pgdata
+    # ⭐ 数据存 D 盘（绝对路径，Windows Docker 兼容）
+    volumes:
+      - D:/RetroEmuPouch/backend/postgres-data:/var/lib/postgresql/data
+      - ./scripts/db-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U retroemupouch"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - internal
+
+  # ── FastAPI App ──
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    image: retroemupouch-account:local
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql+psycopg://retroemupouch:${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}@db:5432/retroemupouch
+      APP_ENV: local
+      # 日志存 D 盘
+      LOG_DIR: /data/logs
+      BACKUP_DIR: /data/backups
+      UPLOAD_DIR: /data/uploads
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8000:8000"   # 只绑定 loopback，安全！外部走穿透
+    volumes:
+      # ⭐ 日志/备份/上传都存 D 盘
+      - D:/RetroEmuPouch/backend/logs:/data/logs
+      - D:/RetroEmuPouch/backend/backups:/data/backups
+      - D:/RetroEmuPouch/backend/uploads:/data/uploads
+    networks:
+      - internal
+      - web
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8000/healthz', timeout=3).raise_for_status()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  # 不使用 named volumes，全部用 D 盘绝对路径
+  # pgdata:  ← 已注释，改用上面的 bind mount
+
+networks:
+  internal:
+    internal: true
+  web:
+    driver: bridge

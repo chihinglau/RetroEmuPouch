@@ -4,7 +4,10 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:retroemupouch/features/legal/cloud_config_service.dart';
 import 'package:retroemupouch/features/legal/legal_constants.dart';
+import 'package:retroemupouch/features/account/account_backend.dart'
+    show createAccountBackend, AuthSession;
 import 'package:retroemupouch/features/membership/entitlement_service.dart';
 import 'package:retroemupouch/features/membership/membership.dart';
 
@@ -209,7 +212,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   title: '分享应用',
                   subtitle: '推荐给朋友',
                   onTap: () => _copyToClipboard(
-                      LegalConstants.shareMessage, '推荐文案已复制，去粘贴给朋友吧'),
+                      CloudConfigService.instance.shareMessage, '推荐文案已复制，去粘贴给朋友吧'),
                 ),
                 _MenuRow(
                   icon: Icons.star_outline,
@@ -307,7 +310,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
       await widget.pal.openStore();
     } catch (_) {
       await _copyToClipboard(
-          LegalConstants.feedbackUrl, '未找到应用商店入口，已复制反馈链接');
+          CloudConfigService.instance.feedbackUrl, '未找到应用商店入口，已复制反馈链接');
     }
   }
 
@@ -476,7 +479,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
               subtitle: const Text('问题反馈与联系支持（复制反馈入口）'),
               trailing: const Icon(Icons.copy_outlined),
               onTap: () => _copyToClipboard(
-                  LegalConstants.feedbackUrl, '反馈链接已复制，可在浏览器打开'),
+                  CloudConfigService.instance.feedbackUrl, '反馈链接已复制，可在浏览器打开'),
             ),
           ),
           Card(
@@ -510,7 +513,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   'https://chihinglau.github.io/GamePouch/privacy'),
               trailing: const Icon(Icons.copy_outlined),
               onTap: () => _copyToClipboard(
-                  LegalConstants.privacyPolicyUrl, '已复制隐私政策链接，可在浏览器打开'),
+                  CloudConfigService.instance.privacyPolicyUrl, '已复制隐私政策链接，可在浏览器打开'),
             ),
           ),
           Card(
@@ -519,9 +522,9 @@ class _SettingsSheetState extends State<SettingsSheet> {
               leading: const Icon(Icons.verified_user_outlined),
               title: const Text('备案号'),
               subtitle: Text(
-                LegalConstants.filingNumber.isEmpty
+                CloudConfigService.instance.filingNumber.isEmpty
                     ? '（备案中，待工信部备案后回填）'
-                    : LegalConstants.filingNumber,
+                    : CloudConfigService.instance.filingNumber,
               ),
             ),
           ),
@@ -658,24 +661,24 @@ class _FeedbackPageBody extends StatelessWidget {
               failed = true;
             }
             if (!failed || !context.mounted) return;
-            await _copy(context, LegalConstants.feedbackUrl,
+            await _copy(context, CloudConfigService.instance.feedbackUrl,
                 '未找到应用商店入口，已复制反馈链接');
           },
         ),
         _FeedbackChannelButton(
           label: '发送邮件',
           onTap: () =>
-              _copy(context, LegalConstants.feedbackEmail, '邮箱已复制，可在邮件 App 粘贴发送'),
+              _copy(context, CloudConfigService.instance.feedbackEmail, '邮箱已复制，可在邮件 App 粘贴发送'),
         ),
         _FeedbackChannelButton(
           label: 'QQ群反馈',
           onTap: () => _copy(
-              context, LegalConstants.qqGroup, 'QQ群号已复制，可在 QQ 中搜索加群'),
+              context, CloudConfigService.instance.qqGroup, 'QQ群号已复制，可在 QQ 中搜索加群'),
         ),
         _FeedbackChannelButton(
           label: '微信反馈',
           onTap: () => _copy(
-              context, LegalConstants.wechatId, '微信号已复制，可在微信中搜索添加'),
+              context, CloudConfigService.instance.wechatId, '微信号已复制，可在微信中搜索添加'),
         ),
       ],
     );
@@ -855,7 +858,9 @@ class _MembershipPageBody extends StatefulWidget {
 class _MembershipPageBodyState extends State<_MembershipPageBody> {
   Membership? _m;
   bool _failed = false;
+  bool _signedIn = false;
   StreamSubscription<Entitlement>? _sub;
+  StreamSubscription<AuthSession?>? _authSub;
 
   @override
   void initState() {
@@ -871,11 +876,20 @@ class _MembershipPageBodyState extends State<_MembershipPageBody> {
     }).catchError((Object _) {
       if (mounted) setState(() => _failed = true);
     });
+    // 登录态改为订阅 authStateChanges（登出 / 登录即时联动）。
+    createAccountBackend().then((acct) {
+      if (!mounted) return;
+      setState(() => _signedIn = acct.session != null);
+      _authSub = acct.authStateChanges.listen((s) {
+        if (mounted) setState(() => _signedIn = s != null);
+      });
+    });
   }
 
   @override
   void dispose() {
     _sub?.cancel();
+    _authSub?.cancel();
     super.dispose();
   }
 
@@ -889,6 +903,10 @@ class _MembershipPageBodyState extends State<_MembershipPageBody> {
   Future<void> _trialOrBuy(MembershipTier tier) async {
     final m = _m;
     if (m == null) return;
+    if (!_signedIn) {
+      _toast('请先登录账号，再开启试用');
+      return;
+    }
     if (m.entitlement.current.trialStart == null) {
       await m.entitlement.ensureTrialStarted();
       _toast('已开启 ${EntitlementService.trialDays} 天免费试用');
@@ -900,8 +918,12 @@ class _MembershipPageBodyState extends State<_MembershipPageBody> {
   Future<void> _buy(MembershipTier tier) async {
     final m = _m;
     if (m == null) return;
+    if (!_signedIn) {
+      _toast('请先登录账号，再购买会员');
+      return;
+    }
     final ok = await m.billing.buy(tier);
-    _toast(ok ? '已开通（本地授予，真实计费待接入商店）' : '购买未完成');
+    _toast(ok ? '会员已开通（权益已生效）' : '购买未完成');
   }
 
   @override
@@ -950,6 +972,14 @@ class _MembershipPageBodyState extends State<_MembershipPageBody> {
             textAlign: TextAlign.center,
             style: theme.textTheme.bodySmall
                 ?.copyWith(color: theme.colorScheme.primary)),
+        if (!_signedIn)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text('请先登录账号，再购买会员 / 开启试用',
+                textAlign: TextAlign.center,
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.error)),
+          ),
         const SizedBox(height: 14),
 
         // ----- 免费试用说明卡 -----

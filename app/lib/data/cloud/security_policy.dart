@@ -1,4 +1,4 @@
-import 'dart:io';
+import 'package:flutter/foundation.dart';
 
 import '../../config/app_channel.dart';
 
@@ -13,10 +13,20 @@ class SecurityPolicy {
   /// HTTPS for everything — there is no plaintext exception.
   static bool allowsCleartext(Uri uri) {
     if (uri.scheme != 'http') return false;
-    if (!appChannel.canSelfUpdate) return false; // store = HTTPS only, always
+    if (!appChannel.canSelfUpdate) {
+      // store 渠道默认禁止明文；但 debug 联调（真机连局域网开发服务器）时对
+      // RFC1918 私网放行明文，避免开发者只能改用 https 自签。release 不受影响。
+      if (!kDebugMode) return false;
+      return _isPrivateLan(uri.host);
+    }
     final h = uri.host;
     if (h == '127.0.0.1' || h == 'localhost' || h == '::1') return true;
-    final p = h.split('.');
+    return _isPrivateLan(h);
+  }
+
+  /// RFC1918 私网地址（10/8、192.168/16、172.16-31/12）。
+  static bool _isPrivateLan(String host) {
+    final p = host.split('.');
     if (p.length != 4) return false;
     final a = int.tryParse(p[0]);
     final b = int.tryParse(p[1]);

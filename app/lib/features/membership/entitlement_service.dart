@@ -68,21 +68,29 @@ class Entitlement {
   final DateTime? expireAt;
   final bool isLifetime;
 
-  /// Ad-free when: lifetime, or an active (non-expired) subscription, or within
-  /// the 7-day trial window.
+  /// 去横幅广告？——**仅超级VIP（终身/月/年/试用）才去横幅**；普通VIP 任何档
+  /// （含普通VIP终身）一律保留横幅。故本判定严格按 [tier] 驱动，**绝不读 `isLifetime`
+  /// 布尔**——服务端对"终身时长"权益（含普通VIP终身）都会回 `is_lifetime:true`，
+  /// 若拿来去横幅会让普通VIP终身误删横幅。开屏/插屏的去除走 [blocksInterstitialAds]。
   bool get isAdFree {
-    if (isLifetime || tier == MembershipTier.lifetime) return true;
     final now = DateTime.now();
-    if (tier == MembershipTier.monthly || tier == MembershipTier.yearly) {
-      return expireAt != null && expireAt!.isAfter(now);
+    switch (tier) {
+      case MembershipTier.lifetime: // 超级VIP 买断
+        return true;
+      case MembershipTier.monthly:
+      case MembershipTier.yearly: // 超级VIP 订阅（未过期）
+        return expireAt != null && expireAt!.isAfter(now);
+      case MembershipTier.trial: // 7 天试用窗内
+        if (trialStart == null) return false;
+        return trialStart!
+            .add(const Duration(days: EntitlementService.trialDays))
+            .isAfter(now);
+      case MembershipTier.free:
+      case MembershipTier.vipMonthly:
+      case MembershipTier.vipYearly:
+      case MembershipTier.vipLifetime: // 普通VIP：永远保留横幅
+        return false;
     }
-    if (tier == MembershipTier.trial) {
-      if (trialStart == null) return false;
-      return trialStart!
-          .add(const Duration(days: EntitlementService.trialDays))
-          .isAfter(now);
-    }
-    return false;
   }
 
   /// Tier to display: a lapsed trial/subscription degrades to [free].
@@ -123,15 +131,16 @@ class Entitlement {
       );
 }
 
-/// Owns the user's entitlement state, persisted locally and refreshed from the
-/// backend in a later phase. Exposes [isAdFree] used to gate ads and the
-/// 7-day trial lifecycle ([ensureTrialStarted]).
+/// Owns the user's entitlement state.
+///
+/// **权益与账号绑定（design-auth-membership-entitlement.md §3.2）**：
+/// 服务端是权益唯一真相源；本服务只按 `user_id` 缓存当前激活用户的权益。
+/// 无激活用户（未登录）即 [free]。订阅 [authStateChanges] 的模块调用
+/// [setActiveUser] / [clearActive] 完成"登录取、登出清"的联动。
 ///
 /// Persistence follows the same ladder as `AppSettings`: shared_preferences
 /// first, and when it has no native handler (OHOS → `MissingPluginException`),
-/// a PlatformPal file store wired via [setFallbackStore]. Without this ladder
-/// `Membership.instance` would reject on OHOS and every membership UI would
-/// hang on its loading spinner.
+/// a PlatformPal file store wired via [setFallbackStore].
 class EntitlementService {
   EntitlementService._(this._prefs);
   static const trialDays = 7;
@@ -140,8 +149,11 @@ class EntitlementService {
   /// store below takes over.
   final SharedPreferences? _prefs;
 
-  /// Authoritative in-memory key-value state, mirrored to whichever store
-  /// (prefs or file fallback) is available.
+  /// 激活用户的 `user_id`；null 表示未登录（权益回落免费）。
+  String? _activeUserId;
+
+  /// Authoritative in-memory KV (prefixed by user, e.g. `entitlement.u123.tier`),
+  /// mirrored to whichever store (prefs or file fallback) is available.
   final Map<String, Object> _kv = {};
 
   Entitlement _current = const Entitlement(tier: MembershipTier.free);
@@ -150,16 +162,28 @@ class EntitlementService {
   final _change = StreamController<Entitlement>.broadcast();
   Stream<Entitlement> get changes => _change.stream;
 
-  static const _kTier = 'entitlement.tier';
-  static const _kTrialStart = 'entitlement.trialStart';
-  static const _kExpireAt = 'entitlement.expireAt';
-  static const _kLifetime = 'entitlement.lifetime';
+  static const _kPrefix = 'entitlement.';
+  static const _kTier = 'tier';
+  static const _kTrialStart = 'trialStart';
+  static const _kExpireAt = 'expireAt';
+  static const _kLifetime = 'lifetime';
+
+  /// 遗留设备级扁平键（升级迁移时清除）。
+  static const _legacyKeys = [
+    'entitlement.tier',
+    'entitlement.trialStart',
+    'entitlement.expireAt',
+    'entitlement.lifetime',
+  ];
+
+  String? get _prefix =>
+      _activeUserId == null ? null : '$_kPrefix$_activeUserId.';
 
   // ---- PlatformPal file-store fallback (shared_preferences-less platforms) --
   // Wired by main() from the active PlatformPal so entitlements persist on
   // OHOS, where shared_preferences has no native handler.
   static Future<Map<String, Object>?> Function()? _fallbackLoad;
-  static Future<void> Function(Map<String, Object>)? _fallbackSave;
+  static Future<void> Function(Map<String, Object>) ? _fallbackSave;
 
   static void setFallbackStore({
     required Future<Map<String, Object>?> Function() load,
@@ -171,8 +195,7 @@ class EntitlementService {
 
   static Future<EntitlementService> create() async {
     // getInstance() throws MissingPluginException on OHOS (no native handler);
-    // fall back to the PlatformPal file store instead of rejecting upward —
-    // an unhandled rejection here left the membership page on its spinner.
+    // fall back to the PlatformPal file store instead of rejecting upward.
     SharedPreferences? prefs;
     try {
       prefs = await SharedPreferences.getInstance();
@@ -180,110 +203,151 @@ class EntitlementService {
       prefs = null;
     }
     final s = EntitlementService._(prefs);
-    await s._load();
+    // 迁移：清除遗留设备级扁平键，改为按 user_id 存储。
+    if (prefs != null) {
+      for (final k in _legacyKeys) {
+        try {
+          await prefs.remove(k);
+        } catch (_) {
+          // 忽略单个键删除失败。
+        }
+      }
+    }
+    // 不在此加载任何用户：激活用户由订阅 authStateChanges 的模块设置。
+    s._current = const Entitlement(tier: MembershipTier.free);
+    s._emit();
     return s;
   }
 
-  Future<void> _load() async {
+  /// 切换到指定用户：加载其磁盘缓存并设为当前权益。未登录态调用前务必先 [clearActive]。
+  Future<void> setActiveUser(String userId) async {
+    _activeUserId = userId;
+    _kv.clear();
     final p = _prefs;
     if (p != null) {
+      final pre = '$_kPrefix$userId.';
       try {
-        final tier = p.getString(_kTier);
-        final trialStart = p.getInt(_kTrialStart);
-        final expireAt = p.getInt(_kExpireAt);
-        final lifetime = p.getBool(_kLifetime);
-        if (tier != null) _kv[_kTier] = tier;
-        if (trialStart != null) _kv[_kTrialStart] = trialStart;
-        if (expireAt != null) _kv[_kExpireAt] = expireAt;
-        if (lifetime != null) _kv[_kLifetime] = lifetime;
+        final t = p.getString('${pre}$_kTier');
+        final ts = p.getInt('${pre}$_kTrialStart');
+        final ex = p.getInt('${pre}$_kExpireAt');
+        final lf = p.getBool('${pre}$_kLifetime');
+        if (t != null) _kv['${pre}$_kTier'] = t;
+        if (ts != null) _kv['${pre}$_kTrialStart'] = ts;
+        if (ex != null) _kv['${pre}$_kExpireAt'] = ex;
+        if (lf != null) _kv['${pre}$_kLifetime'] = lf;
       } catch (_) {
-        // prefs read failed mid-way: fall through to the file store below.
+        // prefs 读取中途失败：回退到文件存储。
       }
     }
     if (_kv.isEmpty) {
       try {
         final m = await _fallbackLoad?.call();
-        if (m != null) _kv.addAll(m);
+        if (m != null) {
+          final pre = '$_kPrefix$userId.';
+          for (final k in m.keys) {
+            if (k.startsWith(pre)) _kv[k] = m[k]!;
+          }
+        }
       } catch (_) {
-        // No fallback store either: defaults stand.
+        // 无回退存储：保持默认。
       }
     }
-    _current = Entitlement(
-      tier: _tierFromString(_kv[_kTier] as String?),
-      trialStart: _ms(_kv[_kTrialStart] as int?),
-      expireAt: _ms(_kv[_kExpireAt] as int?),
-      isLifetime: (_kv[_kLifetime] as bool?) ?? false,
-    );
-    _emit();
+    _rebuild();
   }
 
-  /// Single write path: updates the in-memory KV, then persists through
-  /// shared_preferences when available, else the file-store fallback.
-  Future<void> _set(String key, Object? value) async {
+  /// 登出 / 注销：清除激活用户，权益回落免费（不删除各用户的磁盘缓存，供离线/快速恢复）。
+  Future<void> clearActive() async {
+    _activeUserId = null;
+    _kv.clear();
+    _rebuild();
+  }
+
+  /// 单一写路径：更新内存 KV（按当前激活用户前缀），再持久化。
+  /// 无激活用户时不持久化（避免写入遗留扁平键）。
+  Future<void> _set(String field, Object? value) async {
+    final pre = _prefix;
+    if (pre == null) return;
+    final key = '$pre$field';
     if (value == null) {
       _kv.remove(key);
     } else {
       _kv[key] = value;
     }
+    await _persist();
+    _rebuild();
+  }
+
+  Future<void> _persist() async {
     final p = _prefs;
     if (p != null) {
       try {
-        if (value == null) {
-          await p.remove(key);
-        } else if (value is String) {
-          await p.setString(key, value);
-        } else if (value is int) {
-          await p.setInt(key, value);
-        } else if (value is bool) {
-          await p.setBool(key, value);
+        for (final e in _kv.entries) {
+          final k = e.key;
+          final v = e.value;
+          if (v is String) {
+            await p.setString(k, v);
+          } else if (v is int) {
+            await p.setInt(k, v);
+          } else if (v is bool) {
+            await p.setBool(k, v);
+          }
         }
         return;
       } catch (_) {
-        // prefs unavailable/failed: persist via the file store below.
+        // prefs 不可用/失败：走文件存储。
       }
     }
     try {
-      await _fallbackSave?.call(Map<String, Object>.of(_kv));
+      final existing = await _fallbackLoad?.call() ?? <String, Object>{};
+      final pre = _prefix;
+      if (pre != null) existing.removeWhere((k, _) => k.startsWith(pre));
+      existing.addAll(_kv);
+      await _fallbackSave?.call(existing);
     } catch (_) {
-      // Best-effort: state stays in memory this session.
+      // Best-effort：本会话仅留在内存。
     }
   }
 
-  /// 7-day trial begins on first sign-in. Idempotent.
+  void _rebuild() {
+    final pre = _prefix;
+    Entitlement e = const Entitlement(tier: MembershipTier.free);
+    if (pre != null) {
+      e = Entitlement(
+        tier: _tierFromString(_kv['$pre$_kTier'] as String?),
+        trialStart: _ms(_kv['$pre$_kTrialStart'] as int?),
+        expireAt: _ms(_kv['$pre$_kExpireAt'] as int?),
+        isLifetime: (_kv['$pre$_kLifetime'] as bool?) ?? false,
+      );
+    }
+    _current = e;
+    _emit();
+  }
+
+  /// 7 天试用（乐观本地写入；服务端权威见 [Membership] 在登录时调 trial/start）。
+  /// 仅在已登录（有激活用户）时生效。
   Future<void> ensureTrialStarted() async {
-    if (_kv.containsKey(_kTrialStart)) return;
+    final pre = _prefix;
+    if (pre == null) return; // 未登录不开启试用
+    if (_kv.containsKey('$pre$_kTrialStart')) return;
     final now = DateTime.now();
     await _set(_kTrialStart, now.millisecondsSinceEpoch);
-    _current = _current.copyWith(tier: MembershipTier.trial, trialStart: now);
-    _emit();
   }
 
-  /// Called by [BillingService] after the backend verifies a purchase.
-  /// TODO(server): replace local grant with server-verified entitlement.
-  Future<void> grant({
-    required MembershipTier tier,
-    DateTime? expireAt,
-    bool lifetime = false,
-  }) async {
-    await _set(_kTier, tier.name);
-    await _set(_kExpireAt, expireAt?.millisecondsSinceEpoch);
-    if (lifetime) await _set(_kLifetime, true);
-    _current = _current.copyWith(
-      tier: tier,
-      expireAt: expireAt,
-      isLifetime: lifetime,
-    );
-    _emit();
+  /// 服务端权益落地：由 [BillingService] 在校验通过后调用，写入当前激活用户。
+  /// 替代原有"本地授予"，客户端只缓存服务端结论。
+  Future<void> applyServer(Entitlement e) async {
+    await _set(_kTier, e.tier.name);
+    await _set(_kExpireAt, e.expireAt?.millisecondsSinceEpoch);
+    await _set(_kTrialStart, e.trialStart?.millisecondsSinceEpoch);
+    if (e.isLifetime) await _set(_kLifetime, true);
   }
 
-  /// Test/debug helper: reset to free (does NOT refund real purchases).
+  /// 测试/调试辅助：清除当前激活用户的权益（不退还真实购买）。
   Future<void> reset() async {
     await _set(_kTier, null);
     await _set(_kTrialStart, null);
     await _set(_kExpireAt, null);
     await _set(_kLifetime, null);
-    _current = const Entitlement(tier: MembershipTier.free);
-    _emit();
   }
 
   int get trialRemainingDays {

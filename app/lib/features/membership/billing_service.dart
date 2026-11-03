@@ -1,73 +1,59 @@
-import 'dart:async';
-
 import '../../pal/billing_pal.dart';
 import 'entitlement_service.dart';
 import 'receipt_verifier.dart';
 
 /// Orchestrates purchases: calls [BillingPal], then verifies the receipt with the
-/// [ReceiptVerifier] (backend authority) before granting entitlement. Falls back
-/// to a local grant while no backend is wired, so the flow is exercisable
-/// end-to-end against the NoOp pal/verifier.
+/// [ReceiptVerifier] (backend authority) before applying entitlement.
+///
+/// 安全契约（design-auth-membership-entitlement.md §3.5）：客户端**绝不**自行决定
+/// 权益真相。校验通过前不授予；release 下无任何本地兜底授予。未登录（无会话）
+/// 直接拒绝，避免"无账号本地发会员"的无效操作。
 class BillingService {
-  BillingService(this._pal, this._entitlement, this._verifier);
+  BillingService(
+    this._pal,
+    this._entitlement,
+    this._verifier,
+    this._isSignedIn,
+  );
   final BillingPal _pal;
   final EntitlementService _entitlement;
   final ReceiptVerifier _verifier;
+  final bool Function() _isSignedIn;
 
   Future<bool> buy(MembershipTier tier) async {
+    if (!_isSignedIn()) return false;
     final sku = _skuFor(tier);
     if (sku.isEmpty) return false;
     final ok = await _pal.purchase(sku);
     if (!ok) return false;
 
-    // Platform reported success. The authoritative entitlement comes from the
-    // backend, not the client. Hand the receipt to the verifier...
+    // 平台报告成功：权威权益来自后端校验结果，而非客户端。
     final verified = await _verifier.verifyPurchase(
       sku: sku,
-      // TODO(server): obtain the real purchase token from the platform pal once
-      // Play Billing / Huawei IAP is wired (BillingPal.purchase will surface it).
+      // TODO(server): 接入 Play Billing / Huawei IAP 后由 BillingPal.purchase
+      // 透出真实 purchase token。
       token: '',
     );
     if (verified != null) {
-      await _entitlement.grant(
-        tier: verified.tier,
-        expireAt: verified.expireAt,
-        lifetime: verified.isLifetime,
-      );
+      await _entitlement.applyServer(verified);
       return true;
     }
-
-    // Backend unavailable (NoOp verifier): grant locally so the UI flow works.
-    // TODO(server): remove this fallback once verifyPurchase is implemented; until
-    // then a local grant is acceptable for pre-release testing only.
-    final expireAt = switch (tier) {
-      MembershipTier.monthly => DateTime.now().add(const Duration(days: 30)),
-      MembershipTier.yearly => DateTime.now().add(const Duration(days: 365)),
-      MembershipTier.vipMonthly => DateTime.now().add(const Duration(days: 30)),
-      MembershipTier.vipYearly => DateTime.now().add(const Duration(days: 365)),
-      _ => null,
-    };
-    await _entitlement.grant(
-      tier: tier,
-      expireAt: expireAt,
-      lifetime: tier == MembershipTier.lifetime ||
-          tier == MembershipTier.vipLifetime,
-    );
-    return true;
+    // 后端不可达 / 未校验通过：不再本地兜底授予。等待后端校验后再反映。
+    return false;
   }
 
-  Future<bool> restore() async {
+  /// 回退兼容：从服务端重新拉取权益。
+  Future<bool> restore() => refresh();
+
+  /// 从服务端拉取当前用户权益并落地（登录 / 回到前台 / 网络恢复时调用）。
+  Future<bool> refresh() async {
+    if (!_isSignedIn()) return false;
     final verified = await _verifier.verifyRestore();
     if (verified != null) {
-      await _entitlement.grant(
-        tier: verified.tier,
-        expireAt: verified.expireAt,
-        lifetime: verified.isLifetime,
-      );
+      await _entitlement.applyServer(verified);
       return true;
     }
-    // No backend: just re-query the platform store for previous purchases.
-    return _pal.restore();
+    return false;
   }
 
   static String _skuFor(MembershipTier t) {

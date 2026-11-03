@@ -2,10 +2,15 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'cloud_config.dart';
-import 'cloud_discovery.dart';
+import 'package:flutter/foundation.dart' show kDebugMode;
+
+import '../../features/account/account_backend.dart'
+    show AccountStore, effectiveBaseUrl, kAccountToken;
 import 'security_policy.dart';
-import '../../config/app_channel.dart';
+
+// ============================================================================
+// 异常 + 云存档数据模型
+// ============================================================================
 
 class CloudException implements Exception {
   CloudException(this.message, {this.statusCode});
@@ -17,101 +22,110 @@ class CloudException implements Exception {
       statusCode == null ? message : 'HTTP $statusCode: $message';
 }
 
-/// Result of an OTA update check.
-class ReleaseInfo {
-  ReleaseInfo({required this.j, required this.downloadUrl});
-  final Map<String, dynamic> j;
-  final String downloadUrl;
+/// 云端存档摘要（来自 `GET /api/cloud/saves/list`）。
+class CloudSaveSummary {
+  CloudSaveSummary({
+    required this.id,
+    required this.saveName,
+    required this.sizeBytes,
+    required this.sha256,
+    required this.createdAt,
+    required this.updatedAt,
+  });
 
-  int get versionCode => (j['versionCode'] as num?)?.toInt() ?? 0;
-  String get versionName => (j['versionName'] as String?) ?? '';
-  String get channel => (j['channel'] as String?) ?? 'stable';
-  String get notes => (j['notes'] as String?) ?? '';
-  bool get mandatory => j['mandatory'] == true;
-  int get size => (j['size'] as num?)?.toInt() ?? 0;
-  String get sha256 => (j['sha256'] as String?) ?? '';
+  final String id;
+  final String saveName;
+  final int sizeBytes;
+  final String sha256;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory CloudSaveSummary.fromJson(Map<String, dynamic> j) {
+    return CloudSaveSummary(
+      id: j['id'] as String? ?? '',
+      saveName: j['save_name'] as String? ?? '',
+      sizeBytes: (j['size_bytes'] as num?)?.toInt() ?? 0,
+      sha256: j['sha256'] as String? ?? '',
+      createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
+          DateTime.now(),
+      updatedAt: DateTime.tryParse(j['updated_at'] as String? ?? '') ??
+          DateTime.now(),
+    );
+  }
 }
 
-/// Zero-dependency (dart:io only) HTTP client for the GamePouch cloud service.
+// ============================================================================
+// CloudClient — RetroEmuPouch 账号/云存档后端客户端
+// ============================================================================
+
+/// 对接 `tools/account_backend` 的 HTTP 客户端。
+///
+/// 负责 RetroEmuPouch 后端路由（auth / billing / cloud saves / consent /
+/// cms / pairing）。**不再包含** PC 管理台专属的 catalog / subscriptions /
+/// cloud ROM 下载等路由——那些功能由独立服务承载，且本后端完全没有。
+///
+/// 鉴权 token 和 base URL 都从 [AccountStore] 读取（与 [HttpAccountService] /
+/// [HttpReceiptVerifier] 共享同一份登录态），避免 CloudConfig / 安全存储那套
+/// 过时的平行状态。
 class CloudClient {
-  CloudClient(this.config);
+  CloudClient(this._store);
+  final AccountStore _store;
 
-  final CloudConfig config;
-
-  /// Total seconds for small JSON calls. ROM/APK streams use a longer budget.
-  static const Duration _jsonTimeout = Duration(seconds: 15);
-
-  Uri _uri(String path, [Map<String, String>? query]) {
-    final q = query == null || query.isEmpty
-        ? null
-        : query.map((k, v) => MapEntry(k, Uri.encodeQueryComponent(v)));
-    final uri = Uri.parse('${config.baseUrl}$path').replace(queryParameters: q);
-    // Single choke-point: every request (ROM, cover, OTA, auth, ...) is vetted
-    // here so no plaintext call can slip through (P0-2).
-    SecurityPolicy.assertSafe(uri);
-    return uri;
-  }
+  Future<String> get _base async => await effectiveBaseUrl(_store);
+  String get _token => _store.getString(kAccountToken) ?? '';
 
   HttpClient _http() {
     final c = HttpClient()
       ..connectionTimeout = const Duration(seconds: 8)
-      ..badCertificateCallback = (cert, host, port) => false;
+      ..badCertificateCallback = _acceptDebugCert;
     return c;
   }
 
-  /// Runs [action], and on a transport-level failure (no HTTP status — server
-  /// unreachable / timeout) performs one cooldown-limited LAN rediscovery; if
-  /// the server moved to another IP, the new base URL is persisted and the
-  /// request replayed exactly once. HTTP errors (4xx/5xx) are never retried.
-  Future<T> _withRediscovery<T>(Future<T> Function() action) async {
-    try {
-      return await action();
-    } on CloudException catch (e) {
-      if (e.statusCode != null) rethrow;
-      if (config.baseUrl.isEmpty) rethrow;
-      final found =
-          await CloudDiscovery.auto(previousUrl: config.baseUrl);
-      if (found == null || found == config.baseUrl) rethrow;
-      config.baseUrl = found;
-      await config.save();
-      return action();
-    }
+  /// debug 模式下对回环 + RFC1918 私网的自签证书放行。
+  static bool _acceptDebugCert(X509Certificate cert, String host, int port) {
+    if (!kDebugMode) return false;
+    if (host == '127.0.0.1' || host == 'localhost' || host == '::1') return true;
+    final p = host.split('.');
+    if (p.length != 4) return false;
+    final a = int.tryParse(p[0]);
+    final b = int.tryParse(p[1]);
+    if (a == null || b == null) return false;
+    return a == 10 || (a == 192 && b == 168) || (a == 172 && b >= 16 && b <= 31);
   }
 
+  // ---------------------------------------------------------------- JSON
   Future<Map<String, dynamic>> _json(
     String method,
     String path, {
     Object? body,
     Map<String, String>? query,
     bool auth = true,
-  }) =>
-      _withRediscovery(() => _jsonOnce(method, path,
-          body: body, query: query, auth: auth));
-
-  Future<Map<String, dynamic>> _jsonOnce(
-    String method,
-    String path, {
-    Object? body,
-    Map<String, String>? query,
-    bool auth = true,
   }) async {
+    final base = await _base;
+    if (base.isEmpty) {
+      throw CloudException('未配置后端地址');
+    }
+    final q = query == null || query.isEmpty
+        ? null
+        : query.map((k, v) => MapEntry(k, Uri.encodeQueryComponent(v)));
+    final uri = Uri.parse('$base$path').replace(queryParameters: q);
+    SecurityPolicy.assertSafe(uri);
     final client = _http();
     try {
-      final req = await client.openUrl(method, _uri(path, query));
+      final req = await client.openUrl(method, uri);
       req.headers.set(HttpHeaders.acceptHeader, 'application/json');
       if (auth) {
-        final t = config.token;
-        if (t == null || t.isEmpty) {
-          throw CloudException('尚未登录', statusCode: 401);
-        }
+        final t = _token;
+        if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
         req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
       }
       if (body != null) {
         req.headers.contentType = ContentType.json;
         req.write(jsonEncode(body));
       }
-      final res = await req.close().timeout(_jsonTimeout);
-      final text = await res.transform(utf8.decoder).join().timeout(_jsonTimeout);
+      final res = await req.close().timeout(const Duration(seconds: 15));
+      final text =
+          await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 15));
       Map<String, dynamic> j = const {};
       if (text.trim().isNotEmpty) {
         final decoded = jsonDecode(text);
@@ -130,6 +144,8 @@ class CloudClient {
       throw CloudException('无法连接服务器：${e.osError?.message ?? e.message}');
     } on TimeoutException {
       throw CloudException('服务器响应超时');
+    } on CloudException {
+      rethrow;
     } on HttpException catch (e) {
       throw CloudException(e.message);
     } finally {
@@ -137,50 +153,162 @@ class CloudClient {
     }
   }
 
-  /// Streams a binary GET into [dest]. Reports 0..1 progress when the server
-  /// provides content length. Returns the number of bytes written.
-  Future<int> _download(
-    String path, {
-    Map<String, String>? query,
-    required File dest,
-    void Function(double progress, int received, int? total)? onProgress,
+  // ==========================================================================
+  // 云存档 —— POST /api/cloud/saves/upload, GET|DELETE /api/cloud/saves/*
+  // ==========================================================================
+
+  /// 上传云存档（multipart/form-data）。
+  ///
+  /// [saveName] 存档文件名（例如 `FF7_SAVE_001.sav`）。
+  /// [clientKey] 客户端侧唯一标识（例如 `gameId_slot_0`，后端用于去重判定）。
+  /// [file] 存档文件（**客户端应在上传前自行 AES-256-GCM 加密**，服务端不解密）。
+  /// 返回新存档的 server-assigned id。
+  Future<String> uploadSave({
+    required String saveName,
+    required String clientKey,
+    required File file,
   }) async {
+    final base = await _base;
+    if (base.isEmpty) throw CloudException('未配置后端地址');
+    if (!await file.exists()) throw CloudException('存档文件不存在');
+
+    final uri = Uri.parse('$base/api/cloud/saves/upload');
+    SecurityPolicy.assertSafe(uri);
     final client = _http();
     try {
-      final req = await client.openUrl('GET', _uri(path, query));
-      final t = config.token;
-      if (t != null && t.isNotEmpty) {
-        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
-      }
+      final req = await client.postUrl(uri);
+      final t = _token;
+      if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
+      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
+
+      // 手写 multipart/form-data（dart:io 无现成 Form 类）
+      final boundary =
+          '--retroemupouch-${DateTime.now().millisecondsSinceEpoch}-${file.hashCode}';
+      final LF = '\r\n';
+      req.headers.contentType = ContentType('multipart', 'form-data',
+          parameters: {'boundary': boundary});
+
+      final fileBytes = await file.readAsBytes();
+
+      // save_name
+      req.write('$LF--$boundary$LF');
+      req.write(
+          'Content-Disposition: form-data; name="save_name"$LF$LF');
+      req.write('$saveName$LF');
+
+      // client_key
+      req.write('--$boundary$LF');
+      req.write('Content-Disposition: form-data; name="client_key"$LF$LF');
+      req.write('$clientKey$LF');
+
+      // file
+      req.write('--$boundary$LF');
+      req.write(
+          'Content-Disposition: form-data; name="file"; filename="${Uri.encodeComponent(saveName)}"$LF');
+      req.write('Content-Type: application/octet-stream$LF$LF');
+      req.add(fileBytes);
+      req.write('$LF--$boundary--$LF');
+
       final res = await req.close().timeout(const Duration(seconds: 30));
+      final text =
+          await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 403) {
+        throw CloudException('云存档需要会员', statusCode: 403);
+      }
       if (res.statusCode >= 400) {
-        final text = await res.transform(utf8.decoder).join();
-        String msg = '下载失败（${res.statusCode}）';
+        String msg = '上传失败（${res.statusCode}）';
         try {
           final j = jsonDecode(text);
           if (j is Map && j['error'] is String) msg = j['error'] as String;
-        } catch (_) {/* binary or empty error body */}
+        } catch (_) {}
+        throw CloudException(msg, statusCode: res.statusCode);
+      }
+      final j = jsonDecode(text) as Map<String, dynamic>;
+      final saveId = j['save_id'] as String?;
+      if (saveId == null || saveId.isEmpty) {
+        throw CloudException('上传成功但未返回 save_id');
+      }
+      return saveId;
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// 列出当前用户的全部云端存档（后端按 updated_at DESC 排序）。
+  /// 后端 `GET /api/cloud/saves/list` 直接返回 JSON 数组，不走 `_json`。
+  Future<List<CloudSaveSummary>> listSaves() async {
+    final base = await _base;
+    if (base.isEmpty) throw CloudException('未配置后端地址');
+    final uri = Uri.parse('$base/api/cloud/saves/list');
+    SecurityPolicy.assertSafe(uri);
+    final client = _http();
+    try {
+      final req = await client.getUrl(uri);
+      final t = _token;
+      if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
+      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
+      final res = await req.close().timeout(const Duration(seconds: 15));
+      final text =
+          await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 15));
+      if (res.statusCode >= 400) {
+        String msg = '列表获取失败（${res.statusCode}）';
+        try {
+          final j = jsonDecode(text);
+          if (j is Map && j['error'] is String) msg = j['error'] as String;
+        } catch (_) {}
+        throw CloudException(msg, statusCode: res.statusCode);
+      }
+      final decoded = jsonDecode(text);
+      final List list = decoded is List ? decoded : const [];
+      return list
+          .whereType<Map>()
+          .map((m) => CloudSaveSummary.fromJson(m.cast<String, dynamic>()))
+          .toList();
+    } finally {
+      client.close(force: true);
+    }
+  }
+
+  /// 下载指定存档到 [dest]。返回写入字节数。
+  /// 后端不解密，返回的是客户端上传时的原始二进制。
+  Future<int> downloadSave(
+    String saveId, {
+    required File dest,
+  }) async {
+    final base = await _base;
+    if (base.isEmpty) throw CloudException('未配置后端地址');
+    final uri = Uri.parse('$base/api/cloud/saves/$saveId');
+    SecurityPolicy.assertSafe(uri);
+    final client = _http();
+    try {
+      final req = await client.getUrl(uri);
+      final t = _token;
+      if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
+      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
+      final res = await req.close().timeout(const Duration(seconds: 30));
+      if (res.statusCode >= 400) {
+        String msg = '下载失败（${res.statusCode}）';
+        try {
+          final text = await res.transform(utf8.decoder).join();
+          final j = jsonDecode(text);
+          if (j is Map && j['error'] is String) msg = j['error'] as String;
+        } catch (_) {}
         throw CloudException(msg, statusCode: res.statusCode);
       }
       await dest.parent.create(recursive: true);
-      final sink = dest.openWrite();
-      var received = 0;
-      final total = res.contentLength >= 0 ? res.contentLength : null;
+      final sink = dest.openWrite(mode: FileMode.write);
+      var written = 0;
       try {
         await for (final chunk in res) {
           sink.add(chunk);
-          received += chunk.length;
-          onProgress?.call(
-            total == null || total == 0 ? -1 : received / total,
-            received,
-            total,
-          );
+          written += chunk.length;
         }
         await sink.flush();
       } finally {
         await sink.close();
       }
-      return received;
+      return written;
     } on SocketException catch (e) {
       throw CloudException('下载中断：${e.osError?.message ?? e.message}');
     } finally {
@@ -188,115 +316,24 @@ class CloudClient {
     }
   }
 
-  // ------------------------------------------------------------ auth
-  Future<Map<String, dynamic>> register(String name, String password) =>
-      _json('POST', '/api/cloud/auth/register',
-          auth: false, body: {'name': name, 'password': password});
-
-  Future<Map<String, dynamic>> login(String name, String password) =>
-      _json('POST', '/api/cloud/auth/login',
-          auth: false, body: {'name': name, 'password': password});
-
-  Future<void> logout() async {
-    try {
-      await _json('POST', '/api/cloud/auth/logout');
-    } catch (_) {
-      // local sign-out must always succeed even if the server is unreachable
-    }
-  }
-
-  Future<Map<String, dynamic>> me() => _json('GET', '/api/cloud/auth/me');
-
-  Future<void> changePassword(String oldPassword, String newPassword) =>
-      _json('POST', '/api/cloud/auth/password', body: {
-        'oldPassword': oldPassword,
-        'newPassword': newPassword,
-      });
-
-  // ------------------------------------------------------------ catalog
-  Future<List<Map<String, dynamic>>> catalog() async {
-    final j = await _json('GET', '/api/cloud/catalog');
-    return (j['items'] as List? ?? const [])
-        .whereType<Map>()
-        .map((m) => m.cast<String, dynamic>())
-        .toList();
-  }
-
-  Future<Set<String>> subscriptions() async {
-    final j = await _json('GET', '/api/cloud/subscriptions');
-    return ((j['crcs'] as List?) ?? const [])
-        .map((e) => e.toString().toUpperCase())
-        .toSet();
-  }
-
-  Future<void> setSubscriptions(List<String> crcs) async {
-    await _json('POST', '/api/cloud/subscriptions',
-        body: {'crcs': crcs});
-  }
-
-  // ------------------------------------------------------------ sync
-  Future<Map<String, dynamic>> syncLibrary() =>
-      _json('GET', '/api/cloud/sync/library');
-
-  Future<int> downloadRom(
-    String crc, {
-    required File dest,
-    void Function(double progress, int received, int? total)? onProgress,
-  }) {
-    // R1: store channels must never fetch game files — users import locally.
-    if (!appChannel.canCloudRom) {
-      throw UnsupportedError('此版本不下发游戏文件，请使用本地导入');
-    }
-    return _download('/api/cloud/sync/rom',
-        query: {'crc': crc}, dest: dest, onProgress: onProgress);
-  }
-
-  Future<int> downloadCover(
-    String crc, {
-    required File dest,
-  }) {
-    if (!appChannel.canCloudRom) {
-      throw UnsupportedError('此版本不下发游戏资源');
-    }
-    return _download('/api/cloud/cover', query: {'crc': crc}, dest: dest);
-  }
-
-  // ------------------------------------------------------------ OTA
-  Future<ReleaseInfo?> checkUpdate(int versionCode, String channel) async {
-    final j = await _json('GET', '/api/cloud/releases/check',
-        auth: false,
-        query: {'versionCode': '$versionCode', 'channel': channel});
-    if (j['update'] != true) return null;
-    final r = (j['release'] as Map?)?.cast<String, dynamic>();
-    if (r == null) return null;
-    var url = (r['downloadUrl'] as String?) ?? '';
-    final base = config.baseUrl;
-    if (url.startsWith('/')) {
-      url = '$base$url';
-    } else if (url.isNotEmpty && base.isNotEmpty) {
-      // Normalize to the origin that actually served this check: the
-      // server-advertised URL may carry a stale/other-interface host after a
-      // Wi-Fi switch, and must stay on 127.0.0.1 under an adb-reverse tunnel.
-      try {
-        final u = Uri.parse(url);
-        final rel = u.hasQuery ? '${u.path}?${u.query}' : u.path;
-        url = Uri.parse(base).resolve(rel).toString();
-      } catch (_) {/* keep the server-provided URL */}
-    }
-    return ReleaseInfo(j: r, downloadUrl: url);
-  }
-
-  /// Downloads an APK. [url] may carry its own `?token=` query parameter;
-  /// the Bearer header is also sent for same-origin requests.
-  Future<int> downloadRelease(
-    String url, {
-    required File dest,
-    void Function(double progress, int received, int? total)? onProgress,
-  }) async {
-    final u = Uri.parse(url);
-    // _download works with same-origin paths; absolute URLs point at the same
-    // service by contract, so strip the origin.
-    final path = u.hasQuery ? '${u.path}?${u.query}' : u.path;
-    return _download(path, dest: dest, onProgress: onProgress);
+  /// 删除指定云端存档。
+  Future<void> deleteSave(String saveId) async {
+    await _json('DELETE', '/api/cloud/saves/$saveId');
   }
 }
+
+// ============================================================================
+// 遗留：静态工具（保留供 peer_sync.dart 使用）
+// ============================================================================
+
+/// 按平台 id 推出 ROM 文件扩展名（与 CloudSyncer.extForPlatform 等价）。
+String romExtForPlatform(String platform) => switch (platform) {
+      'fds' => '.fds',
+      'gameBoy' => '.gb',
+      'gba' => '.gba',
+      'atari2600' => '.a26',
+      'masterSystem' => '.sms',
+      'genesis' => '.md',
+      'mame' || 'neogeo' => '.zip',
+      _ => '.nes',
+    };

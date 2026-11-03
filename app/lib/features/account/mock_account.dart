@@ -1,4 +1,4 @@
-import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
 
 import 'account_backend.dart';
 
@@ -6,25 +6,47 @@ import 'account_backend.dart';
 /// 状态持久化在 shared_preferences。后端接口确定后，把 [HttpAccountService]
 /// 切为默认实现即可，UI 层无需改动（两者都实现 [AccountBackend]）。
 class MockAccountService implements AccountBackend {
-  AccountUser? _current;
+  final StreamController<AuthSession?> _authCtrl =
+      StreamController<AuthSession?>.broadcast();
+  AuthSession? _session;
+  final AccountStore _store;
+
+  MockAccountService(this._store);
+
   @override
-  AccountUser? get current => _current;
+  AuthSession? get session => _session;
+
+  @override
+  AccountUser? get current => _session?.user;
+
+  @override
+  Stream<AuthSession?> get authStateChanges async* {
+    yield _session;
+    await for (final s in _authCtrl.stream) yield s;
+  }
+
+  void _setSession(AuthSession? s) {
+    _session = s;
+    if (!_authCtrl.isClosed) {
+      _authCtrl.add(s);
+    }
+  }
 
   /// 启动时恢复已登录态（模拟"记住登录"）。
   @override
   Future<AccountUser?> load() async {
-    final sp = await SharedPreferences.getInstance();
-    final name = sp.getString(_kName);
+    final name = _store.getString(_kName);
     if (name == null) {
-      _current = null;
+      _setSession(null);
       return null;
     }
-    _current = AccountUser(
-      id: sp.getString(_kId) ?? 'u_$name',
+    final u = AccountUser(
+      id: _store.getString(_kId) ?? 'u_$name',
       name: name,
       online: true,
     );
-    return _current;
+    _setSession(AuthSession(u, 'mock'));
+    return u;
   }
 
   /// 一键快捷登录：返回内置演示账号。
@@ -58,10 +80,9 @@ class MockAccountService implements AccountBackend {
 
   @override
   Future<void> logout() async {
-    final sp = await SharedPreferences.getInstance();
-    await sp.remove(_kName);
-    await sp.remove(_kId);
-    _current = null;
+    await _store.remove(_kName);
+    await _store.remove(_kId);
+    _setSession(null);
   }
 
   /// 切换账号：本地桩无法同时存在多账号，等价于退出后重新登录。
@@ -82,10 +103,9 @@ class MockAccountService implements AccountBackend {
   Future<void> deregister() => logout();
 
   Future<AccountUser> _persist(AccountUser u) async {
-    _current = u;
-    final sp = await SharedPreferences.getInstance();
-    await sp.setString(_kName, u.name);
-    await sp.setString(_kId, u.id);
+    _setSession(AuthSession(u, 'mock'));
+    await _store.setString(_kName, u.name);
+    await _store.setString(_kId, u.id);
     return u;
   }
 

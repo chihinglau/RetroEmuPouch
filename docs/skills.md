@@ -132,10 +132,11 @@ flutter build hap --debug
 ```
 
 - `scripts/build-hap.ps1` 封装上述（点源 `use-env.ps1 -Ohos -HarmonyOS` 后调 `flutter build hap`）。
-- 构建成功标志：`√ Built build\ohos\hap\entry-default-unsigned.hap.`，hvigor 任务全过；
+- 构建成功标志：hvigor 打印 `√ Built build\ohos\hap\entry-default-signed.hap.`（默认带 DevEco 自动签名；
+  若 `--no-codesign` 则为 `entry-default-unsigned.hap`），任务全过；
   产物为 **HarmonyOS NEXT** HAP（可经 AppGallery 上架）。
-- 包名（bundleName）：鸿蒙侧为 `com.gamepouch.gamepouch`（Android 是 `com.retroemupouch.app`），
-  两端不同，互不影响。
+- 包名（bundleName）：鸿蒙侧与 Android 已统一为 `com.retroemupouch.app`（两端同包名，账号/数据可互通）；
+  改包名须先在 DevEco/AGC 为新包名生成调试 profile，否则 `SignHap` 报 bundleName mismatch。
 
 ### 签名（debug，本地可装）
 
@@ -171,7 +172,7 @@ powershell -ExecutionPolicy Bypass -File ..\scripts\sign-ohos-hap.ps1
 hdc list targets
 hdc install build\ohos\hap\entry-default-signed.hap
 # 覆盖： hdc install -r ...
-# 卸载： hdc uninstall com.gamepouch.gamepouch
+# 卸载： hdc uninstall com.retroemupouch.app
 ```
 
 > ⚠️ **自签 CA 的设备信任问题**：本地脚本用**自签 CA** 签的 HAP，`hdc install` 会报
@@ -197,12 +198,12 @@ hdc -t <SN> <cmd>                        # 多设备时指定 SN（如 2MN022473
 ```powershell
 hdc install  build\ohos\hap\entry-default-signed.hap
 hdc install -r build\ohos\hap\entry-default-signed.hap   # 覆盖安装
-hdc uninstall com.gamepouch.gamepouch
+hdc uninstall com.retroemupouch.app
 ```
 
 **3. 启动 App**
 ```powershell
-hdc shell aa start -a EntryAbility -b com.gamepouch.gamepouch
+hdc shell aa start -a EntryAbility -b com.retroemupouch.app
 # 默认进 pages/EmulatorSpike（横屏）；回文件库点右上角 ✕（横屏 2844×1260 下约 (2742,186)）
 ```
 
@@ -280,7 +281,7 @@ Pura70（SN `2MN0224730027764`）是**开发者模式 + 指纹/密码锁**。锁
 
 ##### 临时 / 兜底（必须保留密码时）
 
-- **现象**：`aa start -a EntryAbility -b com.gamepouch.gamepouch` 报
+- **现象**：`aa start -a EntryAbility -b com.retroemupouch.app` 报
   `Error Code:10106102 … The device screen is locked during the application launch, unlock screen failed`
   （开发者模式不会自动解锁）；约 **2 分钟**无操作自动息屏 → 再解锁前 `aa start` 一直失败。
 - **该机无 `input` 命令**（`hdc shell input …` → `/bin/sh: input: inaccessible or not found`）。`uitest` 替代品：
@@ -310,12 +311,15 @@ Pura70（SN `2MN0224730027764`）是**开发者模式 + 指纹/密码锁**。锁
    `entry-default-unsigned.hap`）。修复 = 恢复两处：
    - `"app"` 下加 `signingConfigs`（材料在 `C:\Users\liuzhixing\.ohos\config\default_ohos_*.{cer,p12,p7b}`，密码为 DevEco 加密串，可参考 GamePouch 同名文件）；
    - `products[0]` 里必须显式 `"signingConfig": "default"`（只加 signingConfigs 不引用**无效**）。
-2. **AGC 调试 profile 与 bundleName 绑定**：本机受信任的 `default_ohos_*.p7b` 绑定
-   `com.gamepouch.gamepouch`（可解包 p7b 查 `bundle-name` 字段核对）。若 `AppScope/app.json5`
-   的 `bundleName` 与 profile 不一致，hvigor `SignHap` 报
+2. **AGC 调试 profile 与 bundleName 绑定**：`build-profile.json5` 当前引用的 DevEco 自动签名材料
+   `default_ohos_v1QTYWISuo…`（位于 `C:\Users\liuzhixing\.ohos\config\`）绑定的是
+   **`com.retroemupouch.app`**（可解包 .p7b 查 `bundle-name` 字段核对）。`AppScope/app.json5`
+   的 `bundleName` 必须与之一致，否则 hvigor `SignHap` 报
    `The bundleName in app.json5/hvigorfile.ts does not match the bundleName in the generated SigningConfigs`。
-   本项目鸿蒙侧包名已固定回 `com.gamepouch.gamepouch`（与设备已装应用同包名，`hdc install -r`
-   原地升级、用户数据保留）。**若未来要上架独立包名，需先在 AGC/DevEco 为新包名生成调试 profile（GUI 操作）**。
+   **当前鸿蒙侧 bundleName = `com.retroemupouch.app`**（与 Android 统一；旧包名 `com.gamepouch.gamepouch`
+   已废弃，其遗留材料是 `default_ohos_oXfw8zTv…`，不要再引用）。**若未来要换包名，需先在 AGC/DevEco
+   为新包名生成调试 profile（GUI 操作），并同步改 `app.json5` 的 bundleName 与 `build-profile.json5`
+   的 material 路径（cer/p7b/p12 三件套）**。
 3. **hdc USB 半开恢复**：安装/启动过程中 USB 掉线后，`hdc list targets` 仍显示设备但所有命令报
    `need connect-key? please confirm a device`（`list targets -v` 状态 `Connected/unknown`）。
    依次试：`hdc kill` → `hdc start` → 重试；轮询 2 分钟；仍不行=设备端 hdcd 卡死，**需物理重插 USB**
@@ -323,7 +327,7 @@ Pura70（SN `2MN0224730027764`）是**开发者模式 + 指纹/密码锁**。锁
 4. **鸿蒙功能自动化路径**：`uitest uiInput` 对 Flutter 内容无效（DOWN 到达、UP 丢失，hilog 可见
    `VoteTouchValue TOUCH_UP timeout`），点 ArkUI 覆盖层（模拟器 ✕、系统弹窗）有效。Flutter 层功能用
    `GP_OHOS_SELFTEST` 探针自动化（build-hap.ps1 -DartDefine），报告在
-   `<filesDir>/selftest.txt`，用 `hdc shell -b com.gamepouch.gamepouch cat /data/app/el2/100/base/com.gamepouch.gamepouch/files/selftest.txt` 读取。
+   `<filesDir>/selftest.txt`，用 `hdc shell -b com.retroemupouch.app cat /data/app/el2/100/base/com.retroemupouch.app/files/selftest.txt` 读取。
 
 #### 已知问题与修复记录（netplay 对端退出卡死，2026-10-31）
 
@@ -1951,5 +1955,109 @@ start_peer.bat --no-mdns
 - **删除槽位**：`deleteSave` 拼 `<crc>.slotN.state/.rgba/.meta/.jpg`，`crc` 来自 `getRomCrc()`（即 `SoloSaveCrc()`，索引 crc）。导入槽位文件在 `31C302FB.*` 名下，与本机索引 crc 一致 → 删除正常。（早期「删不掉」正是机制分叉：删除按本机磁盘 CRC `0BE9B81B` 找，而文件在 `31C302FB` 名下。）
 - **实测对齐验证（吞食天地II）**：pura 上 `吞食天地II·诸葛孔明传.nes` 磁盘 CRC = `0x0BE9B81B`，但索引 `crc32 = 0x31C302FB`（两端同步的索引，安卓导出存档即 `31C302FB.sav`）。修复后鸿蒙改用索引 crc `0x31C302FB`，直接命中 `31C302FB.sav` → 加载 oxf 进度；`0BE9B81B.*` 旧文件成为孤儿（无害，可不清理）。
 - 验证：两端装同一游戏（哪怕 dump 不同）→ 安卓导存档 → 鸿蒙伙伴导入 → 进该游戏「读档」/「继续游戏」可见并加载。若 `.sav` 体积因核心版本不同而大于本机 SRAM，加载会被跳过（`cap >= size` 守卫，与安卓一致）——属核心版本差异，非逻辑问题。
+
+---
+
+## 24. RetroEmuPouch 账号后端运维手册（2026-11-04）
+
+### 24.1 后端架构速记
+
+| 组件 | 技术 | 说明 |
+|------|------|------|
+| Web 框架 | FastAPI + Uvicorn | `tools/account_backend/app/main.py`，SQLite（dev）/ PostgreSQL（prod） |
+| 认证 | JWT（HS256）/ bcrypt 密码哈希 | `access_token`（7 天）+ `refresh_token`（30 天） |
+| 公网暴露 | Cloudflare Tunnel | `https://api.gamepouch.cn` → `http://127.0.0.1:8000` |
+| 合规防线 | 多层依赖守卫 | 会员门控（`require_cloud_save_entitlement`）、扩展名白名单、版本号比对、SHA-256 哈希 |
+| Swagger | `https://api.gamepouch.cn/docs` | 完整 30 端点在线文档 |
+
+### 24.2 启动后端（**唯一正确姿势：手动双击 boot.bat**）
+
+Trae PowerShell 会 kill 子进程，**绝不能在 Trae 终端里直接跑 uvicorn / cloudflared**。
+
+```
+📁 D:\RetroEmuPouch\boot.bat   ← 双击启动
+📁 D:\RetroEmuPouch\stop.bat   ← 双击停止（关 cmd 窗口也会停）
+```
+
+boot.bat 守护循环：每 30 秒 `tasklist` 检查 python + cloudflared，死了自动拉起。
+
+**cloudflared 参数顺序铁律**（错了立刻崩溃）：
+```batch
+cloudflared.exe tunnel --retries 9999 run --token <token> retroemupouch
+                      ↑ retries 在 tunnel 和 run 之间！
+```
+
+### 24.3 ADB / 构建命令
+
+| 命令 | 说明 |
+|------|------|
+| `scripts\build-apk.ps1 -Flavor store -DebugBuild` | 构建 debug APK（185 MB），可装到 OXF-AN10 |
+| `scripts\build-apk.ps1 -Flavor store` | 构建 release APK（112 MB） |
+| `adb install -r app-store-debug.apk` | 强制覆盖安装（签名相同直接覆盖，不同先 uninstall） |
+| `adb shell pm uninstall com.retroemupouch.app` | 先卸载再装（签名冲突时必须） |
+| `adb devices` | 查设备（oxf OXF-AN10 设备 ID `66B0219C18003002`） |
+| `adb logcat -d -t 50 -s flutter:I *:S` | 抓取最近 50 条 flutter 日志 |
+
+> ⚠️ **EMUI 14 进程保护机制**：release 包首次启动会被系统 kill（`appDiedLocked fromBinderDied`）。debug 包不受影响。正式发布走应用市场渠道后白名单解决。当前联调统一用 debug 包。
+
+### 24.4 App 调试后端切换
+
+App 默认走 MockAccountService（本地桩），调试真实后端需：
+
+1. 进「我的账号」→ debug 构建才显示「调试：账号后端」卡片
+2. 打开「使用真实后端」开关 → 后端地址默认 `https://api.gamepouch.cn`（可改）→ 保存
+3. 立即生效，注册/登录走真实后端，JWT 自动持久化
+
+**发布版**移除调试卡片，硬编码走 `kDefaultBackendUrl = 'https://api.gamepouch.cn'`。
+
+### 24.5 SQLite dev 数据库查看
+
+```powershell
+python -c "import sqlite3, json; c = sqlite3.connect(r'D:\RetroEmuPouch\backend\sqlite\dev.db'); c.row_factory = sqlite3.Row; rows = c.execute('SELECT * FROM users ORDER BY created_at DESC LIMIT 5').fetchall(); print(json.dumps([dict(r) for r in rows], indent=2, default=str))"
+```
+
+关键表：`users`、`entitlements`、`consent_records`、`cloud_save_blobs`、`app_configs`、`consent_docs`。
+
+### 24.6 curl 快速冒烟测试
+
+```powershell
+# CMS 配置
+Invoke-RestMethod -Uri "https://api.gamepouch.cn/api/cms/config" | ConvertTo-Json
+
+# 注册 + 试用 + entitlement（链式）
+$body = @{email="test@local.dev";password="test123456";display_name="T"} | ConvertTo-Json
+$r = Invoke-RestMethod -Uri "https://api.gamepouch.cn/api/auth/register" -Method POST -Body $body -ContentType "application/json"
+$token = $r.access_token
+Invoke-RestMethod -Uri "https://api.gamepouch.cn/api/billing/trial/start" -Method POST -Headers @{Authorization="Bearer $token"} -Body "{}" -ContentType "application/json"
+Invoke-RestMethod -Uri "https://api.gamepouch.cn/api/billing/entitlement" -Headers @{Authorization="Bearer $token"}
+
+# 云存档（会员才可）
+$headers = @{Authorization="Bearer $token"}
+Invoke-RestMethod -Uri "https://api.gamepouch.cn/api/cloud/saves/list" -Headers $headers
+```
+
+### 24.7 合规防线速查
+
+| 端点 | 防线 | 实现 |
+|------|------|------|
+| `POST /api/cloud/saves/upload` | 会员门控 | `require_cloud_save_entitlement` 依赖 → 免费 403 |
+| `POST /api/cloud/saves/upload` | 扩展名白名单 | 后端校验 `.sav/.state/.dat` 等，拒 `.zip/.exe` |
+| `POST /api/cloud/saves/upload` | 客户端加密提醒 | 后端不解密，要求 App AES-256-GCM（P2 待实现） |
+| `POST /api/consent/accept` | 设备哈希 | `device_id_hash = sha256(X-Device-Id)`，IP 同样哈希 |
+| `GET /api/consent/status` | 版本号比对 | 后端维护 `latest_published_version`，版本升级强制重同意 |
+| 全部端点 | CORS | 仅 `https://retroemupouch.cn` + localhost |
+| 全部端点 | 速率限制 | Nginx / Cloudflare Tunnel 层 |
+
+### 24.8 常见故障 & 解决
+
+| 现象 | 根因 | 解决 |
+|------|------|------|
+| Tunnel 返回 502 | Python backend 挂了 | boot.bat 守护循环会自动拉；等 30 秒，或手动双击重启 |
+| cloudflared 启动立刻退出 | 参数顺序错 | 必须 `tunnel --retries N run --token TOKEN NAME`，retries 在 tunnel 和 run 之间 |
+| App 调后端 baseUrl 为空 | MockAccountService 没切换 | 进调试卡片打开真实后端开关 |
+| App 装不上 | 签名冲突 | 先 `adb shell pm uninstall com.retroemupouch.app` 再装 |
+| App 启动即崩（release） | EMUI 进程保护 | 用 debug 包测试 |
+| flutter analyze 崩 | OHOS Hvigor 要 npm | 跳过，用 `scripts\build-apk.ps1` 构建 |
+| boot.bat ns 地址 | 华为云 DNS | DNS NS 改 `anirban.ns.cloudflare.com` / `princess.ns.cloudflare.com` |
 
 

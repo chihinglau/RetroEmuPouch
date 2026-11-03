@@ -21,8 +21,12 @@ from .routers import (
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # 启动时自动建表（首次部署 / 迁移前）
-    # 生产上请走 alembic upgrade head
+    # 启动时自动建表（本地 dev 模式）
+    # 生产走 alembic upgrade head
+    import sys
+    from . import models  # noqa: F401 — 触发所有 model 注册到 Base
+    Base.metadata.create_all(engine)
+    print(f"[main] DB tables ensured. Engine: {engine.url}", file=sys.stderr)
     yield
 
 

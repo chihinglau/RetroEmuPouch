@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 
+import 'dart:async';
+
+import '../account/account_backend.dart'
+    show createAccountBackend, AuthSession;
 import 'entitlement_service.dart';
 import 'membership.dart';
 
@@ -35,12 +39,29 @@ class _MembershipCard extends StatefulWidget {
 }
 
 class _MembershipCardState extends State<_MembershipCard> {
+  bool _signedIn = false;
+  StreamSubscription<AuthSession?>? _authSub;
+
   @override
   void initState() {
     super.initState();
     widget.membership.entitlement.changes.listen((_) {
       if (mounted) setState(() {});
     });
+    // 登录态改为订阅 authStateChanges（登出 / 登录即时联动），而非一次性读取。
+    createAccountBackend().then((acct) {
+      if (!mounted) return;
+      setState(() => _signedIn = acct.session != null);
+      _authSub = acct.authStateChanges.listen((s) {
+        if (mounted) setState(() => _signedIn = s != null);
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _authSub?.cancel();
+    super.dispose();
   }
 
   @override
@@ -81,35 +102,40 @@ class _MembershipCardState extends State<_MembershipCard> {
               ),
             ),
             const SizedBox(height: 8),
-            if (tier == MembershipTier.free && e.current.trialStart == null)
-              FilledButton(
-                onPressed: () async => e.ensureTrialStarted(),
-                child: const Text('开始 7 天免费试用'),
-              )
-            else if (tier == MembershipTier.trial)
-              Text('试用剩余 ${e.trialRemainingDays} 天',
-                  style: theme.textTheme.bodySmall),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              children: [
-                OutlinedButton(
-                  onPressed: () =>
-                      widget.membership.billing.buy(MembershipTier.monthly),
-                  child: const Text('月会员'),
-                ),
-                OutlinedButton(
-                  onPressed: () =>
-                      widget.membership.billing.buy(MembershipTier.yearly),
-                  child: const Text('年会员'),
-                ),
-                OutlinedButton(
-                  onPressed: () =>
-                      widget.membership.billing.buy(MembershipTier.lifetime),
-                  child: const Text('终身会员'),
-                ),
-              ],
-            ),
+            if (!_signedIn)
+              const Text('登录账号后可购买会员、开启试用',
+                  style: TextStyle(color: Colors.grey))
+            else ...[
+              if (tier == MembershipTier.free && e.current.trialStart == null)
+                FilledButton(
+                  onPressed: () async => e.ensureTrialStarted(),
+                  child: const Text('开始 7 天免费试用'),
+                )
+              else if (tier == MembershipTier.trial)
+                Text('试用剩余 ${e.trialRemainingDays} 天',
+                    style: theme.textTheme.bodySmall),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: [
+                  OutlinedButton(
+                    onPressed: () =>
+                        widget.membership.billing.buy(MembershipTier.monthly),
+                    child: const Text('月会员'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () =>
+                        widget.membership.billing.buy(MembershipTier.yearly),
+                    child: const Text('年会员'),
+                  ),
+                  OutlinedButton(
+                    onPressed: () =>
+                        widget.membership.billing.buy(MembershipTier.lifetime),
+                    child: const Text('终身会员'),
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
