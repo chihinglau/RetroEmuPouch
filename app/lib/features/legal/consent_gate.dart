@@ -64,6 +64,12 @@ class _ConsentGateState extends State<ConsentGate> {
   /// 是否还在等待后端 status 请求。
   bool _loading = true;
 
+  /// 内层 MaterialApp 的导航 key。ConsentGate 是 runApp 的根组件，其 build
+  /// context 之上不存在任何 Navigator（内嵌 MaterialApp 在它下方），
+  /// `Navigator.of(context)` 会抛 "does not include a Navigator"，
+  /// 因此用 navigatorKey 显式拿到内层导航器。
+  final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
+
   @override
   void initState() {
     super.initState();
@@ -187,6 +193,7 @@ class _ConsentGateState extends State<ConsentGate> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return MaterialApp(
+      navigatorKey: _navKey,
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -222,14 +229,14 @@ class _ConsentGateState extends State<ConsentGate> {
                         spacing: 8,
                         children: [
                           TextButton(
-                            onPressed: () => Navigator.of(context).push(
+                            onPressed: () => _navKey.currentState!.push(
                               MaterialPageRoute(
                                   builder: (_) => const PrivacyPolicyPage()),
                             ),
                             child: const Text('查看隐私政策'),
                           ),
                           TextButton(
-                            onPressed: () => Navigator.of(context).push(
+                            onPressed: () => _navKey.currentState!.push(
                               MaterialPageRoute(builder: (_) => const EulaPage()),
                             ),
                             child: const Text('查看用户协议'),

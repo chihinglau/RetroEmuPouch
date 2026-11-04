@@ -215,15 +215,19 @@ Future<AccountBackend> createAccountBackend() async {
   if (_backendInstance != null) return _backendInstance!;
   final store = await _openStore();
   final useHttp = store.getBool(kUseHttpBackend) ?? buildUseHttpBackend();
-  final baseUrl = store.getString(kAccountBaseUrl) ?? '';
+  // 真实后端模式：始终走 HttpAccountService；空地址由 HttpAccountService 回退到
+  // kDefaultBackendUrl（公网域名），避免设备上因未填地址而坠入 Mock 或报"未配置"。
   AccountBackend svc;
-  if (!useHttp || baseUrl.trim().isEmpty) {
+  if (!useHttp) {
     svc = MockAccountService(store);
   } else {
     svc = HttpAccountService(store);
   }
   // 启动即恢复登录态并产出会话，订阅方首次 listen 即可拿到当前状态。
-  await svc.load();
+  // 恢复失败（如网络不可达）不阻断后端实例创建，避免调用方拿到未就绪实例。
+  try {
+    await svc.load();
+  } catch (_) {}
   _backendInstance = svc;
   return svc;
 }

@@ -24,6 +24,7 @@ class AccountPage extends StatefulWidget {
 
 class _AccountPageState extends State<AccountPage> {
   late AccountBackend _svc;
+  bool _ready = false; // _svc 完成异步初始化前，build 不得读取它
   AccountUser? _user;
   final _busy = false;
 
@@ -35,6 +36,7 @@ class _AccountPageState extends State<AccountPage> {
 
   Future<void> _init() async {
     _svc = await createAccountBackend();
+    _ready = true;
     final u = await _svc.load();
     if (mounted) setState(() => _user = u);
     // 会员权益由 Membership 订阅 authStateChanges 自动联动，无需在此手动处理。
@@ -116,7 +118,7 @@ class _AccountPageState extends State<AccountPage> {
     final cfg = await readBackendConfig();
     final useHttp = ValueNotifier<bool>(cfg.useHttp);
     final urlCtl = TextEditingController(
-        text: cfg.baseUrl.isEmpty ? 'https://127.0.0.1:8000' : cfg.baseUrl);
+        text: cfg.baseUrl.isEmpty ? kDefaultBackendUrl : cfg.baseUrl);
     if (!mounted) return;
     await showDialog<void>(
       context: context,
@@ -165,6 +167,7 @@ class _AccountPageState extends State<AccountPage> {
   Future<void> _switchBackend() async {
     resetAccountBackend(); // 切换桩/后端前清空单例缓存，强制按新开关重建
     _svc = await createAccountBackend();
+    _ready = true;
     final u = await _svc.load();
     if (mounted) setState(() => _user = u);
   }
@@ -217,7 +220,7 @@ class _AccountPageState extends State<AccountPage> {
         _user == null
             ? _cloudSaveSection()
             : CloudSaveSection(userId: _user!.id, pal: widget.pal),
-        if (kDebugMode) _debugTile(),
+        if (kDebugMode && _ready) _debugTile(),
         _section(
           icon: Icons.swap_horiz,
           title: '发现伙伴（手机面对面互传）',

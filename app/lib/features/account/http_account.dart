@@ -47,7 +47,10 @@ class HttpAccountService implements AccountBackend {
     }
   }
 
-  String get _baseUrl => _store.getString(kAccountBaseUrl) ?? '';
+  String get _baseUrl {
+    final v = _store.getString(kAccountBaseUrl);
+    return v != null && v.trim().isNotEmpty ? v.trim() : kDefaultBackendUrl;
+  }
   String? get _token => _store.getString(kAccountToken);
 
   @override

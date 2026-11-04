@@ -1,7 +1,7 @@
 # 趣玩匣（GamePouch）隐私政策
 
-> 最后更新：2026-10-22
-> 本政策为公开发布版本，与 App 内「隐私政策 / 用户协议」页内容一致。
+> 最后更新：2026-11-04
+> 本文件为隐私政策**源稿**。正式公网可访问版本由后端 CMS 渲染（`https://api.gamepouch.cn/privacy`）；App 内「隐私政策 / 用户协议」页从 `/api/cms/docs/privacy_policy?lang=zh` 拉取同一份已发布内容，拉取失败时回退应用内置模板。
 > 正式发布前须经合规审查与个人信息保护影响评估（PIPL）。
 
 趣玩匣（GamePouch，以下简称"本应用"）是一款**本地运行**的复古游戏模拟器工具。我们高度重视您的个人信息保护。本政策说明我们如何收集、使用、存储与保护您的信息。
@@ -61,11 +61,11 @@
 
 行使上述权利或对本政策有疑问，请通过以下方式联系我们：
 
-- 邮箱：privacy@gamepouch.app（示例，请替换为真实可接收的邮箱）
+- 邮箱：`support@retroemupouch.cn`（与后端 AppConfig `feedback_email` / App 内 `LegalConstants.feedbackEmail` 兜底一致；后台可改并实时下发到 App「关于与支持」页）
 
 ## 9. 政策变更
 
-本政策更新时，我们会在应用内与 GitHub Pages 同步发布新版本，并保留历史版本。若变更涉及核心处理目的或范围的重大变化，将另行提示您重新确认。
+本政策更新时，我们会在后端 CMS 发布新版本（版本号升高会触发 App 端 ConsentGate 重新征求同意），应用内页面与公网网页 `https://api.gamepouch.cn/privacy` 同步生效，并保留历史版本。若变更涉及核心处理目的或范围的重大变化，将另行提示您重新确认。
 
 ## 10. 开源声明
 
@@ -73,4 +73,4 @@
 
 ---
 
-*本页面由 `docs/privacy.md` 托管于 GitHub Pages，作为 APP 备案与 Google Play Data Safety 所要求的公网可访问隐私政策地址。*
+*`docs/privacy.md` 仅作为源稿与历史留存。APP 备案与 Google Play Data Safety 所要求的公网可访问隐私政策地址为 **`https://api.gamepouch.cn/privacy`**（后端 `legal_public.py` 渲染 CMS 已发布文档），用户协议为 `https://api.gamepouch.cn/terms`；两者均已写入后端 AppConfig 的 `privacy_policy_url` / `terms_url`。*

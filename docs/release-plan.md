@@ -33,7 +33,7 @@
 |---|---|
 | **首发渠道** | 华为 AppGallery + 小米应用商店（国内，个人可落地）+ Google Play（海外） |
 | **首发形态** | 免费 + 可选一次性买断 Pro；广告第二阶段再接 |
-| **上架前必须补齐** | ① 软著 ② APP 备案 ③ 隐私政策公网 URL ④ **AAB 构建能力** ⑤ App 内开源许可页 |
+| **上架前必须补齐** | ① 软著 ② APP 备案 ③ ~~隐私政策公网 URL~~（✅ 已上线 `https://api.gamepouch.cn/privacy`，后端 CMS 渲染） ④ **AAB 构建能力** ⑤ App 内开源许可页 |
 | **个人主体可行性** | 可以走通华为 / 小米 / Google Play / 酷安；**应用宝、国内广告 SDK 基本要公司** |
 | **最大政策风险** | 模拟器被归入"游戏"分类 → 需版号（个人不可得） |
 | **核心对策** | 一律按 **工具 / 实用工具** 申报；名称、描述、截图全部工具化；绝不内置/提供 ROM 与 BIOS |
@@ -115,9 +115,9 @@
 
 **行动**：
 - [ ] 从 release keystore 导出签名 MD5（见附录 A）
-- [ ] 确认隐私政策公网 URL 可访问（缺口 4）
+- [x] 确认隐私政策公网 URL 可访问（缺口 4）—— `https://api.gamepouch.cn/privacy`（用户协议 `/terms`），后端 `legal_public.py` 渲染 CMS 已发布文档，PC 与真机均验证可达
 - [ ] 华为 / 小米各提交一次备案
-- [ ] 备案通过后记录**备案号**，回填到 App 关于页
+- [ ] 备案通过后记录**备案号**，在管理后台 AppConfig `filing_number` 回填（App「关于与支持」页从云端读取并展示，无需改代码/发版）
 
 > ⚠️ 包名与签名一旦备案，**升级时不得更改**。`com.retroemupouch.app` 与 release keystore 必须长期固定。
 
@@ -126,13 +126,13 @@
 ### 缺口 4：隐私政策需要公网 URL
 
 **背景**：APP 备案与 Google Play Data Safety 都要求**可公开访问**的隐私政策 URL。
-当前隐私政策只有 App 内页面（`privacy_policy_page.dart`）。
+早期只有 App 内页面（`privacy_policy_page.dart`），现已由后端公开网页承担该职责。
 
-**技术待办**：
-- [x] 将 `privacy_policy_page.dart` 内容整理为 Markdown / HTML → 已生成 `docs/privacy.md`（公开版，覆盖全部必填模块）
-- [ ] 托管到 GitHub Pages：`https://chihinglau.github.io/GamePouch/privacy`（需在仓库设置启用 Pages，源 = 仓库 `/docs` 目录）
-- [x] App「关于」页新增"查看网页版隐私政策"入口（设置 → 应用 / 隐私政策页均可复制公网链接）
-- [ ] 版本化（每次隐私政策更新保留历史版本）
+**技术待办 / 现状**：
+- [x] 将政策整理为 Markdown → `docs/privacy.md`（源稿，覆盖全部必填模块）
+- [x] **公网可访问地址 `https://api.gamepouch.cn/privacy`**（用户协议 `https://api.gamepouch.cn/terms`）：后端 `legal_public.py` 把 CMS 已发布文档渲染为响应式 HTML，无需登录；已写入 AppConfig `privacy_policy_url` / `terms_url`。原计划的 GitHub Pages 地址 `https://chihinglau.github.io/GamePouch/privacy` **已废弃**
+- [x] App「关于 / 关于与支持」页可见并可复制网页版隐私政策链接——现展示 `CloudConfigService.instance.privacyPolicyUrl` 云端配置值（去掉硬编码旧 URL），页面每次打开重新拉取
+- [x] 版本化：CMS 文档自带 version，后台发布新版本会归档旧版并触发 App 端 ConsentGate 重新征求同意
 
 **隐私政策必须覆盖的内容**：
 
@@ -234,11 +234,11 @@
 | # | 动作 | 负责方 | 产出 / 验收标准 |
 |---|---|---|---|
 | 0.1 | CPCC 提交**软著**申请（源码 60 页 + 说明书） | 本人 | 受理号；**最长周期项，第 1 天启动** |
-| 0.2 | 隐私政策整理为 Markdown → GitHub Pages | 我 | `docs/privacy.md` 已生成（Pages 托管待手动）；公网 URL 待启用 |
+| 0.2 | 隐私政策整理为 Markdown → 公网可访问 URL | 我 | ✅ `docs/privacy.md` 源稿 + 后端公开页 `https://api.gamepouch.cn/privacy` 已上线（CMS 渲染，PC/真机验证可达） |
 | 0.3 | `build-apk.ps1` 增加 `-BuildAab` | 我 | 已完成（含 `ci.ps1` AAB 校验、`new-upload-key.ps1`） |
 | 0.4 | App 内新增「开源许可」页 | 我 | 已完成（设置 → 关于 → 开源许可 弹窗加载 OSS_LICENSES.md） |
 | 0.5 | 准备商店素材（图标/截图/描述/分级问卷答案） | 本人 | 素材包齐备 |
-| 0.6 | 关于页增加备案号占位字段 | 我 | 已完成（`LegalConstants.filingNumber` 占位，UI 显示"备案中"） |
+| 0.6 | 关于页增加备案号占位字段 | 我 | ✅ 已完成：`CloudConfigService.instance.filingNumber` 读云端 AppConfig，空值显示"备案中"；同页还展示客服邮箱/反馈入口/隐私政策 URL/官方社群，并在打开时刷新 |
 | 0.7 | 导出 release keystore 签名 MD5 | 我 | MD5 字符串记录在案 |
 | 0.8 | 仓库为当前版本打 git tag（源码履约） | 我 | tag 与二进制可对应 |
 
@@ -256,7 +256,7 @@
 | 1.4 | 商店侧发起 **APP 备案**（填隐私 URL + 签名信息） | 备案号下发 |
 | 1.5 | 分类选 **工具 / 实用工具**（不要选游戏） | 过审 |
 | 1.6 | 文案规避"游戏下载/海量游戏"等表述，强调本地模拟 + 用户自备 ROM | 过审 |
-| 1.7 | 备案号回填 App 关于页 | 上线版本含备案号 |
+| 1.7 | 备案号在管理后台 AppConfig `filing_number` 回填（App 云端读取，无需发版） | 上线版本含备案号 |
 | 1.8 | 华为/小米各发一个正式版本 | 应用市场上架可见 |
 
 **P1 关键纪律**：
@@ -300,7 +300,7 @@
 |---|---|
 | 每年 8 月前 | 升级 `targetSdk` 至 Play 当期要求（Play 提前约 12 个月公布） |
 | 每次发版 | 同步更新开源许可证列表；打 git tag |
-| 每次隐私政策变更 | 更新 GitHub Pages + App 内页面 + 各商店后台 |
+| 每次隐私政策变更 | 后台发布 CMS 文档新版本（版本号升高自动触发 App 重新征求同意）+ 核对公网网页 + 各商店后台 |
 | 每次主体/包名/签名变更 | 触发**变更备案** |
 | 每季度 | 复查模拟器类平台政策口径变化 |
 
@@ -320,8 +320,8 @@
 ### 必须完成（否则提审被拒）
 
 - [ ] 软著证书已取得
-- [ ] APP 备案号已下发并回填 App
-- [ ] 隐私政策公网 URL 可访问，内容完整
+- [ ] APP 备案号已下发并回填后台 AppConfig `filing_number`（App 云端读取）
+- [x] 隐私政策公网 URL `https://api.gamepouch.cn/privacy` 可访问、内容完整（后端 CMS 渲染）
 - [ ] 开源许可页已上线（核心列表 + 源码获取 + 书面要约）
 - [ ] AAB 已构建并通过校验（Play）
 - [ ] Data Safety 表单已如实填写（Play）
@@ -481,7 +481,7 @@ powershell -ExecutionPolicy Bypass -File scripts\check-apk-content.ps1 `
 | 主体证件 | 个人身份证 / 公司营业执照 |
 | App 包名 | `com.retroemupouch.app` |
 | 签名证书 MD5 | 从 release keystore 导出（附录 A） |
-| 隐私政策 URL | GitHub Pages 地址 |
+| 隐私政策 URL | `https://api.gamepouch.cn/privacy`（后端 CMS 公开页） |
 | App 基本信息 | 名称、简介、图标、分类、服务内容 |
 | SDK 列表 | 如接入第三方 SDK 需列明 |
 
@@ -503,7 +503,7 @@ powershell -ExecutionPolicy Bypass -File scripts\check-apk-content.ps1 `
 
 ```
 第 1 周   ├─ 软著提交（加急）───────────┐
-          ├─ 隐私政策 + GitHub Pages    │ 并行
+          ├─ 隐私政策 + 后端公开页      │ 并行
           ├─ AAB 构建支持               │
           ├─ 开源许可页                 │
           └─ 商店素材准备               │
@@ -538,9 +538,10 @@ powershell -ExecutionPolicy Bypass -File scripts\check-apk-content.ps1 `
 |---|---|---|---|
 | 1 | `build-apk.ps1` 增加 `-BuildAab` | 缺口 1 | ✅ 已完成 |
 | 2 | App 内「开源许可」页 | 缺口 5 | ✅ 已完成（此前已落地） |
-| 3 | 隐私政策 Markdown + GitHub Pages 配置 | 缺口 4 | 🟡 Markdown 与 App 入口已完成；Pages 托管待手动启用 |
-| 4 | 关于页备案号占位字段 | 缺口 3 | ✅ 已完成 |
+| 3 | 隐私政策 Markdown + 公网 URL | 缺口 4 | ✅ 已完成（`docs/privacy.md` 源稿 + 后端公开页 `https://api.gamepouch.cn/privacy`、`/terms`） |
+| 4 | 关于页备案号占位字段 | 缺口 3 | ✅ 已完成（云端 AppConfig，非硬编码） |
 | 5 | `ci.ps1` 增加 AAB 产物校验 | 缺口 1 | ✅ 已完成 |
 | 6 | `skills.md` 固化包名/签名不可变更更说明 | 风险缓解 | ⬜ 未做（本次未触及） |
+| 7 | 客户端公开内容解耦 / 欢迎页导航 / 账号页首帧红屏 / 关于页动态化（2026-11-04） | 真机联调 | ✅ 已完成，详见 `design-account-backend.md`「端到端验证记录」 |
 
 > 需要执行时告知序号即可。

@@ -8,8 +8,7 @@ class LegalConstants {
   /// 部署方式见 `docs/release-plan.md` 缺口 4：将仓库内的 `docs/privacy.md`
   /// 托管到 GitHub Pages（默认 Pages 源 = 仓库 `/docs` 目录），
   /// 即可通过 `https://<user>.github.io/GamePouch/privacy` 访问。
-  static const String privacyPolicyUrl =
-      'https://chihinglau.github.io/GamePouch/privacy';
+  static const String privacyPolicyUrl = 'https://api.gamepouch.cn/privacy';
 
   /// 工信部 APP 备案号。
   ///
@@ -27,7 +26,7 @@ class LegalConstants {
       '趣玩匣 RetroEmuPouch —— 手机上的复古游戏机，重拾时光里的欢喜！';
 
   /// 客服邮箱（意见反馈 → 发送邮件；无 url_launcher，复制给用户去邮箱发送）。
-  static const String feedbackEmail = 'support@retroemupouch.example.com';
+  static const String feedbackEmail = 'support@retroemupouch.cn';
 
   /// 官方 QQ 群号（意见反馈 → QQ群反馈；复制后加群）。
   static const String qqGroup = '123456789';

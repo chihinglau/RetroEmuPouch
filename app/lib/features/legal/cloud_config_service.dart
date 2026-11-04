@@ -13,7 +13,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import '../account/account_backend.dart' show openAccountStore, effectiveBaseUrl;
+import '../account/account_backend.dart' show kDefaultBackendUrl;
 import 'legal_constants.dart';
 
 /// 单例：持有全部 AppConfig 键值对。
@@ -48,9 +48,12 @@ class CloudConfigService {
   String get wechatId => get('wechat_id', fallback: LegalConstants.wechatId);
 
   /// 启动时调用一次；返回 true=后端配置拉取成功，false=用本地默认。
+  ///
+  /// 注意：CMS 文档与 AppConfig 属**公开内容**，与用户在「账号后端」里填写的
+  /// 私有地址（可能是 127.0.0.1 / 局域网）无关，始终从公网默认域名拉取，
+  /// 保证任何用户（含未登录）都能取到一致的政策 / 配置。
   Future<bool> load() async {
-    final store = await openAccountStore();
-    final base = await effectiveBaseUrl(store);
+    final base = kDefaultBackendUrl;
     if (base.isEmpty) return false;
     try {
       final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
@@ -75,8 +78,7 @@ class CloudConfigService {
   /// 后端：`GET /api/cms/docs/{doc_key}?lang=zh`
   /// 返回 [content] 或 null（网络失败）。调用方负责 fallback 到 Asset。
   Future<String?> fetchDoc(String docKey, {String lang = 'zh'}) async {
-    final store = await openAccountStore();
-    final base = await effectiveBaseUrl(store);
+    final base = kDefaultBackendUrl;
     if (base.isEmpty) return null;
     try {
       final client = HttpClient()..connectionTimeout = const Duration(seconds: 6);

@@ -27,7 +27,7 @@
 
 | 维度 | 代码实际 | 与方案背离点 |
 |---|---|---|
-| 账号体系 | `AccountBackend`（`createAccountBackend()` → `HttpAccountService` / `MockAccountService`）是**唯一在跑**的认证；`AccountService`（本地优先，`account.userId`）是**死代码**，无任何调用方 | 旧文档 §一.3 把两者并列，且 §6 称"本地桩 `MockAccountService`"——实际是按 `kAccountBaseUrl` 切换 Http/Mock |
+| 账号体系 | `AccountBackend`（`createAccountBackend()` → `HttpAccountService` / `MockAccountService`）是**唯一在跑**的认证；`AccountService`（本地优先，`account.userId`）是**死代码**，无任何调用方 | 旧文档 §一.3 把两者并列，且 §6 称"本地桩 `MockAccountService`"——实际按**运行期开关**（`kUseHttpBackend` > 编译期开关）切换 Http/Mock；开启真实后端后始终 `HttpAccountService`，地址只作请求 baseUrl，空值回退 `kDefaultBackendUrl`，不再决定实现 |
 | 会话信号 | 登录写 `kAccountToken` / `kAccountUserId` / `kAccountUserName`；登出 `remove(kAccountToken)`（用户态清了，但权益没清） | 权益未订阅该信号 |
 | 权益存储 | `EntitlementService` 存 `entitlement.tier` 等**设备级全局 key**，不带 user_id | 多账号会串；登出不回落 |
 | 试用 | `ensureTrialStarted()` 仅本地写 `trialStart`；**从未调用** `POST /api/billing/trial/start` | 旧文档 §二.4/§二.6 称"服务端权威"，实际未接 |
@@ -61,7 +61,7 @@
 
 ### 3.1 账号与会话模型 —— 单一真相源
 
-- **弃用并删除 `AccountService`（本地优先，已确认无任何调用方，属死代码）**。认证只走 `AccountBackend`；其下 `HttpAccountService` / `MockAccountService` 实现不变。
+- **弃用并删除 `AccountService`（本地优先，已确认无任何调用方，属死代码）**。认证只走 `AccountBackend`；其下 `HttpAccountService` / `MockAccountService` 的对外接口不变。实现层后续有修订（2026-11-04）：`createAccountBackend()` 内 `svc.load()` 包 try/catch、`HttpAccountService._baseUrl` 空值回退 `kDefaultBackendUrl`、真实后端模式不再因空地址坠回 Mock。
 - **会话 = `{userId, token, displayName}`**，持久化键沿用 `kAccountUserId` / `kAccountToken` / `kAccountUserName`。`token` 非空即"已登录"。
 - **`AccountBackend` 暴露 `authStateChanges` 流**（登录用户 ↔ null）。登录 / 注册 / 登出 / 注销均 `emit` 新状态。UI 与会员模块订阅此流，不再各自轮询。
 - 新增轻量 `AuthSession` 数据类封装上述三元组，取代散落的 `current` 字段。
@@ -239,6 +239,7 @@ class EntitlementService {
 | 5 购买安全 | 会话守卫 + 删 release 本地兜底授予 | 已实现 | G2/G7 |
 | 6 自动刷新 | 回前台拉 `entitlement`（仅前台，无后台轮询） | 已实现 | G6 |
 | 7 UI 门槛订阅化 | 登录态驱动购买/试用入口 | 已实现 | G2 |
+| 8 账号后端初始化健壮性（2026-11-04） | `createAccountBackend()` 恢复登录态失败不阻断实例创建；真实后端始终 Http、空地址回退公网默认；账号页 `_ready` 守卫避免首帧读未初始化 `_svc` 红屏 | 已实现（真机验证） | — |
 
 ---
 

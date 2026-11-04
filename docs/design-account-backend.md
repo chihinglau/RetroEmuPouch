@@ -136,7 +136,8 @@
 │ id (PK)                            │
 │ config_key (UNIQUE)                │  ← filing_number / feedback_url / feedback_email /
 │                                    │     qq_group / wechat_id / share_message /
-│                                    │     enable_consent_gate / ad_sdk_consent_required / ...
+│                                    │     privacy_policy_url / terms_url /
+│                                    │     enable_consent_gate / ad_sdk_consent_required
 │ config_value (TEXT / JSON)         │  ← 值可以是字符串或 JSON 对象
 │ description                        │  ← "工信部 APP 备案号"
 │ updated_at                         │
@@ -209,7 +210,7 @@
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET  | `/api/cms/docs/{doc_key}?lang=zh` | 获取指定文档**最新已发布版本**（Markdown 正文 + version 号 + summary）。doc_key 取值：`privacy_policy` / `eula` / `about` / `faq` |
-| GET  | `/api/cms/config` | 一次性返回 `app_configs` 全部 key-value —— 客户端启动时拉一次，缓存到本地，替代全部 `LegalConstants` 静态项 |
+| GET  | `/api/cms/config` | 一次性返回 `app_configs` 全部 key-value（当前 seed 默认 **10 条**）—— 客户端启动时拉一次缓存到本地，并在「关于与支持」页每次打开时重新拉取；替代全部 `LegalConstants` 静态项。属**公开内容**，固定走公网 `kDefaultBackendUrl`，不受用户可配置的账号后端地址影响 |
 | GET  | `/api/cms/doc-meta/{doc_key}` | 只返回最新已发布版本号 + 变更摘要，用于客户端比对本地缓存版本、判断是否需要重新加载 |
 
 ### 3.6 同意记录 `/api/consent/*`
@@ -253,6 +254,8 @@ class AppConfigService {
 }
 ```
 
+> **现行本地默认值（2026-11-04）**：`privacyPolicyUrl = 'https://api.gamepouch.cn/privacy'`、`feedbackEmail = 'support@retroemupouch.cn'`（原 GitHub Pages URL 与 `example.com` 占位邮箱已废弃）；`filingNumber` 仍为空表示"备案中"。这些值只在云端拉取失败时兜底，正常路径以 `/api/cms/config` 下发为准。
+
 ### 4.2 `ConsentGate` 升级：**版本号感知**
 
 ```
@@ -264,12 +267,16 @@ class AppConfigService {
 
 **为什么需要版本号**：两个商店都要求"政策更新后用户必须重新同意"。没有版本号 = 合规隐患。
 
+> **2026-11-04 导航修复**：`ConsentGate` 是 `runApp` 的根组件，其 `build` 所用的 `context` **上方没有 Navigator**（内嵌的 `MaterialApp` 在它下方），原先两个「查看隐私政策 / 查看用户协议」按钮用 `Navigator.of(context).push(...)` 会抛 `does not include a Navigator`，表现为点击无响应。现给内嵌 `MaterialApp` 挂 `navigatorKey: _navKey`，按钮改用 `_navKey.currentState!.push(...)`；「同意并继续」不涉及 Navigator，一直正常。
+
 ### 4.3 `PrivacyPolicyPage` / `EulaPage` 内容来源
 
 ```
 改造前：本地硬编码文本 / GitHub Pages URL 打开
-改造后：GET /api/cms/docs/{doc_key}?lang=zh → Markdown → 用 flutter_markdown 渲染
-       失败时回退本地 Asset 兜底（assets/legal/privacy_policy_zh.md）
+现行实现：CloudConfigService.fetchDoc(docKey) → GET https://api.gamepouch.cn/api/cms/docs/{doc_key}?lang=zh
+         → 服务端返回的 Markdown 正文用 SelectableText 展示（无额外渲染依赖）
+         → 拉取失败时回退文件内硬编码的 _fallback 模板，保证合规底线
+网页版链接：CloudConfigService.instance.privacyPolicyUrl（云端 AppConfig，默认 https://api.gamepouch.cn/privacy）
 ```
 
 ---
@@ -434,7 +441,7 @@ tools/
 | 4 | 数据库 | PostgreSQL / SQLite | **PostgreSQL**（SQLite 也能跑 MVP，但 Blob 性能和 JSON 查询会差） |
 | 5 | 是否要 Redis（登出黑名单 + 限流） | 是 / 否 | **否**（一期 MVP 不需要） |
 | 6 | 云存档加密放哪 | **客户端 AES-256-GCM** / 服务端加 | **客户端**（合规红线） |
-| 7 | CMS 内容存储格式 | **Markdown** / HTML / 富文本 JSON | **Markdown**（简洁，`flutter_markdown` 直接渲染） |
+| 7 | CMS 内容存储格式 | **Markdown** / HTML / 富文本 JSON | **Markdown**（简洁；当前 App 侧以 `SelectableText` 直接展示纯 Markdown 正文，未额外引入渲染库） |
 | 8 | 多语言 | 先 zh 单语 / **zh + en** 双语 | **双语**（Google Play 和华为 AppGallery 上架都要求英文版本） |
 | 9 | Admin 管理方式 | **API-only + curl 脚本** / Jinja2 Web UI / 独立前端 | **先 API-only，后续按需加 Web UI**（MVP 节省时间） |
 | 10 | 一期先做哪些 | Phase 1 或 Phase 1+2+3 | **Phase 1+2+3**（账号 + CMS + 同意记录 —— 这三个是当前最痛的，且 CMS 与合规必须先搞定才能上架） |
@@ -476,10 +483,11 @@ PC (peer_host)  ──一次性 code──►  App
 |---|---|---|---|
 | 2026-11-02 | 待决策 | v0.1 初稿输出 | 基础账号/配对/会员/云存档方案 |
 | 2026-11-02 | 待决策 | v0.2 补充 CMS + 同意管理 | 新增 `cms_documents`/`app_configs`/`consent_records` 三表、CMS 公开端点、Admin 管理端点、客户端改造方案、Phase 2/3 提前 |
+| 2026-11-04 | 实施者 | 公开内容与账号后端地址解耦 | `CloudConfigService` 的 `load()`/`fetchDoc()` 不再经 `effectiveBaseUrl`，硬走公网 `kDefaultBackendUrl`；隐私政策/协议/备案号/客服信息等属于任何用户均可访问的公开内容，不受调试入口私有地址影响。同时修正 `ConsentGate` 导航、账号页首帧红屏、关于页动态化、seed 默认项 8→10 条 |
 
 ---
 
-## 实施进度（截至 2026-11-02）
+## 实施进度（截至 2026-11-04）
 
 ### ✅ Phase 0：基础设施（100%）
 
@@ -505,8 +513,8 @@ PC (peer_host)  ──一次性 code──►  App
 - [x] ORM：`CmsDocument`（多版本多语言，draft/published/archived 三态）、`AppConfig`（替代全部 LegalConstants）
 - [x] 公开路由（无 auth）：`GET /api/cms/docs/{doc_key}?lang=zh`、`GET /api/cms/doc-meta/{doc_key}`、`GET /api/cms/config`
 - [x] Admin 路由：`POST /admin/docs`（草稿）、`PUT /admin/docs/{id}`（编辑）、`POST /admin/docs/{id}/publish`（发布，自动归档旧 published）、`GET /admin/docs`、`GET /admin/config`、`PUT /admin/config/{key}`、`POST /admin/seed`
-- [x] Seed 数据：4 篇默认已发布文档（privacy_policy zh/en + eula zh/en，版本号 1）、8 条 AppConfig 默认值（filing_number / feedback_url / feedback_email / qq_group / wechat_id / share_message / enable_consent_gate / ad_sdk_consent_required）
-- [x] 冒烟测试：Admin seed → cms/config 拉 8 条 → cms/docs 拉中文隐私政策 → cms/doc-meta 查版本号 → Admin update config → 公开 config 验证已更新
+- [x] Seed 数据：4 篇默认已发布文档（privacy_policy zh/en + eula zh/en，版本号 1）、10 条 AppConfig 默认值（filing_number / feedback_url / feedback_email / qq_group / wechat_id / share_message / **privacy_policy_url** / **terms_url** / enable_consent_gate / ad_sdk_consent_required）；`feedback_email` 默认 `support@retroemupouch.cn`，两个 URL 默认 `https://api.gamepouch.cn/privacy` 与 `/terms`（2026-11-04 新增）
+- [x] 冒烟测试：Admin seed → cms/config 拉 10 条 → cms/docs 拉中文隐私政策 → cms/doc-meta 查版本号 → Admin update config → 公开 config 验证已更新
 
 ### ✅ Phase 2.5：应用商店合规网页（2026-11-04）
 
@@ -557,8 +565,8 @@ PC (peer_host)  ──一次性 code──►  App
 | 4 | `POST /api/billing/trial/start` | 200 ✓ |
 | 5 | `GET /api/billing/entitlement` (trial) | 200 is_ad_free=True ✓ |
 | 6 | `GET /api/cms/config` (seed 前) | 200 keys_count=0 ✓ |
-| 7 | `POST /admin/seed` | 200 8 config + 4 docs ✓ |
-| 8 | `GET /api/cms/config` (seed 后) | 200 keys_count=8 ✓ |
+| 7 | `POST /admin/seed` | 200 8 config + 4 docs ✓（当时 seed 为 8 条；2026-11-04 起默认 10 条） |
+| 8 | `GET /api/cms/config` (seed 后) | 200 keys_count=8 ✓（现行重跑后 keys_count=10） |
 | 9 | `GET /api/cms/docs/privacy_policy?lang=zh` | 200 ✓ |
 | 10 | `GET /api/cms/doc-meta/eula?lang=en` | 200 version=1 ✓ |
 | 11 | `POST /api/billing/verify` (dev mock premium_yearly) | 200 ok=True ✓ |
@@ -591,9 +599,9 @@ PC (peer_host)  ──一次性 code──►  App
 
 > 本节原「客户端对接 TODO」清单中的 6 项**均已在 2026-11-03/04 落地**，与代码事实一致（以 `design-account-backend.md` 为权威源）。清单保留作历史记录，状态已翻转：
 
-- [x] `LegalConstants` → 退化为本地默认值；`CloudConfigService` 启动时拉 `/api/cms/config`（覆盖全部静态项）
+- [x] `LegalConstants` → 退化为本地默认值；`CloudConfigService` 启动时拉 `/api/cms/config`（覆盖全部静态项），且「关于与支持」页每次打开重新拉一次并 `ping()` 刷新；baseUrl 固定公网，不依赖 `AccountStore` / `effectiveBaseUrl`
 - [x] `ConsentGate` → 版本号比对：`GET /api/consent/status` + `POST /api/consent/accept`（带 `X-Device-Id` header）
-- [x] `PrivacyPolicyPage` / `EulaPage` → 后端拉 Markdown（`flutter_markdown` 渲染），失败回退本地 Asset
+- [x] `PrivacyPolicyPage` / `EulaPage` → `CloudConfigService.fetchDoc()` 从公网拉 Markdown，用 `SelectableText` 展示，失败回退文件内硬编码模板（未引入 `flutter_markdown` / 本地 Asset 依赖）
 - [x] `AccountService`（本地旧类）已删除；认证统一走 `AccountBackend`（`HttpAccountService` / `MockAccountService`），接 `/api/auth/*`
 - [x] `ReceiptVerifier` → 已实现 `HttpReceiptVerifier`（`POST /api/billing/verify`，debug 带 `X-Dev-Mock: 1`）
 - [x] 配对：`PairingPal`（mDNS）+ `peer_host.py` 已接 `/pair` 等端点
@@ -651,7 +659,7 @@ cd tools\account_backend
 python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-**首次 Seed 初始化**（8 条 AppConfig + 4 篇 CMS 文档）：
+**首次 Seed 初始化**（10 条 AppConfig + 4 篇 CMS 文档）：
 
 ```powershell
 # 1. 生成 admin token（PowerShell）
@@ -659,7 +667,7 @@ $tok = python -c "from app.security import create_admin_token; print(create_admi
 
 # 2. 调用 seed 端点
 Invoke-RestMethod -Method Post -Uri http://localhost:8000/admin/seed -Headers @{Authorization="Bearer $tok"}
-# 返回: { "app_configs_seeded": 8, "cms_docs_seeded": 4 }
+# 返回: { "app_configs_seeded": 10, "cms_docs_seeded": 4 }
 ```
 
 ### 方式 B：Docker Compose（PostgreSQL）
@@ -787,15 +795,15 @@ App 访问地址：`http://<PC局域网IP>:8000`
 
 | 文件 | 改什么 |
 |---|---|
-| `features/legal/legal_constants.dart` | 全部静态项退化为本地默认值；启动时调 `GET /api/cms/config` 拉取最新值 |
-| `features/legal/consent_gate.dart` | 加版本号比对：启动时调 `GET /api/consent/status`；版本号不一致或从未同意才弹门禁；点"同意"时 `POST /api/consent/accept` |
-| `features/legal/privacy_policy_page.dart` / `eula_page.dart` | 从 `/api/cms/docs/{doc_key}?lang=zh` 拉 Markdown 渲染，失败回退本地 Asset |
+| `features/legal/legal_constants.dart` | 全部静态项退化为本地默认值；启动时调 `GET /api/cms/config` 拉取最新值；现行默认 `privacyPolicyUrl=https://api.gamepouch.cn/privacy`、`feedbackEmail=support@retroemupouch.cn` |
+| `features/legal/consent_gate.dart` | 加版本号比对：启动时调 `GET /api/consent/status`；版本号不一致或从未同意才弹门禁；点"同意"时 `POST /api/consent/accept`；内嵌 `MaterialApp` 挂 `navigatorKey`，两个「查看」按钮经 `_navKey.currentState!.push()` 导航 |
+| `features/legal/privacy_policy_page.dart` / `eula_page.dart` | `CloudConfigService.fetchDoc()` 从公网 `/api/cms/docs/{doc_key}?lang=zh` 拉 Markdown，用 `SelectableText` 展示，失败回退文件内硬编码模板 |
 
 **联调验证点**：
 
 | 场景 | 后端 API | 后端预期返回 |
 |---|---|---|
-| App 启动 → CMS 配置 | `GET /api/cms/config` | 8 条 AppConfig（含 filing_number / feedback_url / feedback_email ...） |
+| App 启动 → CMS 配置 | `GET https://api.gamepouch.cn/api/cms/config` | 10 条 AppConfig（含 filing_number / feedback_url / feedback_email / privacy_policy_url / terms_url ...）；固定公网，不走账号后端配置 |
 | 首次启动 → ConsentGate | `GET /api/consent/status` | privacy_policy v1 + eula v1，`needs_reconsent=true` |
 | 用户同意隐私政策 | `POST /api/consent/accept {doc_key: privacy_policy, version: 1, device_id: xxx}` | 返回 `recorded_at + version: 1` |
 | 用户同意用户协议 | `POST /api/consent/accept {doc_key: eula, version: 1, device_id: xxx}` | 同上 |
@@ -867,7 +875,7 @@ App 访问地址：`http://<PC局域网IP>:8000`
 - [ ] 方式 A：改 `network_security_config.xml` 加 LAN 白名单 → rebuild APK
 - [ ] 方式 B：`adb reverse tcp:8000 tcp:8000` → 手机浏览器访问 `http://127.0.0.1:8000/docs` 验证
 - [ ] Admin token 可用（`python -c "from app.security import create_admin_token; print(create_admin_token('root'))"`）
-- [ ] Seed 已跑（`POST /admin/seed`）→ 8 条 AppConfig + 4 篇 CMS 文档
+- [ ] Seed 已跑（`POST /admin/seed`）→ 10 条 AppConfig + 4 篇 CMS 文档
 - [ ] Batch 1 客户端改造：`LegalConstants` 动态化 + `ConsentGate` 版本号升级
 - [ ] Batch 2 客户端改造：`AccountService` 接 `/api/auth/*` + `BillingService` 接 `/api/billing/*`
 - [ ] Batch 3 客户端改造：`ReceiptVerifier` 真实实现 + 云存档 client + PC 配对 client
@@ -889,9 +897,9 @@ App 访问地址：`http://<PC局域网IP>:8000`
 为让 **store 包也能直接联调真实后台**（无需切 community 渠道），App 端落地了账号抽象接缝：
 
 - `app/lib/features/account/account_backend.dart`：`AccountUser` + `abstract interface class AccountBackend` + 运行期/编译期选择常量（`kUseHttpBackend` / `kAccountBaseUrl` / `buildUseHttpBackend()`）。
-- `app/lib/features/account/mock_account.dart`：`MockAccountService implements AccountBackend`（本地桩，**默认**实现）。
-- `app/lib/features/account/http_account.dart`：`HttpAccountService implements AccountBackend`，真实调用 `/api/auth/*`；`createAccountBackend()` 按"运行期开关 > 编译期 `--dart-define=BACKEND=http`"选择实现（未配置地址时自动回退桩，避免启动崩溃）。
-- `account_page.dart`：UI 仅依赖 `AccountBackend` 接口；debug 构建（`kDebugMode`）暴露「调试：账号后端」入口，可填后端地址并切换桩/真实后端。登录弹窗新增「注册」标签（真实后端自动隐藏「一键快捷」），调用 `POST /api/auth/register`；`AccountBackend` 接口随之新增 `register()`。
+- `app/lib/features/account/mock_account.dart`：`MockAccountService implements AccountBackend`（本地桩，**开关未开启时**的默认实现）。
+- `app/lib/features/account/http_account.dart`：`HttpAccountService implements AccountBackend`，真实调用 `/api/auth/*`；`createAccountBackend()` 按"运行期开关 > 编译期 `--dart-define=BACKEND=http`"选择实现——**开启真实后端后始终走 Http**，地址为空由 `_baseUrl` 回退 `kDefaultBackendUrl`（不再回退桩）；`createAccountBackend()` 内 `await svc.load()` 包 try/catch，恢复登录态失败不阻断实例创建（2026-11-04 修复）。
+- `account_page.dart`：UI 仅依赖 `AccountBackend` 接口；debug 构建（`kDebugMode`）暴露「调试：账号后端」入口，可填后端地址并切换桩/真实后端，地址默认 `kDefaultBackendUrl`。新增 `_ready` 守卫：`_svc` 异步初始化完成前不渲染调试入口，避免首帧读 `late` 字段红屏（2026-11-04 修复）。登录弹窗新增「注册」标签（真实后端自动隐藏「一键快捷」），调用 `POST /api/auth/register`；`AccountBackend` 接口随之新增 `register()`。
 
 ### store 包本地联调步骤
 
@@ -1021,7 +1029,7 @@ $env:ECS_DOMAIN = "api.yourdomain.com"   # 域名 DNS 先指向 ECS 公网 IP
 # Step 5: Seed 初始化（首次启动必须跑）
 # ══════════════════════════════════════════════════
 .\scripts\deploy.ps1 -Action seed
-# 返回：{ app_configs_seeded: 8, cms_docs_seeded: 4 }
+# 返回：{ app_configs_seeded: 10, cms_docs_seeded: 4 }
 ```
 
 ### 部署完成验证
@@ -1032,7 +1040,7 @@ $env:ECS_DOMAIN = "api.yourdomain.com"   # 域名 DNS 先指向 ECS 公网 IP
 | API 文档 | 浏览器打开 `https://api.yourdomain.com/docs` → Swagger UI |
 | HTTPS 证书 | 浏览器地址栏 🔒 绿色锁 |
 | 数据库迁移 | `./deploy.ps1 -Action logs app` 看日志无 Alembic 错误 |
-| Seed 数据 | `curl https://api.yourdomain.com/api/cms/config` → 8 条 AppConfig |
+| Seed 数据 | `curl https://api.yourdomain.com/api/cms/config` → 10 条 AppConfig |
 | App 端联调 | 手机打开 RetroEmuPouch → 设置 → 后端地址填 `https://api.yourdomain.com` → 开「使用真实后端」 |
 
 ### 日常运维命令
@@ -1752,7 +1760,7 @@ cloudflared.exe tunnel --retries 9999 run --token XXX
 | 端点 | 状态 | 返回 |
 |---|---|---|
 | `GET /healthz` | ✅ | `{"ok":true,"env":"local","app":"RetroEmuPouch-AccountBackend"}` |
-| `GET /api/cms/config` | ✅ | 8 条 LegalConstants 替代配置 |
+| `GET /api/cms/config` | ✅ | 10 条 LegalConstants 替代配置 |
 | `GET /api/cms/docs/privacy_policy?lang=zh` | ✅ | Markdown 正文 |
 | `GET /api/cms/docs/privacy_policy?lang=en` | ✅ | 英文版 |
 | `GET /api/cms/docs/eula?lang=zh` | ✅ | 用户协议 |
@@ -1805,7 +1813,7 @@ cloudflared.exe tunnel --retries 9999 run --token XXX
 
 | 端点 | 状态 | 说明 |
 |---|---|---|
-| `POST /admin/seed` | ✅ | 用 admin token 初始化 CMS + 8 条 AppConfig |
+| `POST /admin/seed` | ✅ | 用 admin token 初始化 CMS + 10 条 AppConfig |
 | `GET/POST /admin/docs` | ✅ | 独立 JWT secret |
 | `PUT /admin/docs/{id}/publish` | ✅ | draft → published |
 | `GET/PUT /admin/config/{key}` | ✅ | |
@@ -1854,6 +1862,7 @@ D:\RetroEmuPouch\
 | ~~云存档 AES-256-GCM 客户端加密~~ | 算法实现 | ~~P2~~ | ✅ **已完成（2026-11-04）** |
 | ~~App 云存档 UI（列表/上传/下载/删除）~~ | 会员账号 | ~~P2~~ | ✅ **已完成（2026-11-04）** |
 | 生产部署（本地服务器 + 公网域名 GamePouch.cn；Alembic 初始迁移已生成 `0001_initial.py`） | 云服务器到位（已由本地部署 + 公网域名满足） | P1 | ✅ **已完成（2026-11-04，本地部署 + 公网域名已满足条件，无需另租云服务器）** |
+| ~~真机联调修复：公开内容解耦 / ConsentGate 导航 / 账号页首帧红屏 / 关于页动态化~~ | 真机验证 | ~~P0~~ | ✅ **已完成（2026-11-04，见文末「端到端验证记录」）** |
 
 ### 公网地址
 
@@ -1874,7 +1883,7 @@ D:\RetroEmuPouch\
 
 | 模块 | 端点 | App 侧实现 | 状态 |
 |---|---|---|---|
-| **CMS 动态配置** | `GET /api/cms/config` | `CloudConfigService.instance.load()` 启动时拉取，覆盖 `LegalConstants` 全部静态默认值 | ✅ |
+| **CMS 动态配置** | `GET https://api.gamepouch.cn/api/cms/config` | `CloudConfigService.instance.load()` 启动时拉取 + 「关于与支持」页每次打开重拉，覆盖 `LegalConstants` 全部静态默认值；固定公网域名，与账号后端地址解耦 | ✅ |
 | | `GET /api/cms/docs/{key}?lang=zh` | `privacy_policy_page.dart` / `eula_page.dart` 从后端拉 Markdown，网络失败 fallback 本地模板 | ✅ |
 | **ConsentGate 版本号** | `GET /api/consent/status` | `consent_gate.dart` 带 `X-Device-Id` header 调，比对 `localConsentedVersion < latestPublishedVersion` | ✅ |
 | | `POST /api/consent/accept` | 同意后落库 `consent_records` 表（user_id=null 合规正常，注册后补绑） | ✅ |
@@ -1892,7 +1901,7 @@ D:\RetroEmuPouch\
 
 ### 关键设计决策
 
-#### 1. 统一后端入口：`effectiveBaseUrl()`
+#### 1. 账号域统一后端入口：`effectiveBaseUrl()`
 
 ```dart
 // account_backend.dart
@@ -1904,11 +1913,13 @@ Future<String> effectiveBaseUrl(AccountStore store) async {
 }
 ```
 
-所有 HTTP 客户端（`HttpAccountService` / `HttpReceiptVerifier` / `CloudClient` / `ConsentGate` / `CloudConfigService`）都通过这个 helper 取后端地址，优先读用户调试入口填写的值，空则用公网默认。
+**账号域** HTTP 客户端（`HttpAccountService` / `HttpReceiptVerifier` / `CloudClient` / `ConsentGate`）通过这个 helper 取后端地址，优先读用户调试入口填写的值，空则用公网默认。
+
+> **例外（2026-11-04 公开内容解耦）**：`CloudConfigService`（`load()` 拉 AppConfig、`fetchDoc()` 拉 CMS 文档）**不经过** `effectiveBaseUrl`，而是硬走公网 `kDefaultBackendUrl = 'https://api.gamepouch.cn'`。原因：隐私政策 / 用户协议 / 备案号 / 客服信息等属**公开内容**，任何用户（含未登录）都应能打开；若跟随用户在「调试：账号后端」里填的私有地址（如 `127.0.0.1` / 局域网 IP），真机上会全部拉取失败并回退旧硬编码值。故公开内容与账号后端地址彻底解耦，`CloudConfigService` 也不再 import `openAccountStore` / `effectiveBaseUrl`。
 
 #### 2. 统一登录态：`AccountStore` + `kAccountToken`
 
-全部模块共享同一份 `AccountStore`（Android=SharedPreferences / OHOS=PlatformPal 文件存储），`kAccountToken` 是登录态唯一真相源。避免旧 `CloudConfig`（FlutterSecureStorage）平行状态导致 token 对其他模块不可见。
+账号相关模块共享同一份 `AccountStore`（Android=SharedPreferences / OHOS=PlatformPal 文件存储），`kAccountToken` 是登录态唯一真相源。避免旧 `CloudConfig`（FlutterSecureStorage）平行状态导致 token 对其他模块不可见。`CloudConfigService` 只拉公开内容，不读写 `AccountStore`。
 
 #### 3. CloudClient 重写：删除 PC 管理台 API
 
@@ -1925,7 +1936,7 @@ PC 管理台 catalog / subscriptions / cloud ROM 下载等功能已标记「即�
 
 #### 5. debug 联调入口
 
-`AccountPage` 仅 debug 构建可见「调试：账号后端」卡片，可切换 `MockAccountService`（本地桩）↔ `HttpAccountService`（真实后端）、修改后端地址。发布版默认走真实后端，硬编码公网地址。
+`AccountPage` 仅 debug 构建可见「调试：账号后端」卡片，可切换 `MockAccountService`（本地桩）↔ `HttpAccountService`（真实后端）、修改后端地址；地址输入框**默认值 = `kDefaultBackendUrl`**（`https://api.gamepouch.cn`，不再是 `127.0.0.1:8000`），留空保存也会由 `HttpAccountService._baseUrl` 回退到公网默认。打开「使用真实后端」后**始终**走 `HttpAccountService`，不再因地址为空坠回 Mock。发布版默认走真实后端公网地址。
 
 ### 本地启动后端（唯一正确姿势）
 
@@ -1962,6 +1973,14 @@ start "" /MIN cloudflared.exe tunnel --retries 9999 run --token <token> retroemu
 | `features/cloud/cloud_crypto.dart` | **新增（2026-11-04 第二波）** | 客户端 AES-256-GCM 加解密（PBKDF2-HMAC-SHA256 15 万次派生密钥） |
 | `features/cloud/cloud_save_section.dart` | **新增（2026-11-04 第二波）** | 账号页云存档 UI：会员门控 / 设密码 / 列表 / 上传 / 下载解密 / 删除 |
 | `pubspec.yaml` | **修改（2026-11-04 第二波）** | 加 `cryptography` 依赖 |
+| `features/legal/cloud_config_service.dart` | **修改（2026-11-04 第三波）** | `load()` / `fetchDoc()` 从 `effectiveBaseUrl(store)` 改为 `kDefaultBackendUrl`，公开内容硬走公网 |
+| `features/legal/legal_constants.dart` | **修改（第三波）** | `privacyPolicyUrl` → `https://api.gamepouch.cn/privacy`；`feedbackEmail` → `support@retroemupouch.cn` |
+| `features/legal/consent_gate.dart` | **修改（第三波）** | 内嵌 `MaterialApp` 加 `navigatorKey`，两个「查看」按钮改 `_navKey.currentState!.push()` 修复点击无响应 |
+| `features/account/account_backend.dart` | **修改（第三波）** | 真实后端模式始终 `HttpAccountService`；`createAccountBackend()` 内 `svc.load()` 包 try/catch |
+| `features/account/account_page.dart` | **修改（第三波）** | 新增 `_ready` 守卫修复首帧 `LateInitializationError` 红屏；调试入口地址默认 `kDefaultBackendUrl` |
+| `features/account/http_account.dart` | **修改（第三波）** | `_baseUrl` 空值回退 `kDefaultBackendUrl` |
+| `features/settings/settings_sheet.dart` | **修改（第三波）** | 「关于与支持」页展示云端配置（客服邮箱/反馈入口/隐私政策 URL/备案号/官方社群/同步状态），去掉硬编码 github.io 旧 URL；每次打开重拉 `load()` 并 `_changes.ping()` 刷新 |
+| `tools/account_backend/app/services/seed.py` | **修改（第三波）** | AppConfig 默认项 8→10 条（新增 `privacy_policy_url` / `terms_url`），`feedback_email` 改正确域名 |
 
 ### 端到端验证记录（2026-11-03/04，华为 OXF-AN10）
 
@@ -1969,7 +1988,7 @@ start "" /MIN cloudflared.exe tunnel --retries 9999 run --token <token> retroemu
 |---|---|---|
 | App 启动 → ConsentGate 弹窗 | ✅ | 卸载重装后 SharedPreferences 清空，新 device_id，后端 `needs_reconsent=true` |
 | 点击「同意并继续」→ 进主页 | ✅ | `consent_records` 表落库（eula + privacy_policy） |
-| CMS 动态配置拉取 | ✅ | `CloudConfigService.load()` 成功覆盖 8 条 `LegalConstants` |
+| CMS 动态配置拉取 | ✅ | `CloudConfigService.load()` 成功覆盖 `LegalConstants`（当时 8 条，现行 seed 默认 10 条） |
 | 切换真实后端 → 注册 | ✅ | 后端返回 JWT，自动持久化 |
 | 注册自动开启 7 天试用 | ✅ | `trial_start` 写入 SQLite，`is_ad_free=true, blocks_interstitial_ads=true` |
 | 付费档升级 → entitlement | ✅ | `cloud_save_enabled=true`，云存档端点 403→200 |
@@ -1983,3 +2002,8 @@ start "" /MIN cloudflared.exe tunnel --retries 9999 run --token <token> retroemu
 | 云存档下载（客户端解密） | ✅ | `CloudCrypto.decrypt` 还原明文落盘（密码错误 GCM tag 校验失败抛异常） |
 | Admin Web UI 登录/鉴权 | ✅ | TestClient 端到端：未授权 303→登录 / 错误口令 401 / 登录设 cookie / 已授权控制台 / 草稿创建并出现在列表 |
 | Alembic 初始迁移 | ✅ | 临时 SQLite `alembic upgrade head` 建全 9 张表（含 `alembic_version`） |
+| 欢迎页「查看隐私政策」可正常导航（第三波） | ✅ | 真机 `uitest` 模拟点击 → 页面打开并显示 CMS 下发的真实政策全文（非占位模板）；`navigatorKey` 修复生效 |
+| 公开配置 `/api/cms/config` 下发 10 条（第三波） | ✅ | 后台补 `privacy_policy_url` / `terms_url` 后，接口返回两键；`feedback_email=chihinglau@163.com` 为后台实改值 |
+| 「关于与支持」展示云端配置并可刷新（第三波） | ✅ | 真机页面显示客服邮箱 `chihinglau@163.com`、隐私政策 `https://api.gamepouch.cn/privacy`、官方社群，底部「以上资料已与云端配置同步」 |
+| 账号页首帧不再红屏（第三波） | ✅ | 重启后 hilog 无 `LateInitializationError`；`_ready` 守卫生效 |
+| seed 默认项计数 | ✅ | `seed_app_configs` 现为 10 条默认 AppConfig |

@@ -22,10 +22,12 @@ def seed_app_configs(db: Session) -> int:
     defaults: list[tuple[str, str, str]] = [
         ("filing_number", "", "工信部 APP 备案号"),
         ("feedback_url", "https://github.com/chihinglau/RetroEmuPouch/issues", "用户反馈入口"),
-        ("feedback_email", "support@retroemupouch.example.com", "客服邮箱"),
+        ("feedback_email", "support@retroemupouch.cn", "客服邮箱"),
         ("qq_group", "123456789", "官方 QQ 群号"),
         ("wechat_id", "RetroEmuPouch", "官方微信号 / 公众号"),
         ("share_message", "趣玩匣 RetroEmuPouch —— 手机上的复古游戏机，重拾时光里的欢喜！", "分享应用文案"),
+        ("privacy_policy_url", "https://api.gamepouch.cn/privacy", "隐私政策网页版 URL（应用商店提交 / 应用内跳转）"),
+        ("terms_url", "https://api.gamepouch.cn/terms", "用户协议网页版 URL（应用商店提交 / 应用内跳转）"),
         ("enable_consent_gate", "true", "是否启用首次启动同意门禁"),
         ("ad_sdk_consent_required", "false", "是否要求个性化广告同意（合规）"),
     ]

@@ -418,9 +418,16 @@ class _SettingsSheetState extends State<SettingsSheet> {
             ])),
       ]));
 
-  void _openAbout() => _push((ctx) {
-        final theme = Theme.of(ctx);
-        return _page('关于与支持', [
+  void _openAbout() {
+    // 每次打开都重新拉取云端 AppConfig：后台改了备案号 / 客服邮箱 / 隐私政策
+    // 链接后，无需重启 App，重进此页即可看到最新值。成功后通知子页重建。
+    CloudConfigService.instance.load().then((ok) {
+      if (ok && mounted) _changes.ping();
+    });
+    _push((ctx) => _live((ctx) {
+      final theme = Theme.of(ctx);
+      final cfg = CloudConfigService.instance;
+      return _page('关于与支持', [
           // ----- App info（原「关于」内容，从主菜单移入） -----
           Card(
             margin: EdgeInsets.zero,
@@ -476,10 +483,11 @@ class _SettingsSheetState extends State<SettingsSheet> {
             child: ListTile(
               leading: const Icon(Icons.support_agent_outlined),
               title: const Text('客服中心'),
-              subtitle: const Text('问题反馈与联系支持（复制反馈入口）'),
+              subtitle: Text('客服邮箱：${cfg.feedbackEmail}\n'
+                  '反馈入口：${cfg.feedbackUrl}'),
               trailing: const Icon(Icons.copy_outlined),
               onTap: () => _copyToClipboard(
-                  CloudConfigService.instance.feedbackUrl, '反馈链接已复制，可在浏览器打开'),
+                  cfg.feedbackUrl, '反馈链接已复制，可在浏览器打开'),
             ),
           ),
           Card(
@@ -509,11 +517,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
             child: ListTile(
               leading: const Icon(Icons.language_outlined),
               title: const Text('网页版隐私政策'),
-              subtitle: const Text(
-                  'https://chihinglau.github.io/GamePouch/privacy'),
+              subtitle: Text(cfg.privacyPolicyUrl),
               trailing: const Icon(Icons.copy_outlined),
               onTap: () => _copyToClipboard(
-                  CloudConfigService.instance.privacyPolicyUrl, '已复制隐私政策链接，可在浏览器打开'),
+                  cfg.privacyPolicyUrl, '已复制隐私政策链接，可在浏览器打开'),
             ),
           ),
           Card(
@@ -522,14 +529,32 @@ class _SettingsSheetState extends State<SettingsSheet> {
               leading: const Icon(Icons.verified_user_outlined),
               title: const Text('备案号'),
               subtitle: Text(
-                CloudConfigService.instance.filingNumber.isEmpty
+                cfg.filingNumber.isEmpty
                     ? '（备案中，待工信部备案后回填）'
-                    : CloudConfigService.instance.filingNumber,
+                    : cfg.filingNumber,
               ),
             ),
           ),
+          Card(
+            margin: const EdgeInsets.symmetric(vertical: 4),
+            child: ListTile(
+              leading: const Icon(Icons.people_outline),
+              title: const Text('官方社群'),
+              subtitle: Text('QQ 群：${cfg.qqGroup}\n微信号：${cfg.wechatId}'),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              cfg.loaded
+                  ? '以上资料已与云端配置同步'
+                  : '当前使用本地默认资料（云端配置未拉取成功）',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
         ]);
-      });
+    }));
+  }
 
   /// 还原设置：确认后把全部 AppSettings 字段重置为出厂默认（不触碰存档/BIOS）。
   Future<void> _confirmReset() async {

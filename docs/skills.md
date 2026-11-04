@@ -1350,10 +1350,13 @@ release 包也能用；配对记录存 `tools/library/.peer_devices.json`（已 
     会员 / 去广告（内嵌 `MembershipSection`，兼作订阅管理入口）、游戏体验
     （FPS 浮窗 / 高刷新率 / 加速音频）、控制与手柄（摇杆 / 布局 / 一键招式）、
     BIOS 管理（`_BiosManagerCard`）、通用（记住上次进度 / 深色主题）、
-    关于与支持（应用信息卡 / 客服中心 / 开源许可 / 隐私政策×2 / 备案号）。
+    关于与支持（应用信息卡 / 客服中心 / 开源许可 / 隐私政策×2 / 备案号 / 官方社群）。
+    **2026-11-04**：该页改为展示 `CloudConfigService` 云端配置（客服邮箱 + 反馈入口、
+    隐私政策 URL、备案号、官方社群 QQ/微信、同步状态提示），去掉硬编码的 github.io 旧 URL；
+    每次打开重新 `load()` 并 `_changes.ping()` 刷新，后台改值无需重启 App。
   - **4 个直执行项**：分享应用（复制推荐文案到剪贴板，零依赖）、
     给个好评（`PlatformPal.openStore()`，异常兜底复制反馈链接）、
-    意见反馈（复制 `LegalConstants.feedbackUrl`）、还原设置（确认对话框 →
+    意见反馈（复制 `CloudConfigService.instance.feedbackUrl` 云端反馈入口）、还原设置（确认对话框 →
     把 `AppSettings().toMap()` 应用回 `AppSettings.current` 并保存，
     **不触碰存档 / BIOS / lastSaveSlot**，深色主题变更实时生效）。
 - **按用户要求排除**「存档管理」「iCloud 同步」（App 已有独立的「我的 PC」LAN 同步体系）；
@@ -1363,9 +1366,12 @@ release 包也能用；配对记录存 `tools/library/.peer_devices.json`（已 
   子页面正文用 `ListenableBuilder` 包裹实时重建。主菜单头部保留紧凑版（应用名 + 版本号 chip），
   完整应用信息卡移入「关于与支持」。推送走 `widget.hostCtx` 的 host navigator
   （弹窗本身保持打开，返回即回菜单，与招式编辑器同样的坑）。
-- **发布可配置**：`app/lib/features/legal/legal_constants.dart` 新增
-  `feedbackUrl`（GitHub Issues，反馈 / 客服中心复制给用户）、`shareMessage`
-  （分享文案），上线时一处替换为邮箱 / 商店链接即可。
+- **发布可配置（现行）**：`legal_constants.dart` 的 `feedbackUrl` / `shareMessage`
+  等**仅作拉取失败时的本地兜底**，正常值由后端 AppConfig 经
+  `CloudConfigService` 下发，在管理后台改即可（App「关于与支持」页打开时刷新）。
+  现行兜底值：`privacyPolicyUrl = https://api.gamepouch.cn/privacy`、
+  `feedbackEmail = support@retroemupouch.cn`；AppConfig 另含
+  `privacy_policy_url` / `terms_url` 两个法律页 URL（共 10 条默认项）。
 - **验证**：`flutter analyze` 0 error（回到既有 14 个 issue，无新增）；
   `flutter test` 19/19 绿；APK 构建安装成功、真机启动正常。真机 UI 走查待装包验证。
 
@@ -1973,7 +1979,7 @@ start_peer.bat --no-mdns
 > **设计文档与冲突裁决**：账号云 / 会员 / 权益的完整方案见三份设计文档——
 > `docs/design-account-backend.md`（**权威源**）、`docs/design-account-cloud-ads-membership.md`、
 > `docs/design-auth-membership-entitlement.md`。**三份冲突以 `design-account-backend.md` 为准；文档与代码冲突以代码为最终裁定**。
-> 客户端对接（CMS 动态化 / ConsentGate 版本号 / 注册登录 / entitlement / 云存档 4 端点 / `ReceiptVerifier` 真实校验 / **云存档客户端 AES-256-GCM 加密 + App 云存档 UI** / **Admin Web UI（Jinja2）** / **Alembic 初始迁移**）**已于 2026-11-04 全部落地**，状态以 `design-account-backend.md`「实施进度 / 客户端对接完成状态」一节为准。仍待做（被外部凭证/签名阻塞）：OHOS 华为/Petals 广告原生通道、Play Billing / 华为 IAP 真实验真分支（需商店配置 + 凭证，Phase 5）。
+> 客户端对接（CMS 动态化 / ConsentGate 版本号 / 注册登录 / entitlement / 云存档 4 端点 / `ReceiptVerifier` 真实校验 / **云存档客户端 AES-256-GCM 加密 + App 云存档 UI** / **Admin Web UI（Jinja2）** / **Alembic 初始迁移**）**已于 2026-11-04 全部落地**，状态以 `design-account-backend.md`「实施进度 / 客户端对接完成状态」一节为准。**第三波真机修复（2026-11-04）**：`CloudConfigService` 公开内容硬走公网 `kDefaultBackendUrl`（与账号后端地址解耦）、`ConsentGate` 用 `navigatorKey` 修复政策按钮点击无响应、账号页 `_ready` 守卫修复 `LateInitializationError` 红屏、调试入口默认公网地址 / 空地址回退 / 真实后端始终 Http、「关于与支持」页动态化并打开时刷新、`LegalConstants` 与 `seed.py` 默认值更新（AppConfig 8→10 条）。仍待做（被外部凭证/签名阻塞）：OHOS 华为/Petals 广告原生通道、Play Billing / 华为 IAP 真实验真分支（需商店配置 + 凭证，Phase 5）。
 
 ### 24.2 启动后端（**唯一正确姿势：手动双击 boot.bat**）
 
@@ -2029,11 +2035,15 @@ cloudflared.exe tunnel --retries 9999 run --token <token> retroemupouch
 
 App 默认走 MockAccountService（本地桩），调试真实后端需：
 
-1. 进「我的账号」→ debug 构建才显示「调试：账号后端」卡片
-2. 打开「使用真实后端」开关 → 后端地址默认 `https://api.gamepouch.cn`（可改）→ 保存
+1. 进「我的账号 / 网络」→ debug 构建才显示「调试：账号后端」卡片
+2. 打开「使用真实后端」开关 → 后端地址默认 `https://api.gamepouch.cn`（可改；**留空也会回退到该公网默认**）→ 保存
 3. 立即生效，注册/登录走真实后端，JWT 自动持久化
 
-**发布版**移除调试卡片，硬编码走 `kDefaultBackendUrl = 'https://api.gamepouch.cn'`。
+> 开关打开后**始终**走 `HttpAccountService`，不会再因地址为空坠回 Mock。曾经把调试地址填成 `https://127.0.0.1:8000` 会导致真机请求打向手机自身、全部"无法连接服务器"——真机联调请用公网域名（或按 §本地 HTTPS 联调章节配好 `adb reverse`）。
+
+**发布版**移除调试卡片，走 `kDefaultBackendUrl = 'https://api.gamepouch.cn'`。
+
+> **公开内容不受此开关影响**：隐私政策 / 用户协议 / 备案号 / 客服信息等由 `CloudConfigService` 固定从公网 `kDefaultBackendUrl` 拉取，任何用户（含未登录、含本地桩模式）都能打开；改调试地址不会让这些页面失效。
 
 ### 24.5 SQLite dev 数据库查看
 
@@ -2079,10 +2089,29 @@ Invoke-RestMethod -Uri "https://api.gamepouch.cn/api/cloud/saves/list" -Headers 
 |------|------|------|
 | Tunnel 返回 502 | Python backend 挂了 | boot.bat 守护循环会自动拉；等 30 秒，或手动双击重启 |
 | cloudflared 启动立刻退出 | 参数顺序错 | 必须 `tunnel --retries N run --token TOKEN NAME`，retries 在 tunnel 和 run 之间 |
-| App 调后端 baseUrl 为空 | MockAccountService 没切换 | 进调试卡片打开真实后端开关 |
+| App 调后端 baseUrl 为空 | 已不会导致故障：空值自动回退 `kDefaultBackendUrl`；若仍走本地桩，说明「使用真实后端」开关未开 | 进调试卡片打开真实后端开关（地址留空即可用公网默认） |
+| 真机注册 / 隐私政策「无法连接服务器 / 无响应」 | 调试地址被填成 `https://127.0.0.1:8000`，请求打向手机自身；公开内容现已硬走公网域名，不会再受此影响 | 调试卡片把地址改回 `https://api.gamepouch.cn` 或清空 |
+| 欢迎页「查看隐私政策 / 用户协议」点击无反应 | `ConsentGate` 是 `runApp` 根组件，上方无 Navigator，`Navigator.of(context)` 抛异常 | 已修：内嵌 `MaterialApp` 挂 `navigatorKey`，按钮走 `_navKey.currentState!.push()` |
+| 「网络」页首帧红屏 `LateInitializationError: _svc` | build 第一帧渲染调试入口时读了尚未异步初始化的 `late _svc` | 已修：`_ready` 守卫，初始化完成前不渲染调试入口 |
+| 「关于与支持」内容滞后 | 云端配置原先只在 `main()` 启动时拉一次，且页面副标题是硬编码旧 URL | 已修：页面展示 `CloudConfigService` 云端值，每次打开重新 `load()` 并刷新；后台改 AppConfig 即生效 |
 | App 装不上 | 签名冲突 | 先 `adb shell pm uninstall com.retroemupouch.app` 再装 |
 | App 启动即崩（release） | EMUI 进程保护 | 用 debug 包测试 |
 | flutter analyze 崩 | OHOS Hvigor 要 npm | 跳过，用 `scripts\build-apk.ps1` 构建 |
 | boot.bat ns 地址 | 华为云 DNS | DNS NS 改 `anirban.ns.cloudflare.com` / `princess.ns.cloudflare.com` |
+
+### 24.9 本轮客户端修复记录（2026-11-04，华为真机验证）
+
+| 文件 | 修复 |
+|---|---|
+| `features/legal/cloud_config_service.dart` | `load()` / `fetchDoc()` 改用 `kDefaultBackendUrl`，CMS 公开内容与账号后端地址解耦 |
+| `features/legal/consent_gate.dart` | `navigatorKey: _navKey` + `_navKey.currentState!.push()`，修复两个「查看」按钮点击无响应 |
+| `features/legal/legal_constants.dart` | 兜底 URL / 邮箱改为 `https://api.gamepouch.cn/privacy`、`support@retroemupouch.cn` |
+| `features/account/account_backend.dart` | 真实后端始终 Http；`createAccountBackend()` 内 `svc.load()` 包 try/catch |
+| `features/account/account_page.dart` | `_ready` 守卫修红屏；调试入口地址默认公网域名 |
+| `features/account/http_account.dart` | `_baseUrl` 空值回退 `kDefaultBackendUrl` |
+| `features/settings/settings_sheet.dart` | 「关于与支持」展示云端配置并在打开时刷新，去掉硬编码 github.io 旧 URL |
+| `tools/account_backend/app/services/seed.py` | AppConfig 默认 8→10 条（新增 `privacy_policy_url` / `terms_url`），客服邮箱改正确域名 |
+
+验证方式：真机 `hdc shell uitest uiInput click` 逐级点进欢迎页 → 政策页 → 设置 → 关于与支持，配合 `snapshot_display` 截图确认；`/api/cms/config` 200 且返回新增键。
 
 
