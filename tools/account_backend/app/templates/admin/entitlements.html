@@ -1,0 +1,48 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import pager, state_tag %}
+{% block title %}权益管理 · 管理后台{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>权益总览</h1>
+  <p class="muted">共 {{ data.pager.total }} 条权益记录。状态按服务端权威逻辑计算（试用窗 / 到期时间 / 终身标记）。调整权益请进入对应用户详情页。</p>
+  <form method="get" action="/admin/ui/entitlements" class="filters">
+    <div><label>用户邮箱</label><input name="q" value="{{ q }}" placeholder="模糊搜索"></div>
+    <div class="narrow"><label>档位</label>
+      <select name="tier"><option value="">全部</option>
+        {% for t in tiers %}<option value="{{ t }}" {{ 'selected' if tier == t else '' }}>{{ t }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="narrow"><label>生效状态</label>
+      <select name="state"><option value="">全部</option>
+        {% for s in states %}<option value="{{ s }}" {{ 'selected' if state == s else '' }}>{{ s }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="actions"><button type="submit">筛选</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="scroll">
+  <table>
+    <thead><tr><th>用户</th><th>档位</th><th>状态</th><th>终身</th><th>到期时间</th><th>试用开始</th><th>更新时间</th><th></th></tr></thead>
+    <tbody>
+    {% for i in data['items'] %}
+      <tr>
+        <td class="mono">{{ i.user_email }}</td>
+        <td class="mono">{{ i.tier }}</td>
+        <td>{{ state_tag(i.state) }}</td>
+        <td>{{ '是' if i.is_lifetime else '否' }}</td>
+        <td class="nowrap">{{ i.expiry_at.strftime('%Y-%m-%d %H:%M') if i.expiry_at else '-' }}</td>
+        <td class="nowrap">{{ i.trial_start.strftime('%Y-%m-%d') if i.trial_start else '-' }}</td>
+        <td class="nowrap">{{ i.updated_at.strftime('%Y-%m-%d %H:%M') if i.updated_at else '-' }}</td>
+        <td><a class="link" href="/admin/ui/users/{{ i.user_id }}">调整 →</a></td>
+      </tr>
+    {% else %}<tr><td colspan="8" class="muted">没有匹配的权益记录</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ pager(data.pager, '/admin/ui/entitlements', query) }}
+</div>
+
+{% endblock %}

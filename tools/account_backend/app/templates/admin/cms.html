@@ -1,0 +1,76 @@
+{% extends "admin/base.html" %}
+{% block title %}CMS 文档 · 管理后台{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>CMS 文档管理</h1>
+  <p class="muted">隐私政策 / 用户协议的版本化管理。发布新版本会归档同语言旧版，并触发 App 端 ConsentGate 重新征求同意。</p>
+</div>
+
+<div class="card">
+  <h2>文档列表</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>doc_key</th><th>语言</th><th>版本</th><th>状态</th><th>标题</th><th>发布时间</th><th>操作</th></tr></thead>
+    <tbody>
+    {% for d in docs %}
+      <tr>
+        <td class="mono">{{ d.doc_key }}</td>
+        <td>{{ d.language }}</td>
+        <td>v{{ d.version }}</td>
+        <td><span class="tag {{ d.status }}">{{ d.status }}</span></td>
+        <td>{{ d.title }}</td>
+        <td class="nowrap">{{ d.published_at.strftime('%Y-%m-%d %H:%M') if d.published_at else '-' }}</td>
+        <td>
+          {% if d.status == 'draft' %}
+          <form method="post" action="/admin/ui/docs/{{ d.id }}/publish" class="inline"
+                onsubmit="return confirm('确认发布 v{{ d.version }}？旧版本将归档。')">
+            <button type="submit" class="sm">发布</button>
+          </form>
+          {% else %}<span class="muted">—</span>{% endif %}
+        </td>
+      </tr>
+      {% if d.status == 'draft' %}
+      <tr><td colspan="7" style="background:#fafcfd">
+        <details>
+          <summary class="link" style="cursor:pointer">编辑草稿内容（{{ d.doc_key }} v{{ d.version }}）</summary>
+          <form method="post" action="/admin/ui/docs/{{ d.id }}/edit" style="margin-top:10px">
+            <label>标题</label><input name="title" value="{{ d.title }}" required>
+            <label>摘要</label><input name="summary" value="{{ d.summary or '' }}">
+            <label>正文（Markdown）</label><textarea name="content" rows="10" required>{{ d.content }}</textarea>
+            <button type="submit">保存草稿</button>
+          </form>
+        </details>
+      </td></tr>
+      {% endif %}
+    {% else %}<tr><td colspan="7" class="muted">暂无文档</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>新建草稿</h2>
+  <form method="post" action="/admin/ui/docs">
+    <div class="row">
+      <div><label>doc_key</label><input name="doc_key" placeholder="privacy_policy / eula" required></div>
+      <div class="narrow"><label>语言</label>
+        <select name="language"><option value="zh">zh</option><option value="en">en</option></select>
+      </div>
+      <div class="narrow"><label>版本号（当前全库最大 v{{ max_version }}，建议 v{{ suggested_version }}）</label><input name="version" type="number" value="{{ suggested_version }}" min="1" required></div>
+    </div>
+    <label>标题</label><input name="title" required>
+    <label>摘要</label><input name="summary">
+    <label>正文（Markdown）</label><textarea name="content" rows="8" required></textarea>
+    <button type="submit">创建草稿</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>同意统计</h2>
+  <p>隐私政策（privacy_policy）：总同意 {{ privacy_stats.total_consents }} 次，最新发布版本 {{ privacy_stats.latest_published_version }}</p>
+  <p>用户协议（eula）：总同意 {{ eula_stats.total_consents }} 次，最新发布版本 {{ eula_stats.latest_published_version }}</p>
+  <p class="muted">逐条明细见 <a class="link" href="/admin/ui/consents">同意记录</a>。</p>
+</div>
+
+{% endblock %}

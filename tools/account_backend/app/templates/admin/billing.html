@@ -1,0 +1,44 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import pager, state_tag %}
+{% block title %}账单流水 · 管理后台{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>账单流水</h1>
+  <p class="muted">只读对账视图。后台人工调整权益不写此表，仅记入审计日志，避免污染购买流水。共 {{ data.pager.total }} 条。</p>
+  <form method="get" action="/admin/ui/billing" class="filters">
+    <div><label>SKU / 用户 ID</label><input name="q" value="{{ q }}" placeholder="模糊搜索"></div>
+    <div class="narrow"><label>状态</label>
+      <select name="status_filter">
+        <option value="">全部</option>
+        {% for s in ['pending', 'verified', 'rejected', 'expired'] %}
+          <option value="{{ s }}" {{ 'selected' if status_filter == s else '' }}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="actions"><button type="submit">筛选</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="scroll">
+  <table>
+    <thead><tr><th>用户</th><th>平台</th><th>SKU</th><th>状态</th><th>创建时间</th><th>验证时间</th></tr></thead>
+    <tbody>
+    {% for t in data['items'] %}
+      <tr>
+        <td class="mono">{{ t.user_email }}</td>
+        <td>{{ t.platform }}</td>
+        <td class="mono">{{ t.sku }}</td>
+        <td>{{ state_tag(t.status) }}</td>
+        <td class="nowrap">{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '-' }}</td>
+        <td class="nowrap">{{ t.verified_at.strftime('%Y-%m-%d %H:%M') if t.verified_at else '-' }}</td>
+      </tr>
+    {% else %}<tr><td colspan="6" class="muted">暂无账单流水</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ pager(data.pager, '/admin/ui/billing', query) }}
+</div>
+
+{% endblock %}

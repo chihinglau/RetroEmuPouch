@@ -484,6 +484,7 @@ PC (peer_host)  ──一次性 code──►  App
 | 2026-11-02 | 待决策 | v0.1 初稿输出 | 基础账号/配对/会员/云存档方案 |
 | 2026-11-02 | 待决策 | v0.2 补充 CMS + 同意管理 | 新增 `cms_documents`/`app_configs`/`consent_records` 三表、CMS 公开端点、Admin 管理端点、客户端改造方案、Phase 2/3 提前 |
 | 2026-11-04 | 实施者 | 公开内容与账号后端地址解耦 | `CloudConfigService` 的 `load()`/`fetchDoc()` 不再经 `effectiveBaseUrl`，硬走公网 `kDefaultBackendUrl`；隐私政策/协议/备案号/客服信息等属于任何用户均可访问的公开内容，不受调试入口私有地址影响。同时修正 `ConsentGate` 导航、账号页首帧红屏、关于页动态化、seed 默认项 8→10 条 |
+| 2026-11-04 | 实施者 | 补齐完整运营后台（Phase 7） | 原后台仅 CMS/AppConfig，注册用户与权益不可运维。新增 `users.is_active` + `admin_audit_logs`、迁移 0002 + 运行时 schema 自愈、`admin_service` 分页/统计/CRUD、`billing_service` 公共权益写入、Admin JSON API 与 11 个 Web UI 页面。决策：人工调整权益不写账单流水（避免污染对账）、云存档只展示元数据不解密、删除用户级联且不可恢复、所有写操作强制审计 |
 
 ---
 
@@ -550,6 +551,20 @@ PC (peer_host)  ──一次性 code──►  App
 - [x] 复用 `cms_service`，与 `/admin` JSON API 同源；`config.py` 新增 `ADMIN_WEB_PASSWORD`（生产务必通过环境变量修改）
 - [x] `requirements.txt` 加 `jinja2`；`main.py` 注册 `admin_ui_router`
 - [x] 冒烟测试：TestClient 端到端通过（未授权 303→登录 / 错误口令 401 / 登录设 cookie / 已授权控制台 / 草稿创建并出现在列表）
+
+### ✅ Phase 7：完整运营后台（2026-11-04，100%）
+
+> 起因：Phase 6 的后台只有 CMS 文档 + AppConfig + 同意统计，**注册用户信息与权益管理完全空白**，后期运维无法开展。本阶段补齐用户、权益与全部资源的管理能力，并提供同等能力的 JSON API 与操作审计。
+
+- [x] **数据层**：`users.is_active`（禁用账号，不删数据；`get_current_user` 校验，已签发 JWT 立即失效）；新增 `admin_audit_logs` 表（actor / action / target_type / target_id / detail JSON / created_at）。
+- [x] **迁移**：`alembic/versions/0002_admin_management.py`（幂等；`with op.batch_alter_table` 兼容 SQLite）；另加 `app/services/schema_bootstrap.py` 在 `main.py` lifespan 里幂等补列/补表，老库忘记跑迁移也能直接升级。
+- [x] **服务层**：`app/services/admin_service.py` 统一分页（`{items, pager}`）、仪表盘统计、用户 CRUD、各类资源列表与删除；`billing_service` 新增 public `set_entitlement()` / `set_trial()` / `entitlement_state()`（购买链路 `_grant_entitlement` 保持原样）。
+- [x] **Admin JSON API**（`app/routers/admin.py`）：stats / users（列表·详情·PATCH·重置密码·DELETE）/ entitlements / cloud-saves / pairings / consents / billing-transactions / audit-logs / `PUT /admin/users/{id}/entitlement` / `POST .../trial`，全部 `Depends(require_admin)`，写操作自动写审计。
+- [x] **Admin Web UI**（`app/admin_ui.py` + `app/routers/admin_ui/{users,operations,content}.py` + 12 个模板）：统一顶部导航与分页；运营概览、用户列表/详情、权益总览、云存档、配对设备、同意记录、账单流水、审计日志、CMS 文档、AppConfig 共 11 个页面。
+- [x] **鉴权收敛**：`app/admin_guard.py` 提供 `ui_admin` 依赖，未登录抛 `NeedLogin`，由 `main.py` 的 exception_handler 统一 303 跳登录页；表单动作经 `perform()` 统一处理业务异常提示与审计落库。
+- [x] **自测**：`tests/test_admin_management.py` 44 项端到端通过（临时 SQLite，覆盖鉴权、11 个页面、用户 CRUD、禁用生效、权益授予/撤销/试用、资源删除、CMS/Config 编辑、Admin API、审计留痕、级联删除）。
+
+> 设计约定：后台人工调整权益**不写 `billing_transactions`**（保持购买流水可对账），仅记入审计日志；云存档只展示元数据，**服务端不解密**；删除用户为级联且不可恢复，UI 有二次确认。详细运维说明见 `docs/skills.md` §24.2.2。
 
 ---
 
@@ -1863,6 +1878,7 @@ D:\RetroEmuPouch\
 | ~~App 云存档 UI（列表/上传/下载/删除）~~ | 会员账号 | ~~P2~~ | ✅ **已完成（2026-11-04）** |
 | 生产部署（本地服务器 + 公网域名 GamePouch.cn；Alembic 初始迁移已生成 `0001_initial.py`） | 云服务器到位（已由本地部署 + 公网域名满足） | P1 | ✅ **已完成（2026-11-04，本地部署 + 公网域名已满足条件，无需另租云服务器）** |
 | ~~真机联调修复：公开内容解耦 / ConsentGate 导航 / 账号页首帧红屏 / 关于页动态化~~ | 真机验证 | ~~P0~~ | ✅ **已完成（2026-11-04，见文末「端到端验证记录」）** |
+| ~~完整运营后台：用户 / 权益 / 资源 / 统计 / 审计~~ | 运维可用 | ~~P0~~ | ✅ **已完成（2026-11-04，Phase 7；`docs/skills.md` §24.2.2）** |
 
 ### 公网地址
 
@@ -1982,6 +1998,23 @@ start "" /MIN cloudflared.exe tunnel --retries 9999 run --token <token> retroemu
 | `features/settings/settings_sheet.dart` | **修改（第三波）** | 「关于与支持」页展示云端配置（客服邮箱/反馈入口/隐私政策 URL/备案号/官方社群/同步状态），去掉硬编码 github.io 旧 URL；每次打开重拉 `load()` 并 `_changes.ping()` 刷新 |
 | `tools/account_backend/app/services/seed.py` | **修改（第三波）** | AppConfig 默认项 8→10 条（新增 `privacy_policy_url` / `terms_url`），`feedback_email` 改正确域名 |
 
+### 后端文件变更清单（2026-11-04 第四波：完整运营后台）
+
+| 文件 | 变更 | 说明 |
+|---|---|---|
+| `app/models/admin.py` | 新增 | `AdminAuditLog` 审计日志表（与业务表解耦，用户删除后日志保留） |
+| `app/models/user.py` | 修改 | 新增 `is_active`（`server_default=sa.true()`） |
+| `app/services/schema_bootstrap.py` | 新增 | 启动时幂等补列/补表，老库免迁移平滑升级 |
+| `app/services/admin_service.py` | 新增 | 统一分页、仪表盘统计、用户 CRUD、各类资源列表与审计 |
+| `app/services/billing_service.py` | 修改 | 新增 public `set_entitlement()` / `set_trial()` / `entitlement_state()` / `TIER_CHOICES` |
+| `app/admin_guard.py` | 新增 | UI 鉴权依赖、模板渲染入口、`NeedLogin` 异常 |
+| `app/admin_ui.py`、`app/routers/admin_ui/{__init__,users,operations,content,_common}.py` | 重写/新增 | 仪表盘 + 用户/权益/云存档/配对/同意/流水/审计/CMS/Config 共 11 页 |
+| `app/templates/admin/*` | 重写/新增 | `base.html`（统一导航）、`_macros.html`（分页/状态标签）与各业务页 |
+| `app/routers/admin.py`、`app/schemas/admin.py` | 扩展/新增 | 完整 Admin JSON API 与请求 schema |
+| `app/dependencies.py`、`app/main.py` | 修改 | 禁用账号校验、schema 自愈、统一登录重定向 |
+| `alembic/versions/0002_admin_management.py` | 新增 | 幂等迁移：`users.is_active` + `admin_audit_logs` |
+| `tests/test_admin_management.py` | 新增 | 44 项端到端自测（临时 SQLite，不碰真实库） |
+
 ### 端到端验证记录（2026-11-03/04，华为 OXF-AN10）
 
 | 验证点 | 结果 | 证据 |
@@ -2007,3 +2040,9 @@ start "" /MIN cloudflared.exe tunnel --retries 9999 run --token <token> retroemu
 | 「关于与支持」展示云端配置并可刷新（第三波） | ✅ | 真机页面显示客服邮箱 `chihinglau@163.com`、隐私政策 `https://api.gamepouch.cn/privacy`、官方社群，底部「以上资料已与云端配置同步」 |
 | 账号页首帧不再红屏（第三波） | ✅ | 重启后 hilog 无 `LateInitializationError`；`_ready` 守卫生效 |
 | seed 默认项计数 | ✅ | `seed_app_configs` 现为 10 条默认 AppConfig |
+| 运营后台 11 个页面渲染（第四波） | ✅ | `python tests/test_admin_management.py`：全部页面 200 且含预期标题 |
+| 用户管理全链路（第四波） | ✅ | 编辑资料 / 禁用后已签发 JWT 403 / 解禁 / 重置密码 / 级联删除，均通过 |
+| 权益管理全链路（第四波） | ✅ | 授予月档 30 天、终身档、撤销回 free、开启与清除试用，均通过；`cloud_save_enabled` 随档位变化 |
+| Admin JSON API（第四波） | ✅ | stats / users / entitlement PUT / 各列表端点均 200，分页结构一致 |
+| 审计留痕与迁移（第四波） | ✅ | `admin_audit_logs` 覆盖 user.update / entitlement.set / cms.publish / config.update / cloud_save.delete；`alembic 0002` 与运行时自愈幂等 |
+| 自测总计 | ✅ | **44 项全部通过**，`python -m compileall -q app` 退出码 0 |

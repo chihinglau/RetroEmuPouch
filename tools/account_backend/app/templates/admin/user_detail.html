@@ -1,0 +1,129 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import state_tag %}
+{% set u = detail.user %}
+{% set e = detail.ent %}
+{% block title %}用户 {{ u.email }} · 管理后台{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>用户详情 <span class="mono" style="font-size:14px;font-weight:400">{{ u.email }}</span></h1>
+  <p class="muted"><a class="link" href="/admin/ui/users">← 返回用户列表</a> · ID <span class="mono">{{ u.id }}</span> · 注册于 {{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '-' }}</p>
+</div>
+
+<div class="card">
+  <div class="stats">
+    <div class="stat"><div class="n">{{ detail.save_count }}</div><div class="l">云存档（{{ '%.1f'|format(detail.save_bytes / 1048576) }} MB）</div></div>
+    <div class="stat"><div class="n">{{ detail.pairing_count }}</div><div class="l">配对设备</div></div>
+    <div class="stat"><div class="n">{{ detail.txn_count }}</div><div class="l">账单流水</div></div>
+    <div class="stat"><div class="n">{{ detail.consent_count }}</div><div class="l">同意记录</div></div>
+    <div class="stat"><div class="n">{{ state_tag(detail.ent_state) }}</div><div class="l">当前权益</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <h2>基本资料</h2>
+  <form method="post" action="/admin/ui/users/{{ u.id }}/update" class="row">
+    <div><label>邮箱</label><input name="email" type="email" value="{{ u.email }}" required></div>
+    <div><label>昵称</label><input name="display_name" value="{{ u.display_name }}" required></div>
+    <div class="narrow"><label>账号状态</label>
+      {% if u.is_active %}<span class="tag ok">正常</span>{% else %}<span class="tag bad">已禁用</span>{% endif %}
+    </div>
+    <div class="actions"><button type="submit">保存资料</button></div>
+  </form>
+  <form method="post" action="/admin/ui/users/{{ u.id }}/toggle-active" class="inline"
+        onsubmit="return confirm('确认{{ '禁用' if u.is_active else '启用' }}该账号？')">
+    <button type="submit" class="ghost sm">{{ '禁用账号' if u.is_active else '解除禁用' }}</button>
+  </form>
+</div>
+
+<div class="card">
+  <h2>权益管理</h2>
+  <p class="muted">
+    当前档位 <span class="mono">{{ e.tier if e else '无记录' }}</span> ·
+    {% if e and e.is_lifetime %}终身有效{% elif e and e.expiry_at %}到期 {{ e.expiry_at.strftime('%Y-%m-%d %H:%M') }}{% else %}无到期时间{% endif %}
+    · 试用开始 {{ e.trial_start.strftime('%Y-%m-%d') if e and e.trial_start else '未开启' }}
+    · 云存档 {{ '已解锁' if e and e.cloud_save_enabled else '未解锁' }} · 去广告 {{ '是' if e and e.is_ad_free else '否' }}
+  </p>
+  <form method="post" action="/admin/ui/users/{{ u.id }}/entitlement">
+    <div class="row">
+      <div><label>会员档位（选择 free 即撤销权益）</label>
+        <select name="tier">
+          {% for t in tiers %}<option value="{{ t }}" {{ 'selected' if e and e.tier == t else '' }}>{{ t }}</option>{% endfor %}
+        </select>
+      </div>
+      <div class="narrow"><label>有效天数（0/空 = 按档位默认周期）</label><input name="duration_days" type="number" min="1" max="3650" placeholder="留空按档位"></div>
+      <div><label>或指定到期时间（优先于天数）</label><input name="expiry_at" type="datetime-local"></div>
+    </div>
+    <label style="display:block;margin-bottom:10px"><input type="checkbox" name="lifetime" value="1"> 设为终身有效（忽略到期时间）</label>
+    <button type="submit">应用权益变更</button>
+  </form>
+  <form method="post" action="/admin/ui/users/{{ u.id }}/trial" class="inline"
+        onsubmit="return confirm('确认{{ '清除' if e and e.trial_start else '开启' }}试用？')">
+    <input type="hidden" name="enabled" value="{{ '0' if e and e.trial_start else '1' }}">
+    <button type="submit" class="ghost sm">{{ '清除试用记录' if e and e.trial_start else '开启 7 天试用' }}</button>
+  </form>
+  <span class="muted" style="margin-left:8px">人工调整不写账单流水，仅记入审计日志。</span>
+</div>
+
+<div class="card">
+  <h2>重置密码</h2>
+  <form method="post" action="/admin/ui/users/{{ u.id }}/reset-password" class="row"
+        onsubmit="return confirm('确认重置该用户密码？原密码将立即失效。')">
+    <div><label>新密码（至少 8 位）</label><input name="new_password" type="text" minlength="8" required placeholder="输入新密码"></div>
+    <div class="actions"><button type="submit" class="ghost">重置密码</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <h2>关联资源</h2>
+  <h3>云存档（最近 20 条）</h3>
+  <table>
+    <thead><tr><th>名称</th><th>大小</th><th>更新时间</th></tr></thead>
+    <tbody>
+    {% for b in detail.saves %}
+      <tr><td>{{ b.save_name }}</td><td>{{ '%.1f'|format(b.size_bytes / 1024) }} KB</td><td class="nowrap">{{ b.updated_at.strftime('%Y-%m-%d %H:%M') if b.updated_at else '-' }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">无云存档</td></tr>{% endfor %}
+    </tbody>
+  </table>
+
+  <h3>配对设备（最近 20 条）</h3>
+  <table>
+    <thead><tr><th>设备名</th><th>最近活跃</th><th>创建时间</th></tr></thead>
+    <tbody>
+    {% for p in detail.pairings %}
+      <tr><td>{{ p.pc_name }}</td><td class="nowrap">{{ p.last_seen_at.strftime('%Y-%m-%d %H:%M') if p.last_seen_at else '-' }}</td><td class="nowrap">{{ p.created_at.strftime('%Y-%m-%d') if p.created_at else '-' }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">无配对设备</td></tr>{% endfor %}
+    </tbody>
+  </table>
+
+  <h3>账单流水（最近 20 条）</h3>
+  <table>
+    <thead><tr><th>平台</th><th>SKU</th><th>状态</th><th>时间</th></tr></thead>
+    <tbody>
+    {% for t in detail.txns %}
+      <tr><td>{{ t.platform }}</td><td class="mono">{{ t.sku }}</td><td>{{ state_tag(t.status) }}</td><td class="nowrap">{{ t.created_at.strftime('%Y-%m-%d %H:%M') if t.created_at else '-' }}</td></tr>
+    {% else %}<tr><td colspan="4" class="muted">无账单流水</td></tr>{% endfor %}
+    </tbody>
+  </table>
+
+  <h3>同意记录（最近 20 条）</h3>
+  <table>
+    <thead><tr><th>文档</th><th>版本</th><th>同意时间</th></tr></thead>
+    <tbody>
+    {% for c in detail.consents %}
+      <tr><td class="mono">{{ c.doc_key }}</td><td>v{{ c.version }}</td><td class="nowrap">{{ c.consented_at.strftime('%Y-%m-%d %H:%M') if c.consented_at else '-' }}</td></tr>
+    {% else %}<tr><td colspan="3" class="muted">无同意记录</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="card danger-zone">
+  <h2>危险操作</h2>
+  <p class="muted">删除用户会级联清除其权益、云存档、配对设备、账单流水与同意记录，且不可恢复。审计日志会保留本次操作。</p>
+  <form method="post" action="/admin/ui/users/{{ u.id }}/delete"
+        onsubmit="return confirm('⚠️ 确认永久删除用户 {{ u.email }} 及其全部关联数据？此操作不可恢复！')">
+    <button type="submit" class="danger">永久删除该用户</button>
+  </form>
+</div>
+
+{% endblock %}

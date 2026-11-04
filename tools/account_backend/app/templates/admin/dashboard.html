@@ -1,78 +1,79 @@
 {% extends "admin/base.html" %}
-{% block title %}控制台 · 管理后台{% endblock %}
+{% from "admin/_macros.html" import state_tag %}
+{% block title %}运营概览 · 管理后台{% endblock %}
 {% block content %}
 
 <div class="card">
-  <h1>控制台</h1>
-  <p class="muted">CMS 文档、AppConfig 与同意统计。生产环境请修改 <code>ADMIN_WEB_PASSWORD</code> 与 <code>ADMIN_TOKEN_SECRET</code>。</p>
+  <h1>运营概览</h1>
+  <p class="muted">数据实时统计 · {{ stats.generated_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC 视图 · 生产环境请修改 <code>ADMIN_WEB_PASSWORD</code> 与 <code>ADMIN_TOKEN_SECRET</code>。</p>
 </div>
 
-<!-- CMS 文档 -->
 <div class="card">
-  <h2>CMS 文档</h2>
-  <table>
-    <thead><tr><th>doc_key</th><th>语言</th><th>版本</th><th>状态</th><th>标题</th><th></th></tr></thead>
-    <tbody>
-    {% for d in docs %}
-      <tr>
-        <td>{{ d.doc_key }}</td>
-        <td>{{ d.language }}</td>
-        <td>{{ d.version }}</td>
-        <td><span class="tag {{ d.status }}">{{ d.status }}</span></td>
-        <td>{{ d.title }}</td>
-        <td>
-          {% if d.status == 'draft' %}
-          <form method="post" action="/admin/ui/docs/{{ d.id }}/publish" style="display:inline">
-            <button type="submit">发布</button>
-          </form>
-          {% endif %}
-        </td>
-      </tr>
-    {% endfor %}
-    </tbody>
-  </table>
+  <div class="stats">
+    <div class="stat"><div class="n">{{ stats.total_users }}</div><div class="l">注册用户</div></div>
+    <div class="stat"><div class="n">{{ stats.active_users }}</div><div class="l">正常账号</div></div>
+    <div class="stat"><div class="n">{{ stats.disabled_users }}</div><div class="l">已禁用</div></div>
+    <div class="stat"><div class="n">{{ stats.new_7d }}</div><div class="l">近 7 日新增</div></div>
+    <div class="stat"><div class="n">{{ stats.cloud_save_count }}</div><div class="l">云存档数（{{ '%.1f'|format(stats.cloud_save_bytes / 1048576) }} MB）</div></div>
+    <div class="stat"><div class="n">{{ stats.pairing_count }}</div><div class="l">配对设备</div></div>
+    <div class="stat"><div class="n">{{ stats.consent_count }}</div><div class="l">同意记录</div></div>
+    <div class="stat"><div class="n">{{ stats.billing_count }}</div><div class="l">账单流水</div></div>
+    <div class="stat"><div class="n">{{ stats.audit_count }}</div><div class="l">后台操作日志</div></div>
+  </div>
+</div>
 
-  <h2 style="margin-top:18px">新建草稿</h2>
-  <form method="post" action="/admin/ui/docs">
-    <div class="row">
-      <div><label>doc_key</label><input name="doc_key" placeholder="privacy_policy / eula" required></div>
-      <div><label>语言</label>
-        <select name="language"><option value="zh">zh</option><option value="en">en</option></select>
-      </div>
-      <div><label>版本号</label><input name="version" type="number" value="1" min="1" required></div>
+<div class="card">
+  <div class="row">
+    <div>
+      <h2>会员档位分布</h2>
+      <table>
+        <thead><tr><th>档位</th><th>人数</th></tr></thead>
+        <tbody>
+        {% for tier, n in stats.tier_counts.items() %}
+          <tr><td class="mono">{{ tier }}</td><td>{{ n }}</td></tr>
+        {% else %}
+          <tr><td colspan="2" class="muted">暂无权益记录</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
     </div>
-    <label>标题</label><input name="title" required>
-    <label>摘要</label><input name="summary">
-    <label>正文（Markdown）</label><textarea name="content" rows="6" required></textarea>
-    <button type="submit">创建草稿</button>
-  </form>
+    <div>
+      <h2>权益生效状态</h2>
+      <table>
+        <thead><tr><th>状态</th><th>人数</th></tr></thead>
+        <tbody>
+        {% for s, n in stats.state_counts.items() %}
+          <tr><td>{{ state_tag(s) }}</td><td>{{ n }}</td></tr>
+        {% else %}
+          <tr><td colspan="2" class="muted">暂无权益记录</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
-<!-- AppConfig -->
 <div class="card">
-  <h2>AppConfig（客户端动态配置）</h2>
+  <h2>最近注册用户 <a class="link" style="font-size:13px;font-weight:400" href="/admin/ui/users">查看全部 →</a></h2>
+  <div class="scroll">
   <table>
-    <thead><tr><th>config_key</th><th>config_value</th><th>description</th><th></th></tr></thead>
+    <thead><tr><th>邮箱</th><th>昵称</th><th>状态</th><th>权益</th><th>注册时间</th><th></th></tr></thead>
     <tbody>
-    {% for c in configs %}
-      <form method="post" action="/admin/ui/config">
+    {% for u in stats.recent_users %}
       <tr>
-        <td>{{ c.config_key }}<input type="hidden" name="config_key" value="{{ c.config_key }}"></td>
-        <td><input name="config_value" value="{{ c.config_value }}"></td>
-        <td><input name="description" value="{{ c.description or '' }}"></td>
-        <td><button type="submit">保存</button></td>
+        <td class="mono">{{ u.email }}</td>
+        <td>{{ u.display_name }}</td>
+        <td>{% if u.is_active %}<span class="tag ok">正常</span>{% else %}<span class="tag bad">已禁用</span>{% endif %}</td>
+        <td>{{ state_tag(u.state) }}</td>
+        <td class="nowrap">{{ u.created_at.strftime('%Y-%m-%d %H:%M') if u.created_at else '-' }}</td>
+        <td><a class="link" href="/admin/ui/users/{{ u.id }}">管理</a></td>
       </tr>
-      </form>
+    {% else %}
+      <tr><td colspan="6" class="muted">暂无注册用户</td></tr>
     {% endfor %}
     </tbody>
   </table>
-</div>
-
-<!-- 同意统计 -->
-<div class="card">
-  <h2>同意统计</h2>
-  <p>隐私政策（privacy_policy）：总同意 {{ privacy_stats.total_consents }} 次，最新发布版本 {{ privacy_stats.latest_published_version }}</p>
-  <p>用户协议（eula）：总同意 {{ eula_stats.total_consents }} 次，最新发布版本 {{ eula_stats.latest_published_version }}</p>
+  </div>
 </div>
 
 {% endblock %}

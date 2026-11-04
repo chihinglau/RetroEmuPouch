@@ -1,0 +1,41 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import pager %}
+{% block title %}配对设备管理 · 管理后台{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>配对设备</h1>
+  <p class="muted">管理用户绑定的 PC 端；解绑后该设备需重新配对。</p>
+  <form method="get" action="/admin/ui/pairings" class="filters">
+    <div><label>设备名</label><input name="q" value="{{ q }}" placeholder="模糊搜索"></div>
+    <div><label>用户 ID（可留空）</label><input name="user_id" value="{{ user_id }}" placeholder="精确匹配"></div>
+    <div class="actions"><button type="submit">筛选</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="scroll">
+  <table>
+    <thead><tr><th>用户</th><th>设备名</th><th>最近活跃</th><th>创建时间</th><th></th></tr></thead>
+    <tbody>
+    {% for p in data['items'] %}
+      <tr>
+        <td class="mono">{{ p.user_email }}</td>
+        <td>{{ p.pc_name }}</td>
+        <td class="nowrap">{{ p.last_seen_at.strftime('%Y-%m-%d %H:%M') if p.last_seen_at else '-' }}</td>
+        <td class="nowrap">{{ p.created_at.strftime('%Y-%m-%d %H:%M') if p.created_at else '-' }}</td>
+        <td>
+          <form method="post" action="/admin/ui/pairings/{{ p.id }}/delete"
+                onsubmit="return confirm('确认解绑该设备？')">
+            <button type="submit" class="danger sm">解绑</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}<tr><td colspan="5" class="muted">暂无配对设备</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ pager(data.pager, '/admin/ui/pairings', query) }}
+</div>
+
+{% endblock %}

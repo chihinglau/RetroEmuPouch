@@ -260,6 +260,7 @@
 | 2026-11-04 | 实施者 | 云存档后端完整链路通过 | 后端 4 个云存档端点全部冒烟测试通过：multipart upload → list → download（二进制 + X-Save-SHA256 header）→ delete；合规防线 `require_cloud_save_entitlement` 依赖守卫：免费/试用用户 403，付费档 200。App 侧 CloudClient 对应 4 方法完整实现。 |
 | 2026-11-04 | 实施者 | 统一后端入口 + 登录态 | 新增 `effectiveBaseUrl()` helper（**账号域** HTTP 客户端共享）+ `kDefaultBackendUrl = 'https://api.gamepouch.cn'`（公网默认）；统一登录态走 `AccountStore` + `kAccountToken`（HttpAccountService / HttpReceiptVerifier / ConsentGate 共享），消除旧 CloudConfig（FlutterSecureStorage）平行状态。**2026-11-04 修订**：`CloudConfigService` 已移出该 helper 适用范围，公开内容固定走公网域名，不再读写 `AccountStore`。 |
 | 2026-11-04 | 实施者 | 真机联调修复：公开内容解耦 / 导航 / 红屏 / 关于页动态化 | `CloudConfigService.load()/fetchDoc()` 硬走 `kDefaultBackendUrl`（政策/协议/备案号/客服信息属公开内容，不受调试入口私有地址影响）；`ConsentGate` 作为 `runApp` 根组件上方无 Navigator，改 `navigatorKey: _navKey` + `_navKey.currentState!.push()` 修复「查看隐私政策/用户协议」点击无响应；`account_page.dart` 加 `_ready` 守卫修复首帧 `LateInitializationError` 红屏；调试入口地址默认改公网、真实后端始终 Http、空地址回退公网；「关于与支持」改为展示云端配置并在打开时刷新，去掉硬编码 github.io 旧 URL；`LegalConstants` / `seed.py` 默认值更新（AppConfig 8→10 条，新增 `privacy_policy_url`/`terms_url`）。华为真机 `uitest` 逐级点击验证通过。 |
+| 2026-11-04 | 实施者 | 补齐完整运营后台（Phase 7） | 后台原本只有 CMS/AppConfig，用户与权益完全不可运维。新增 `users.is_active`（禁用后已签发 JWT 立即失效）与 `admin_audit_logs`；`admin_service` 提供分页/统计/用户 CRUD；`billing_service` 暴露 `set_entitlement()` / `set_trial()` 供后台授予/撤销 7 档权益、设有效期/终身/试用；11 个 Web UI 页面 + 完整 Admin JSON API。人工调整权益不写 `billing_transactions`（仅记审计），避免污染购买对账。44 项端到端自测通过，详见 `design-account-backend.md` Phase 7。 |
 
 ---
 

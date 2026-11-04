@@ -5,45 +5,102 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>{% block title %}账号后端管理{% endblock %}</title>
   <style>
-    :root { color-scheme: light dark; }
+    :root { color-scheme: light; }
     * { box-sizing: border-box; }
     body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
            margin: 0; background: #f4f5f7; color: #1f2329; }
-    header { background: #1f2329; color: #fff; padding: 12px 20px;
-             display: flex; align-items: center; justify-content: space-between; }
+    header { background: #1f2329; color: #fff; padding: 10px 20px; }
+    .header-top { display: flex; align-items: center; justify-content: space-between; }
     header a { color: #fff; text-decoration: none; }
-    main { max-width: 960px; margin: 20px auto; padding: 0 16px; }
+    .header-top a.brand { font-size: 16px; font-weight: 700; }
+    .header-top .meta { font-size: 12px; color: #b9c0c8; }
+    nav { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; }
+    nav a { font-size: 13px; padding: 5px 11px; border-radius: 6px; color: #d7dce2; }
+    nav a:hover { background: #333a44; }
+    nav a.on { background: #4fc3f7; color: #063; font-weight: 700; }
+    main { max-width: 1240px; margin: 20px auto; padding: 0 16px 40px; }
     .card { background: #fff; border-radius: 10px; padding: 16px 18px; margin-bottom: 18px;
             box-shadow: 0 1px 3px rgba(0,0,0,.08); }
     h1 { font-size: 20px; margin: 0 0 4px; }
     h2 { font-size: 16px; margin: 0 0 12px; border-left: 4px solid #4fc3f7; padding-left: 8px; }
-    table { width: 100%; border-collapse: collapse; font-size: 14px; }
-    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }
+    h3 { font-size: 14px; margin: 16px 0 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid #eee; vertical-align: middle; }
+    th { color: #5f6772; font-weight: 600; background: #fafbfc; }
+    tr:hover td { background: #fafcfd; }
     input, textarea, select { width: 100%; padding: 7px 9px; margin: 4px 0 10px;
-            border: 1px solid #ccd0d6; border-radius: 6px; font: inherit; }
+            border: 1px solid #ccd0d6; border-radius: 6px; font: inherit; background: #fff; }
+    input[type=checkbox] { width: auto; margin: 0 6px 0 0; }
     label { font-size: 13px; color: #555; }
-    button { background: #4fc3f7; color: #063; border: 0; padding: 8px 14px;
+    button { background: #4fc3f7; color: #063; border: 0; padding: 7px 13px;
              border-radius: 6px; cursor: pointer; font: inherit; font-weight: 600; }
+    button:hover { filter: brightness(.95); }
     button.danger { background: #ff7043; color: #fff; }
-    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
-    .row > div { flex: 1; min-width: 140px; }
-    .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; }
-    .tag.published { background: #e3f6e8; color: #137333; }
-    .tag.draft { background: #fff4e0; color: #9a6700; }
-    .tag.archived { background: #eee; color: #666; }
-    .err { color: #c5221f; margin-bottom: 10px; }
+    button.ghost { background: #eef1f4; color: #333; }
+    button.sm { padding: 4px 9px; font-size: 12px; }
+    a.link { color: #0277bd; text-decoration: none; }
+    a.link:hover { text-decoration: underline; }
+    .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+    .row > div { flex: 1; min-width: 150px; }
+    .row > div.narrow { flex: 0 0 150px; min-width: 130px; }
+    .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+    .filters > div { flex: 1; min-width: 140px; }
+    .filters > div.actions { flex: 0 0 auto; min-width: 0; }
+    .filters label { display: block; }
+    .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; white-space: nowrap; }
+    .tag.published, .tag.ok, .tag.active { background: #e3f6e8; color: #137333; }
+    .tag.draft, .tag.trial, .tag.warn { background: #fff4e0; color: #9a6700; }
+    .tag.archived, .tag.free, .tag.muted { background: #eceff1; color: #546e7a; }
+    .tag.bad, .tag.disabled, .tag.expired { background: #fce8e6; color: #c5221f; }
+    .err { background: #fce8e6; color: #c5221f; padding: 10px 12px; border-radius: 6px; margin-bottom: 14px; }
     .muted { color: #888; font-size: 13px; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+    .stat { background: #f8fafc; border: 1px solid #e8edf2; border-radius: 8px; padding: 12px 14px; }
+    .stat .n { font-size: 24px; font-weight: 700; color: #1f2329; }
+    .stat .l { font-size: 12px; color: #68727e; margin-top: 2px; }
+    .pager { display: flex; align-items: center; gap: 10px; margin-top: 14px; font-size: 13px; }
+    .pager a { padding: 5px 10px; border: 1px solid #d6dce3; border-radius: 6px;
+               text-decoration: none; color: #0277bd; }
+    .pager a.disabled { color: #b0b7bf; pointer-events: none; }
+    .pager .info { color: #68727e; }
+    .inline { display: inline; }
+    .danger-zone { border-left: 4px solid #ff7043; padding-left: 12px; }
+    .nowrap { white-space: nowrap; }
+    .scroll { overflow-x: auto; }
     .login-wrap { max-width: 360px; margin: 80px auto; }
   </style>
 </head>
 <body>
   {% if not hide_header %}
   <header>
-    <a href="/admin/ui/"><strong>趣玩匣 · 账号后端管理</strong></a>
-    <a href="/admin/ui/logout">退出登录</a>
+    <div class="header-top">
+      <a class="brand" href="/admin/ui/">趣玩匣 · 账号后端管理</a>
+      <span class="meta">当前操作员：{{ admin or "root" }} · <a href="/admin/ui/logout">退出登录</a></span>
+    </div>
+    {% set menu = [
+      ("dashboard", "概览", "/admin/ui/"),
+      ("users", "用户", "/admin/ui/users"),
+      ("entitlements", "权益", "/admin/ui/entitlements"),
+      ("cloud_saves", "云存档", "/admin/ui/cloud-saves"),
+      ("pairings", "配对设备", "/admin/ui/pairings"),
+      ("consents", "同意记录", "/admin/ui/consents"),
+      ("billing", "账单流水", "/admin/ui/billing"),
+      ("audit", "审计日志", "/admin/ui/audit"),
+      ("cms", "CMS 文档", "/admin/ui/cms"),
+      ("config", "AppConfig", "/admin/ui/config")
+    ] %}
+    <nav>
+      {% for key, label, href in menu %}
+        <a href="{{ href }}" class="{{ 'on' if active == key else '' }}">{{ label }}</a>
+      {% endfor %}
+    </nav>
   </header>
   {% endif %}
   <main>
+    {% if request.query_params.get('err') %}
+      <div class="err">操作失败：{{ request.query_params.get('err') }}</div>
+    {% endif %}
     {% block content %}{% endblock %}
   </main>
 </body>

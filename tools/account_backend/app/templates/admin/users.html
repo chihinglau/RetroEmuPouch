@@ -1,0 +1,56 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import pager, state_tag %}
+{% block title %}用户管理 · 管理后台{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>用户管理</h1>
+  <p class="muted">共 {{ data.pager.total }} 位注册用户。可搜索、按档位/状态筛选，进入详情页编辑资料、调整权益、重置密码或删除账号。</p>
+  <form method="get" action="/admin/ui/users" class="filters">
+    <div><label>邮箱 / 昵称</label><input name="q" value="{{ q }}" placeholder="模糊搜索"></div>
+    <div class="narrow"><label>会员档位</label>
+      <select name="tier">
+        <option value="">全部</option>
+        {% for t in tiers %}<option value="{{ t }}" {{ 'selected' if tier == t else '' }}>{{ t }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="narrow"><label>账号状态</label>
+      <select name="state">
+        <option value="">全部</option>
+        <option value="active" {{ 'selected' if state == 'active' else '' }}>正常</option>
+        <option value="disabled" {{ 'selected' if state == 'disabled' else '' }}>已禁用</option>
+      </select>
+    </div>
+    <div class="actions"><button type="submit">筛选</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="scroll">
+  <table>
+    <thead>
+      <tr><th>邮箱</th><th>昵称</th><th>状态</th><th>档位</th><th>权益状态</th><th>到期</th><th>云存档</th><th>注册时间</th><th></th></tr>
+    </thead>
+    <tbody>
+    {% for u in data['items'] %}
+      <tr>
+        <td class="mono">{{ u.email }}</td>
+        <td>{{ u.display_name }}</td>
+        <td>{% if u.is_active %}<span class="tag ok">正常</span>{% else %}<span class="tag bad">已禁用</span>{% endif %}</td>
+        <td class="mono">{{ u.tier }}</td>
+        <td>{{ state_tag(u.ent_state) }}</td>
+        <td class="nowrap">{{ u.expiry_at.strftime('%Y-%m-%d') if u.expiry_at else ('终身' if u.tier.endswith('_lifetime') else '-') }}</td>
+        <td>{{ u.save_count }}</td>
+        <td class="nowrap">{{ u.created_at.strftime('%Y-%m-%d') if u.created_at else '-' }}</td>
+        <td><a class="link" href="/admin/ui/users/{{ u.id }}">管理 →</a></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="muted">没有匹配的用户</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ pager(data.pager, '/admin/ui/users', query) }}
+</div>
+
+{% endblock %}

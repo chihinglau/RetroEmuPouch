@@ -33,6 +33,9 @@ async def get_current_user(
     user = db.get(User, user_id) if user_id else None
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="user not found")
+    # 后台禁用后，已签发的 JWT 立即失效（数据保留，可随时解禁）
+    if not getattr(user, "is_active", True):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="account_disabled")
     return user
 
 
@@ -48,7 +51,10 @@ async def get_current_user_optional(
     if not payload or payload.get("type") != "access":
         return None
     user_id = payload.get("sub")
-    return db.get(User, user_id) if user_id else None
+    user = db.get(User, user_id) if user_id else None
+    if user is not None and not getattr(user, "is_active", True):
+        return None
+    return user
 
 
 async def require_admin(request: Request) -> str:

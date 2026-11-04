@@ -1,6 +1,7 @@
 ﻿from ..database import Base
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, DateTime, func, Boolean, Integer
+import sqlalchemy as sa
 import uuid
 from datetime import datetime, timezone
 
@@ -18,6 +19,10 @@ class User(Base):
     display_name: Mapped[str] = mapped_column(String(64), nullable=False, default="Player")
     trial_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # 后台可禁用账号（不删除数据）；token 校验会拒绝被禁用用户。
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False, server_default=sa.true()
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
     entitlement: Mapped["Entitlement | None"] = relationship(back_populates="user", uselist=False, cascade="all, delete-orphan")

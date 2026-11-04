@@ -1,0 +1,41 @@
+{% extends "admin/base.html" %}
+{% block title %}AppConfig · 管理后台{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>AppConfig 动态配置</h1>
+  <p class="muted">客户端「关于与支持」页与合规文档链接均从此处读取，修改后 App 重新进入页面即生效，无需发版。</p>
+</div>
+
+<div class="card">
+  <h2>配置项</h2>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>config_key</th><th>config_value</th><th>说明</th><th></th></tr></thead>
+    <tbody>
+    {% for c in configs %}
+      <form method="post" action="/admin/ui/config">
+      <tr>
+        <td class="mono">{{ c.config_key }}<input type="hidden" name="config_key" value="{{ c.config_key }}"></td>
+        <td><input name="config_value" value="{{ c.config_value }}"></td>
+        <td><input name="description" value="{{ c.description or '' }}"></td>
+        <td><button type="submit" class="sm">保存</button></td>
+      </tr>
+      </form>
+    {% else %}<tr><td colspan="4" class="muted">暂无配置项，可先在 <code>/admin/seed</code> 初始化</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<div class="card">
+  <h2>新增配置项</h2>
+  <form method="post" action="/admin/ui/config/add" class="row">
+    <div><label>config_key（唯一）</label><input name="config_key" placeholder="例如 contact_phone" required></div>
+    <div><label>config_value</label><input name="config_value"></div>
+    <div><label>说明</label><input name="description"></div>
+    <div class="actions"><button type="submit">新增</button></div>
+  </form>
+</div>
+
+{% endblock %}

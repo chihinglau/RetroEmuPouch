@@ -1,0 +1,42 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import pager %}
+{% block title %}同意记录 · 管理后台{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>同意记录（合规审计）</h1>
+  <p class="muted">谁在何时同意了哪个版本；user_id 为空表示未登录设备的匿名同意。共 {{ data.pager.total }} 条。</p>
+  <form method="get" action="/admin/ui/consents" class="filters">
+    <div><label>设备 ID / 用户 ID</label><input name="q" value="{{ q }}" placeholder="模糊搜索"></div>
+    <div class="narrow"><label>文档</label>
+      <select name="doc_key">
+        <option value="">全部</option>
+        <option value="privacy_policy" {{ 'selected' if doc_key == 'privacy_policy' else '' }}>privacy_policy</option>
+        <option value="eula" {{ 'selected' if doc_key == 'eula' else '' }}>eula</option>
+      </select>
+    </div>
+    <div class="actions"><button type="submit">筛选</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="scroll">
+  <table>
+    <thead><tr><th>用户</th><th>文档</th><th>版本</th><th>设备 ID</th><th>同意时间</th></tr></thead>
+    <tbody>
+    {% for c in data['items'] %}
+      <tr>
+        <td class="mono">{{ c.user_email }}</td>
+        <td class="mono">{{ c.doc_key }}</td>
+        <td>v{{ c.version }}</td>
+        <td class="mono">{{ c.device_id[:24] }}{% if c.device_id|length > 24 %}…{% endif %}</td>
+        <td class="nowrap">{{ c.consented_at.strftime('%Y-%m-%d %H:%M:%S') if c.consented_at else '-' }}</td>
+      </tr>
+    {% else %}<tr><td colspan="5" class="muted">暂无同意记录</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ pager(data.pager, '/admin/ui/consents', query) }}
+</div>
+
+{% endblock %}

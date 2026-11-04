@@ -2008,7 +2008,7 @@ cloudflared.exe tunnel --retries 9999 run --token <token> retroemupouch
 | 隐私政策（商店提交） | `https://api.gamepouch.cn/privacy` | 无需登录，服务端渲染 CMS 已发布 `privacy_policy` |
 | 用户协议（商店提交） | `https://api.gamepouch.cn/terms`（亦 `/eula`、`/user-agreement`） | 无需登录，渲染 `eula` |
 
-- 管理后台可：CMS 文档（隐私政策 / 用户协议）建草稿、发布、编辑；AppConfig 修改；同意统计查看。
+- 管理后台可：CMS 文档（隐私政策 / 用户协议）建草稿、编辑、发布；AppConfig 修改/新增；同意统计查看；**用户、权益与全部运营资源管理**（见 §24.2.2）。
 - 公开法律页由 `app/routers/legal_public.py` 提供（`markdown==3.7` 将 CMS 文档 Markdown 渲染为响应式 HTML），**直接作为应用商店「隐私政策 / 用户协议 URL」填写**。
 - **刷新法律文档到最新 v2 合规版**：首次部署或内容更新后跑一次 seed（已改为可就地更新已发布文档）：
   ```powershell
@@ -2017,6 +2017,44 @@ cloudflared.exe tunnel --retries 9999 run --token <token> retroemupouch
   python -c "from app.database import SessionLocal; from app.services.seed import run_seed; db=SessionLocal(); print(run_seed(db)); db.close()"
   ```
   版本号升高（v1→v2）会触发 App 端 ConsentGate 重新征求同意。
+
+### 24.2.2 运营后台：用户 / 权益 / 资源管理（2026-11-04 第四波）
+
+原先后台只有 CMS + AppConfig，注册用户与权益完全不可运维，现补齐完整管理功能。登录后顶部导航切换：
+
+| 页面 | 路径 | 能力 |
+|---|---|---|
+| 运营概览 | `/admin/ui/` | 注册数 / 正常 / 禁用 / 近 7 日新增 / 云存档数与容量 / 配对 / 同意 / 流水 / 审计条数，会员档位与生效状态分布、最近注册用户 |
+| 用户管理 | `/admin/ui/users` | 邮箱/昵称模糊搜索、按档位/状态筛选、分页 |
+| 用户详情 | `/admin/ui/users/{id}` | 编辑邮箱/昵称、禁用或解禁、重置密码、授予/撤销权益、开启/清除 7 天试用、查看关联云存档/配对/流水/同意记录、级联删除 |
+| 权益总览 | `/admin/ui/entitlements` | 按邮箱/档位/生效状态（免费·试用中·有效·已过期·终身有效）筛选，跳转对应玩家调整 |
+| 云存档 / 配对设备 | `/admin/ui/cloud-saves`、`/admin/ui/pairings` | 元数据列表（**不解密密文**）、按用户筛选、删除/解绑 |
+| 合规与对账 | `/admin/ui/consents`、`/admin/ui/billing` | 同意记录逐条明细、账单流水只读 |
+| 审计日志 | `/admin/ui/audit` | 所有后台写操作留痕（操作员·动作·目标·详情 JSON），用户删除后日志仍保留 |
+| CMS / 配置 | `/admin/ui/cms`、`/admin/ui/config` | 草稿创建/编辑/发布（表单自动给出合法建议版本号）、AppConfig 编辑/新增、同意统计 |
+
+**权益规则**（`billing_service.set_entitlement`）：
+- 7 档 `free / premium_{monthly,yearly,lifetime} / vip_{monthly,yearly,lifetime}`；`free` 即撤销（清终身标记与到期时间，保留试用记录）。
+- 到期优先级：终身标记 → 指定到期时间 → 有效天数 → 按 SKU 默认周期（月 1 / 年 12）。
+- **后台人工调整不写 `billing_transactions`**，避免污染购买流水，仅写审计日志。
+- 禁用账号后已签发 JWT 立即失效（`dependencies.get_current_user` 校验 `users.is_active`），数据保留可随时解禁。
+
+**Admin JSON API**（`Authorization: Bearer <admin JWT>`，用 `create_admin_token` 或 `/admin/ui/login` 同源 secret 签发）：
+`GET /admin/stats`、`GET /admin/users`、`GET /admin/users/{id}`、`PATCH /admin/users/{id}`、
+`POST /admin/users/{id}/reset-password`、`DELETE /admin/users/{id}`、
+`PUT /admin/users/{id}/entitlement`、`POST /admin/users/{id}/trial`、
+`GET /admin/entitlements`、`GET /admin/cloud-saves` + `DELETE /admin/cloud-saves/{id}`、
+`GET /admin/pairings` + `DELETE /admin/pairings/{id}`、`GET /admin/consents`、
+`GET /admin/billing-transactions`、`GET /admin/audit-logs`。列表统一返回 `{items, pager:{total,page,pages,page_size}}`。
+
+**升级与自测**：
+```powershell
+cd tools/account_backend
+alembic upgrade head     # 0002_admin_management：users.is_active + admin_audit_logs
+python tests/test_admin_management.py    # 44 项端到端自测（临时 SQLite，不碰真实库）
+```
+老库即使忘记跑迁移，启动时 `app/services/schema_bootstrap.py` 也会幂等补列/补表（dev 与生产均执行）。
+生产务必修改 `ADMIN_WEB_PASSWORD` 与 `ADMIN_TOKEN_SECRET`；删除用户属不可恢复操作，页面有二次确认。
 
 ### 24.3 ADB / 构建命令
 

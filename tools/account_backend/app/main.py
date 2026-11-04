@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse
 
+from .admin_guard import NeedLogin
 from .config import settings
 from .database import Base, engine
 from .routers import (
@@ -33,6 +35,9 @@ async def lifespan(app: FastAPI):
     else:
         print(f"[main] prod mode: skipping create_all, use `alembic upgrade head`. "
               f"Engine: {engine.url}", file=sys.stderr)
+    # 老库升级：create_all 不会补列，这里幂等补 users.is_active / admin_audit_logs
+    from .services.schema_bootstrap import ensure_runtime_schema
+    ensure_runtime_schema(engine)
     yield
 
 
@@ -53,6 +58,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.exception_handler(NeedLogin)
+async def _admin_need_login_handler(request: Request, exc: NeedLogin):
+    """管理后台页面未登录时跳登录页，而不是返回 JSON 401。"""
+    return RedirectResponse(url="/admin/ui/login", status_code=303)
+
 
 # 注册路由
 app.include_router(auth_router)

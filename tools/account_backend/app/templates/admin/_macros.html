@@ -1,0 +1,18 @@
+{% macro pager(p, base, query='') %}
+<nav class="pager">
+  <span class="info">共 {{ p.total }} 条 · 第 {{ p.page }}/{{ p.pages }} 页</span>
+  {% set extra = ('&' ~ query) if query else '' %}
+  <a href="{{ base }}?page=1{{ extra }}" class="{{ 'disabled' if p.page <= 1 else '' }}">首页</a>
+  <a href="{{ base }}?page={{ p.page - 1 }}{{ extra }}" class="{{ 'disabled' if p.page <= 1 else '' }}">上一页</a>
+  <a href="{{ base }}?page={{ p.page + 1 }}{{ extra }}" class="{{ 'disabled' if p.page >= p.pages else '' }}">下一页</a>
+  <a href="{{ base }}?page={{ p.pages }}{{ extra }}" class="{{ 'disabled' if p.page >= p.pages else '' }}">末页</a>
+</nav>
+{% endmacro %}
+
+{% macro state_tag(s) %}
+  {% if s in ['有效', '终身有效', 'verified'] %}<span class="tag ok">{{ s }}</span>
+  {% elif s in ['试用中', 'draft', 'pending'] %}<span class="tag warn">{{ s }}</span>
+  {% elif s in ['免费', '无记录', '免费档', '匿名设备'] %}<span class="tag muted">{{ s }}</span>
+  {% elif s in ['已过期', '已禁用', 'expired', 'rejected'] %}<span class="tag bad">{{ s }}</span>
+  {% else %}<span class="tag">{{ s }}</span>{% endif %}
+{% endmacro %}

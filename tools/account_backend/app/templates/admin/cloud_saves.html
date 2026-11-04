@@ -1,0 +1,43 @@
+{% extends "admin/base.html" %}
+{% from "admin/_macros.html" import pager %}
+{% block title %}云存档管理 · 管理后台{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h1>云存档管理</h1>
+  <p class="muted">客户端 AES-256-GCM 加密后上传，服务端只存密文，此处仅展示元数据、不解密内容。删除操作不可恢复。</p>
+  <form method="get" action="/admin/ui/cloud-saves" class="filters">
+    <div><label>存档名称</label><input name="q" value="{{ q }}" placeholder="模糊搜索"></div>
+    <div><label>用户 ID（可留空）</label><input name="user_id" value="{{ user_id }}" placeholder="精确匹配"></div>
+    <div class="actions"><button type="submit">筛选</button></div>
+  </form>
+</div>
+
+<div class="card">
+  <div class="scroll">
+  <table>
+    <thead><tr><th>用户</th><th>存档名称</th><th>大小</th><th>SHA256</th><th>创建</th><th>更新</th><th></th></tr></thead>
+    <tbody>
+    {% for b in data['items'] %}
+      <tr>
+        <td class="mono">{{ b.user_email }}</td>
+        <td>{{ b.save_name }}</td>
+        <td class="nowrap">{{ '%.1f'|format(b.size_bytes / 1024) }} KB</td>
+        <td class="mono">{{ b.sha256[:12] }}…</td>
+        <td class="nowrap">{{ b.created_at.strftime('%Y-%m-%d %H:%M') if b.created_at else '-' }}</td>
+        <td class="nowrap">{{ b.updated_at.strftime('%Y-%m-%d %H:%M') if b.updated_at else '-' }}</td>
+        <td>
+          <form method="post" action="/admin/ui/cloud-saves/{{ b.id }}/delete?back_query={{ query|urlencode }}"
+                onsubmit="return confirm('确认删除该云存档？')">
+            <button type="submit" class="danger sm">删除</button>
+          </form>
+        </td>
+      </tr>
+    {% else %}<tr><td colspan="7" class="muted">暂无云存档</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {{ pager(data.pager, '/admin/ui/cloud-saves', query) }}
+</div>
+
+{% endblock %}
