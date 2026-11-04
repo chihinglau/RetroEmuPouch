@@ -1,0 +1,15 @@
+{% extends "admin/base.html" %}
+{% set hide_header = true %}
+{% block title %}登录 · 管理后台{% endblock %}
+{% block content %}
+<div class="login-wrap card">
+  <h1>管理后台登录</h1>
+  <p class="muted">输入管理口令以进入账号后端管理界面。</p>
+  {% if error %}<div class="err">{{ error }}</div>{% endif %}
+  <form method="post" action="/admin/ui/login">
+    <label>管理口令</label>
+    <input type="password" name="password" autofocus required />
+    <button type="submit" style="width:100%">登录</button>
+  </form>
+</div>
+{% endblock %}

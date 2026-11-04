@@ -12,3 +12,5 @@ bcrypt==4.0.1          # passlib 1.7.4 与 bcrypt>=4.1 有兼容性问题，固�
 python-multipart==0.0.9
 httpx==0.27.2
 python-dotenv==1.0.1
+jinja2==3.1.4
+markdown==3.7

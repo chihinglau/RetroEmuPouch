@@ -5,3 +5,4 @@ from .cloud import router as cloud_router
 from .cms_public import router as cms_public_router
 from .consent import router as consent_router
 from .admin import router as admin_router
+from .legal_public import router as legal_public_router

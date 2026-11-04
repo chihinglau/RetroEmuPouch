@@ -60,6 +60,9 @@ dependencies:
   # signing + ad-slot IDs), so this plugin only affects the Android build.
   google_mobile_ads: ^9.2.0
 
+  # 云存档客户端 AES-256-GCM 加密（服务端不解密，合规红线）。
+  cryptography: ^2.7.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

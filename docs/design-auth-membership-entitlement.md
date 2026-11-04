@@ -119,6 +119,8 @@
 | §二.7 | "启动时 + App 回到前台刷新" | 当前未实现；本文 3.3 补刷新触发（G6） |
 | §二（隐含） | 权益设备本地 | 改为按 user_id 缓存 + active 选择（G1/G5/G8） |
 
+> **三份文档冲突裁决（2026-11-04 裁定）**：本文修订 `design-account-cloud-ads-membership.md` 的背离项；但若与 `design-account-backend.md`（**权威源**）冲突，以 `design-account-backend.md` 为准，且**文档与代码冲突以代码为最终裁定**。三份文档状态表以 `design-account-backend.md`「实施进度 / 客户端对接完成状态」一节（2026-11-04 真实落地）为同步依据。
+
 ---
 
 ## 5. 代码设计蓝图（仅设计，待确认后实现）

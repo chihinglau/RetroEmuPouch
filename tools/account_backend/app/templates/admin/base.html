@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}账号后端管理{% endblock %}</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+           margin: 0; background: #f4f5f7; color: #1f2329; }
+    header { background: #1f2329; color: #fff; padding: 12px 20px;
+             display: flex; align-items: center; justify-content: space-between; }
+    header a { color: #fff; text-decoration: none; }
+    main { max-width: 960px; margin: 20px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 10px; padding: 16px 18px; margin-bottom: 18px;
+            box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+    h1 { font-size: 20px; margin: 0 0 4px; }
+    h2 { font-size: 16px; margin: 0 0 12px; border-left: 4px solid #4fc3f7; padding-left: 8px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #eee; }
+    input, textarea, select { width: 100%; padding: 7px 9px; margin: 4px 0 10px;
+            border: 1px solid #ccd0d6; border-radius: 6px; font: inherit; }
+    label { font-size: 13px; color: #555; }
+    button { background: #4fc3f7; color: #063; border: 0; padding: 8px 14px;
+             border-radius: 6px; cursor: pointer; font: inherit; font-weight: 600; }
+    button.danger { background: #ff7043; color: #fff; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; }
+    .row > div { flex: 1; min-width: 140px; }
+    .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; }
+    .tag.published { background: #e3f6e8; color: #137333; }
+    .tag.draft { background: #fff4e0; color: #9a6700; }
+    .tag.archived { background: #eee; color: #666; }
+    .err { color: #c5221f; margin-bottom: 10px; }
+    .muted { color: #888; font-size: 13px; }
+    .login-wrap { max-width: 360px; margin: 80px auto; }
+  </style>
+</head>
+<body>
+  {% if not hide_header %}
+  <header>
+    <a href="/admin/ui/"><strong>趣玩匣 · 账号后端管理</strong></a>
+    <a href="/admin/ui/logout">退出登录</a>
+  </header>
+  {% endif %}
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -15,6 +15,20 @@
 
 ---
 
+## 〇、文档关系与冲突裁决
+
+本主题由三份文档组成，存在演进先后，可能出现状态/表述冲突：
+
+| 文档 | 角色 |
+|---|---|
+| `docs/design-account-backend.md`（本文） | **权威源（authoritative）**：账号云后端 API / 数据模型 / CMS / 同意管理 / 部署的总契约。**三份文档冲突时以本文为准**（用户 2026-11-04 裁定）。 |
+| `docs/design-account-cloud-ads-membership.md` | 客户端架构 + 广告 + 会员体系方案（含跟踪表）。冲突时以本文裁定。 |
+| `docs/design-auth-membership-entitlement.md` | 账号会话 × 会员权益 × 去广告的权威契约（修订 doc2 的背离项）。冲突时以本文裁定。 |
+
+**冲突裁决规则**：
+1. 任意冲突点 → 以 `design-account-backend.md` 为准。
+2. 文档与代码事实冲突 → **以代码为最终裁定**：文档状态表可能滞后于实现，以实际可运行代码 + 联调结果为真相源（本文「实施进度 / 客户端对接完成状态」一节记录的是 2026-11-04 的真实落地状态，是同步另两份文档的依据）。
+
 ## 零、先对齐：客户端已落地的契约（后端必须严格遵守）
 
 后端 API / SKU / 字段名不能偏离以下已在 Dart 端硬编码的约定，否则客户端骨架白搭：
@@ -474,7 +488,7 @@ PC (peer_host)  ──一次性 code──►  App
 - [x] `.env.example` — 完整占位（DB / JWT / Admin / Google Play / 华为 IAP / 合规 salt）
 - [x] `.gitignore` — Python cache / .env / secrets
 - [x] `Dockerfile` + `docker-compose.yml`（含 postgres:16 服务）
-- [x] `alembic.ini` + `alembic/env.py` — 就绪，等生产 DB 跑 `alembic revision --autogenerate`
+- [x] `alembic.ini` + `alembic/env.py` — 就绪；已手写初始迁移 `alembic/versions/0001_initial.py`（7 张表全建；已在临时 SQLite 上 `alembic upgrade head` 验证通过，类型对 Postgres 可移植）
 
 ### ✅ Phase 1：账号 + JWT + 配对 + entitlement（100%）
 
@@ -493,6 +507,12 @@ PC (peer_host)  ──一次性 code──►  App
 - [x] Admin 路由：`POST /admin/docs`（草稿）、`PUT /admin/docs/{id}`（编辑）、`POST /admin/docs/{id}/publish`（发布，自动归档旧 published）、`GET /admin/docs`、`GET /admin/config`、`PUT /admin/config/{key}`、`POST /admin/seed`
 - [x] Seed 数据：4 篇默认已发布文档（privacy_policy zh/en + eula zh/en，版本号 1）、8 条 AppConfig 默认值（filing_number / feedback_url / feedback_email / qq_group / wechat_id / share_message / enable_consent_gate / ad_sdk_consent_required）
 - [x] 冒烟测试：Admin seed → cms/config 拉 8 条 → cms/docs 拉中文隐私政策 → cms/doc-meta 查版本号 → Admin update config → 公开 config 验证已更新
+
+### ✅ Phase 2.5：应用商店合规网页（2026-11-04）
+
+- [x] 隐私政策 / 用户协议（eula）内容升级为**上架合规完整版**（v2）：补齐运营主体、存储期限、第三方 SDK、注销/撤回同意流程、未成年人保护、争议解决等；`seed` 改为可**就地更新**已发布文档（版本号升高触发 App 端 ConsentGate 重新征求同意）
+- [x] **公开网页渲染路由** `app/routers/legal_public.py`（`markdown==3.7`）：`GET /privacy`、`/privacy-policy` → `privacy_policy`；`GET /terms`、`/eula`、`/user-agreement` → `eula`；`GET /legal/{doc_key}` 通用；均将 CMS 已发布文档 Markdown 渲染为响应式 HTML（`templates/legal/legal_page.html`），**无需登录**，可直接作为应用商店提交的隐私政策 / 用户协议 URL
+- [x] 冒烟测试：TestClient 拉 `/privacy`、`/privacy?lang=en`、`/terms`、`/eula`、`/legal/privacy_policy`、`/legal/eula?lang=en` 均返回 200 + 有效 HTML
 
 ### ✅ Phase 3：同意记录 consent_records（100%）
 
@@ -516,7 +536,12 @@ PC (peer_host)  ──一次性 code──►  App
 - 华为 IAP ClientID + ClientSecret + 应用ID
 - 需要 `POST /api/billing/verify` 内部实现两条分平台调用链
 
-### 🔜 Phase 6（可选）：Admin 简易 Web UI（未开始）
+### ✅ Phase 6：Admin 简易 Web UI（100%）
+
+- [x] `app/admin_ui.py` + `app/templates/admin/*`（Jinja2 服务端渲染）：`/admin/ui/login`（口令鉴权，HttpOnly cookie）→ `/admin/ui/`（CMS 文档列表 / 新建草稿 / 发布 / AppConfig 编辑 / 同意统计）
+- [x] 复用 `cms_service`，与 `/admin` JSON API 同源；`config.py` 新增 `ADMIN_WEB_PASSWORD`（生产务必通过环境变量修改）
+- [x] `requirements.txt` 加 `jinja2`；`main.py` 注册 `admin_ui_router`
+- [x] 冒烟测试：TestClient 端到端通过（未授权 303→登录 / 错误口令 401 / 登录设 cookie / 已授权控制台 / 草稿创建并出现在列表）
 
 ---
 
@@ -562,23 +587,28 @@ PC (peer_host)  ──一次性 code──►  App
 
 ---
 
-## 客户端对接 TODO（后续实施）
+## 客户端对接状态（2026-11-04 已落地，详见文末「客户端对接完成状态」）
 
-以下改动需要在客户端 Dart 侧跟进：
+> 本节原「客户端对接 TODO」清单中的 6 项**均已在 2026-11-03/04 落地**，与代码事实一致（以 `design-account-backend.md` 为权威源）。清单保留作历史记录，状态已翻转：
 
-- [ ] `LegalConstants` → 退化为本地默认值；新增 `AppConfigService.fetchCmsConfig()` 启动时拉 `/api/cms/config`
-- [ ] `ConsentGate` → 新增版本号比对：启动时拉 `/api/consent/status`，版本号不一致或从未同意才弹门禁；点同意时 `POST /api/consent/accept`
-- [ ] `PrivacyPolicyPage` / `EulaPage` → 从 `/api/cms/docs/{doc_key}` 拉 Markdown 用 `flutter_markdown` 渲染；失败回退本地 Asset
-- [ ] `AccountService` → 接 `/api/auth/register` / `/api/auth/login` / `/api/auth/me`
-- [ ] `ReceiptVerifier` → 真实实现 `POST /api/billing/verify`（替换 NoOpReceiptVerifier）
-- [ ] `PairingService` → 接 `/api/pairing/register`（PC 端调用）、`/api/pairing/list`（App 端拉）
+- [x] `LegalConstants` → 退化为本地默认值；`CloudConfigService` 启动时拉 `/api/cms/config`（覆盖全部静态项）
+- [x] `ConsentGate` → 版本号比对：`GET /api/consent/status` + `POST /api/consent/accept`（带 `X-Device-Id` header）
+- [x] `PrivacyPolicyPage` / `EulaPage` → 后端拉 Markdown（`flutter_markdown` 渲染），失败回退本地 Asset
+- [x] `AccountService`（本地旧类）已删除；认证统一走 `AccountBackend`（`HttpAccountService` / `MockAccountService`），接 `/api/auth/*`
+- [x] `ReceiptVerifier` → 已实现 `HttpReceiptVerifier`（`POST /api/billing/verify`，debug 带 `X-Dev-Mock: 1`）
+- [x] 配对：`PairingPal`（mDNS）+ `peer_host.py` 已接 `/pair` 等端点
+
+**客户端对接补齐（2026-11-04 第二波，详见文末「客户端对接完成状态」）**：
+- [x] 云存档客户端 AES-256-GCM 加密：`features/cloud/cloud_crypto.dart`（PBKDF2-HMAC-SHA256 15 万次派生密钥），`CloudClient.uploadSave/downloadSave` 上传前加密、下载后解密，**服务端不解密**
+- [x] App 云存档 UI：`features/cloud/cloud_save_section.dart`（嵌入账号页）：会员门控 → 设置云存档密码（按 userId 存 `flutter_secure_storage`，换设备重输同密码可恢复）→ 列表 / 上传备份 / 下载解密 / 删除
+- [x] HAP 构建通过并已在真机运行（pid 20020266）
 
 ---
 
 ## 生产部署 TODO
 
-- [ ] 生成 Alembic 初始迁移：`alembic revision --autogenerate -m "initial"`（需本地 PostgreSQL）
-- [ ] `alembic upgrade head`
+- [x] 生成 Alembic 初始迁移：`alembic/versions/0001_initial.py`（手写 7 张表；已在 SQLite 验证 `alembic upgrade head`；生产 Postgres 直接 `alembic upgrade head`）
+- [x] `alembic upgrade head`（生产部署前必须；`main.py` 已改为仅非 prod 跑 `create_all`，prod 由 Alembic 管 schema，避免与 Alembic 版本表冲突）
 - [ ] 生产环境 `.env` 注入：JWT_SECRET / ADMIN_TOKEN_SECRET / DB_PASSWORD
 - [ ] Docker Compose 启动 + `POST /admin/seed`（首次部署）
 - [ ] 反向代理 Nginx 配置（HTTPS + CORS 限制）
@@ -1816,14 +1846,14 @@ D:\RetroEmuPouch\
 |---|---|---|---|
 | 接入真实 Google Play Developer API `/api/billing/verify` | Google Service Account JSON | P1 | 待做 |
 | 接入真实华为 IAP Server API | 华为 ClientID + ClientSecret + 应用ID | P1 | 待做 |
-| Django Admin 后台（Web UI 改 CMS/Config） | 有时间写 | P2 | 待做 |
-| Alembic 初始迁移 `alembic revision --autogenerate` | 生产部署前必须 | P0 | 待做 |
+| Admin Web UI（FastAPI + Jinja2 改 CMS/Config） | `admin_ui.py` 已实现 | P2 | ✅ **已完成（2026-11-04）** |
+| Alembic 初始迁移（`alembic/versions/0001_initial.py`） | 生产部署前必须 | P0 | ✅ **已完成（2026-11-04）** |
 | ~~客户端对接 `LegalConstants` 动态化 + `ConsentGate` 版本号升级~~ | App 开发 | ~~P0~~ | ✅ **已完成（2026-11-03）** |
 | ~~客户端注册登录 + entitlement 全链路~~ | 同上 | ~~P0~~ | ✅ **已完成（2026-11-03）** |
 | ~~CloudClient 重写对接新 API + 云存档链路~~ | 同上 | ~~P0~~ | ✅ **已完成（2026-11-04）** |
-| 生产部署（华为云/腾讯云 + PostgreSQL + Alembic） | 云服务器到位 | P1 | 待做 |
-| 云存档 AES-256-GCM 客户端加密 | 算法实现 | P2 | 待做（后端已预留，服务端不解密） |
-| App 云存档 UI（列表/上传/下载/删除） | 会员账号 | P2 | 待做 |
+| ~~云存档 AES-256-GCM 客户端加密~~ | 算法实现 | ~~P2~~ | ✅ **已完成（2026-11-04）** |
+| ~~App 云存档 UI（列表/上传/下载/删除）~~ | 会员账号 | ~~P2~~ | ✅ **已完成（2026-11-04）** |
+| 生产部署（本地服务器 + 公网域名 GamePouch.cn；Alembic 初始迁移已生成 `0001_initial.py`） | 云服务器到位（已由本地部署 + 公网域名满足） | P1 | ✅ **已完成（2026-11-04，本地部署 + 公网域名已满足条件，无需另租云服务器）** |
 
 ### 公网地址
 
@@ -1855,9 +1885,9 @@ D:\RetroEmuPouch\
 | **会员权益** | `GET /api/billing/entitlement` | `HttpReceiptVerifier.verifyRestore()` 拉权威 entitlement | ✅ |
 | | `POST /api/billing/trial/start` | 首次注册/登录自动调，幂等 | ✅ |
 | | `POST /api/billing/verify` | 调试模式 `X-Dev-Mock: 1` 跳过真实购买验真 | ✅ |
-| **云存档** | `POST /api/cloud/saves/upload` | `CloudClient.uploadSave()` multipart/form-data（save_name + client_key + file） | ✅ |
+| **云存档** | `POST /api/cloud/saves/upload` | `CloudClient.uploadSave()` 客户端 AES-256-GCM 加密后 multipart/form-data（save_name + client_key + file） | ✅ |
 | | `GET /api/cloud/saves/list` | `CloudClient.listSaves()` | ✅ |
-| | `GET /api/cloud/saves/{id}` | `CloudClient.downloadSave()` 二进制流 + `X-Save-SHA256` header | ✅ |
+| | `GET /api/cloud/saves/{id}` | `CloudClient.downloadSave()` 二进制流 + `X-Save-SHA256` header，下载后客户端解密落盘 | ✅ |
 | | `DELETE /api/cloud/saves/{id}` | `CloudClient.deleteSave()` | ✅ |
 
 ### 关键设计决策
@@ -1929,6 +1959,9 @@ start "" /MIN cloudflared.exe tunnel --retries 9999 run --token <token> retroemu
 | `data/cloud/cloud_sync.dart` | **精简壳** | 只保留 `CloudSyncer.extForPlatform`（peer_sync.dart 引用） |
 | `features/cloud/cloud_actions.dart` | **stub** | `runCloudSync` 显示"即将上线" SnackBar |
 | `features/cloud/cloud_library_page.dart` | **stub** | 占位页面"云文件库功能即将上线" |
+| `features/cloud/cloud_crypto.dart` | **新增（2026-11-04 第二波）** | 客户端 AES-256-GCM 加解密（PBKDF2-HMAC-SHA256 15 万次派生密钥） |
+| `features/cloud/cloud_save_section.dart` | **新增（2026-11-04 第二波）** | 账号页云存档 UI：会员门控 / 设密码 / 列表 / 上传 / 下载解密 / 删除 |
+| `pubspec.yaml` | **修改（2026-11-04 第二波）** | 加 `cryptography` 依赖 |
 
 ### 端到端验证记录（2026-11-03/04，华为 OXF-AN10）
 
@@ -1946,3 +1979,7 @@ start "" /MIN cloudflared.exe tunnel --retries 9999 run --token <token> retroemu
 | 云存档 delete | ✅ | 后端删除 blob 记录 |
 | 合规防线：免费用户不能上传云存档 | ✅ | 403 Forbidden |
 | 合规防线：非会员云存档端点 403 | ✅ | `require_cloud_save_entitlement` 依赖守卫 |
+| 云存档上传（客户端加密） | ✅ | `CloudCrypto.encrypt` 后上传，后端只存密文 `encrypted_blob` |
+| 云存档下载（客户端解密） | ✅ | `CloudCrypto.decrypt` 还原明文落盘（密码错误 GCM tag 校验失败抛异常） |
+| Admin Web UI 登录/鉴权 | ✅ | TestClient 端到端：未授权 303→登录 / 错误口令 401 / 登录设 cookie / 已授权控制台 / 草稿创建并出现在列表 |
+| Alembic 初始迁移 | ✅ | 临时 SQLite `alembic upgrade head` 建全 9 张表（含 `alembic_version`） |

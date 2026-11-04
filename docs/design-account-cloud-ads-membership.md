@@ -14,6 +14,8 @@
 
 **状态取值说明**：`待决策` / `已采纳-未开始` / `进行中` / `已完成` / `暂缓`
 
+> **文档冲突裁决**：与 `design-account-backend.md`（权威源）或 `design-auth-membership-entitlement.md` 冲突时，以 `design-account-backend.md` 为准；文档与代码冲突以代码为最终裁定。本文件跟踪表的「状态」字段以 2026-11-04 实际落地为准（详见 `design-account-backend.md`「实施进度 / 客户端对接完成状态」）。
+
 ---
 
 ## 总览与决策状态
@@ -70,14 +72,14 @@
 ### 6. 账号页 / 云库页 UI 重塑（2026-11-01 落地；2026-11-02 三次修订：更名「网络」+ 云端登录账号体系）
 - **模块改名「网络」**（入口与页面标题均为「网络」），不再有任何服务器地址表单 / OTA / 本地 PC 登录。
 - **当前页面构成**：
-  - 「我的账号（云端登录）」：**仅云端登录，不连本地 PC**（合规考量）。后端当前为本地桩 `MockAccountService`（`mock_account.dart`，shared_preferences 持久化登录态）：
+  - 「我的账号（云端登录）」：**仅云端登录，不连本地 PC**（合规考量）。后端**已上公网** `https://api.gamepouch.cn`（FastAPI + SQLite，详见 `design-account-backend.md`）；debug 构建默认仍走 `MockAccountService` 本地桩，可在「调试：账号后端」卡片切换到真实 `HttpAccountService`（`kAccountBaseUrl` 决定）：
     - **未登录**：说明文案 + 「登录」按钮，弹出登录界面，支持**一键快捷登录**（内置演示账号）与**账号密码**两种方式（`SegmentedButton` 切换）。
     - **登录后**：头像 + 用户名 + **在线状态** chip + ID，操作入口：**退出登录 / 会员服务 / 修改密码 / 账户注销**。其中「切换账号」因冗余被移除，原位置改为「会员服务」——深链跳转设置页「会员 / 去广告」子页（`SettingsSheet.show(..., deepLink:'membership')`，该页含本地 entitlement 月/年/终身 + 7 天试用）；「账户注销」为警示色且需二次确认。
   - 「会员 / 去广告」：**不在「网络」页**（与设置页功能重叠，2026-11-02 移除），管理入口在设置页（`settings_sheet.dart`「会员 / 去广告」子页，本地 entitlement 月/年/终身 + 7 天试用）。
   - 「云存档（会员专属）」：占位（"即将上线 · 会员解锁"）。
   - 「发现伙伴（手机面对面互传）」：局域网 P2P，不经任何服务器。
 - **历史沿革**：2026-11-01 移除 OTA 与「自托管连接（连接到我的电脑）」；2026-11-02 进一步把「我的 PC（局域网存档/设置同步）」从页面移除（`my_pc_section.dart` 文件保留未删，暂无 UI 入口），以「我的账号（云端登录）」替代。
-- 后端就绪后：把 `MockAccountService` 各方法替换为真实 HTTP 调用（方法签名不变，UI 无需改动），云存档占位区接开发者云空间。
+- 后端已就绪：`HttpAccountService` 已接真实 `/api/auth/*`（register/login/logout/me/change-password/deregister），`AccountBackend` 按调试入口地址切换 Mock/真实；云存档客户端 AES-256-GCM 加密 + 列表/上传/下载/删除 UI 已落地（见 `design-account-backend.md` 客户端对接完成状态，2026-11-04 第二波）。
 
 ### 7. 与现有代码结构映射
 - `OhosPal`/`AndroidPal` 旁新增 `PairingPal`（LAN 发现/WS 收发），平台差异只在这一层。
@@ -95,12 +97,12 @@
 |---|---|---|---|
 | 1 合规前提 | 确立"不自托管 ROM 分发"红线 | 已采纳-进行中（骨架） | |
 | 2 总体架构 | 上述拓扑 | 已采纳-进行中（骨架） | |
-| 3 AccountService | 登录/token/entitlement | 未开始 | |
+| 3 AccountService | 登录/token/entitlement | 已删除（死代码，无调用方） | 认证统一走 `AccountBackend`（`HttpAccountService`/`MockAccountService`）；见 `design-auth-membership-entitlement.md` §3.1 / `design-account-backend.md` 裁决 |
 | 4 PairingService | mDNS+配对 | 已采纳-进行中（骨架 + mDNS 已接） | 配对已有；mDNS 走纯 Dart `multicast_dns`（`_retroemupouch._tcp.local`），UDP 广播作兜底 |
 | 5 PC Server 认证端点 | `/pair` `/sync/save` `/sync/settings` `/library/meta` | 已完成（骨架） | 已加 /pair、/sync/save、/sync/settings；PC 端新增 mDNS 广播（zeroconf，缺依赖自动降级为仅 UDP） |
-| 6 Account Backend | 用户/配对/会员 | 未开始 | |
+| 6 Account Backend | 用户/配对/会员 | 已完成（Phase 1 100%，见 `design-account-backend.md` 实施进度） | 用户/配对/会员权益 API 全部上线并冒烟通过 |
 | 7 UI 重塑 | 账号页/云库页 | 已完成（模块更名「网络」：我的账号=云端登录（本地桩，支持一键快捷/账号密码），退出/切换/改密/注销齐全；保留会员、云存档占位、发现伙伴，见 §6） | |
-| 8 风控 | 流量/日志约束 | 未开始 | |
+| 8 风控 | 流量/日志约束 | 后端已实现（多层依赖守卫） | 会员门控 / 扩展名白名单 / 版本号比对 / SHA-256 哈希；详见 `design-account-backend.md` 合规防线 |
 
 ---
 
@@ -176,10 +178,10 @@
 | 2 AdPal 分平台 | Android AdMob / OHOS 华为广告 | 进行中（Android AdMob 测试ID已接 + **Android APK 已构建验证**；OHOS 待 HMS 签名+广告位ID） | **OHOS 不可用 AdMob**，走华为/Petals Ads（原生通道，待接入） |
 | 3 广告位与频控 | Banner/Interstitial/Rewarded + 频控 | 进行中（Interstitial+退出游戏断点已接；Banner 已接；频控=每日≤3+冷却1min；Rewarded 未做） | 不在模拟运行中插广告 |
 | 4 会员模型 | 免费/7天试用/月/年/终身 + 普通VIP双档 | 已完成（双档位 `MembershipTier`：超级VIP全去广告+云存档 / 普通VIP去插屏留横幅；OHOS 持久化文件兜底已接，见 §7） | 真实权益由后端下发（Phase 3） |
-| 5 BillingPal 分平台 | Play Billing / 华为 IAP | 进行中（接口 `BillingPal`+`BillingService`+SKU 映射+本地授予已接；`createBillingPal()` 已标注 Android/OHOS 真实实现接入点） | **真实 Play Billing/华为 IAP 待商店配置 + 凭证（Phase 3）** |
-| 6 收据服务端校验 | 防作弊 | 已接（骨架：`ReceiptVerifier` 接口 + `NoOpReceiptVerifier` seam，`BillingService` 先校验后授予、无后端时本地兜底） | 真实后端校验端点待 Phase 3 |
+| 5 BillingPal 分平台 | Play Billing / 华为 IAP | 进行中（接口 `BillingPal`+`BillingService`+SKU 映射已接；release 下**本地兜底授予已移除**，绝不本地发会员，见 `design-auth-membership-entitlement.md` §3.5；`createBillingPal()` 已标注 Android/OHOS 真实实现接入点） | **真实 Play Billing / 华为 IAP 待商店配置 + 凭证（Phase 5）** |
+| 6 收据服务端校验 | 防作弊 | 已接真实后端校验（`HttpReceiptVerifier` 调 `POST /api/billing/verify`，debug 带 `X-Dev-Mock: 1` 跳过真实商店验真；`BillingService` 先校验后授予、**无本地兜底**） | 真实 Google Play / 华为 IAP 验真分支待凭证（Phase 5） |
 | 7 试用/过期/终身逻辑 | trialStart 权威 | 已完成（`Entitlement.isAdFree`：终身/有效订阅/7天试用窗内均免广告；过窗降级 free；终身无到期） | |
-| 8 entitlement 容错 | 失败回退显示广告 | 已接（AdService 按 isAdFree 门控 + 失败默认显示广告不锁死；后端校验待 Phase 3） | 不锁死 App |
+| 8 entitlement 容错 | 失败回退显示广告 | 已接（AdService 按 isAdFree 门控 + 失败默认显示广告不锁死；后端校验已实现，`design-account-backend.md` Phase 4） | 不锁死 App |
 | 9 隐私与商店合规 | 隐私政策/同意/非个性化 | 暂缓（非个性化默认/同意 UI 待 Phase 3，与真实 AdMob/HMS 广告一起） | |
 | 10 UI 与代码映射 | AccountPage/exitToLibrary 接入 | 已完成（`MembershipSection` 已嵌入 `AccountPage`：状态/7天试用/月年终身购买/云存档权益展示） | |
 
@@ -233,7 +235,7 @@
 - **开屏广告测试页（2026-11-01）**：新增 `features/ads/splash_ad_screen.dart`（`SplashAdScreen`：约 5 秒倒计时环 + 右上角「跳过 N」+ 底部「广告」角标，`shouldShowSplashTestAd()` 仅 OHOS(`NoOpAdPal`) 显示），`main.dart` 的 `home` 按平台切换（冷启动只 build 一次、后台返回不重进，符合开屏只启动出现）。真实华为/Petals 广告接入后由 `OhosAdPal` 取代、该函数返回 false 直接进库页。
 - **设置页合并「个性化设置」（2026-11-01）**：把主菜单原「游戏体验 / 控制与手柄 / BIOS 管理 / 通用」四个子页面合并为单一「个性化设置」入口，页内用 `_SectionTitle` 分区标题串起四组内容（游戏体验开关 / 摇杆+布局+招式 / BIOS / 通用开关），主菜单更简洁；招式编辑页经 host navigator 跳转逻辑保持不变。
 
-**待办（下一阶段）**：OHOS 华为/Petals 广告原生通道、Play Billing / 华为 IAP（商店配置+凭证）、后端账号与收据校验（会员/计费客户端骨架已完成，真实计费与后端校验待 Phase 3 凭证）。
+**待办（下一阶段）**：OHOS 华为/Petals 广告原生通道、Play Billing / 华为 IAP **真实验真分支**（需商店配置 + 凭证，对应 `design-account-backend.md` Phase 5；客户端 `BillingPal` 真实实现接入点已标注）。后端账号与收据校验（`HttpReceiptVerifier` + `POST /api/billing/verify`，debug 带 `X-Dev-Mock: 1`）**已落地**；App 云存档 UI + 客户端 AES-256-GCM 加密、Admin Web UI、Alembic 初始迁移**均已落地（2026-11-04 第二波）**，详见 `design-account-backend.md` 实施进度。
 
 ## 决策记录（供跟踪）
 

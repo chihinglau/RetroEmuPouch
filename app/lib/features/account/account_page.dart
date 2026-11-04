@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../pal/platform_pal.dart';
+import '../cloud/cloud_save_section.dart';
 import '../peer/peers_page.dart';
 import '../settings/settings_sheet.dart';
 import 'account_backend.dart';
@@ -213,7 +214,9 @@ class _AccountPageState extends State<AccountPage> {
       padding: const EdgeInsets.symmetric(vertical: 10),
       children: [
         _accountSection(),
-        _cloudSaveSection(),
+        _user == null
+            ? _cloudSaveSection()
+            : CloudSaveSection(userId: _user!.id, pal: widget.pal),
         if (kDebugMode) _debugTile(),
         _section(
           icon: Icons.swap_horiz,

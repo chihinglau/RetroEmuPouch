@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kDebugMode;
 
 import '../../features/account/account_backend.dart'
     show AccountStore, effectiveBaseUrl, kAccountToken;
+import '../../features/cloud/cloud_crypto.dart';
 import 'security_policy.dart';
 
 // ============================================================================
@@ -161,12 +163,15 @@ class CloudClient {
   ///
   /// [saveName] 存档文件名（例如 `FF7_SAVE_001.sav`）。
   /// [clientKey] 客户端侧唯一标识（例如 `gameId_slot_0`，后端用于去重判定）。
-  /// [file] 存档文件（**客户端应在上传前自行 AES-256-GCM 加密**，服务端不解密）。
+  /// [file] 存档文件（**明文**）；本方法先以 [passphrase] 做 AES-256-GCM 加密，
+  /// 再上传密文，服务端不解密。
+  /// [passphrase] 云存档密码（用于派生密钥；见 [CloudCrypto]）。
   /// 返回新存档的 server-assigned id。
   Future<String> uploadSave({
     required String saveName,
     required String clientKey,
     required File file,
+    required String passphrase,
   }) async {
     final base = await _base;
     if (base.isEmpty) throw CloudException('未配置后端地址');
@@ -188,7 +193,9 @@ class CloudClient {
       req.headers.contentType = ContentType('multipart', 'form-data',
           parameters: {'boundary': boundary});
 
-      final fileBytes = await file.readAsBytes();
+      // 客户端加密后再上传（合规红线：服务端只存密文）。
+      final plain = await file.readAsBytes();
+      final fileBytes = await CloudCrypto.encrypt(plain, passphrase);
 
       // save_name
       req.write('$LF--$boundary$LF');
@@ -270,11 +277,12 @@ class CloudClient {
     }
   }
 
-  /// 下载指定存档到 [dest]。返回写入字节数。
-  /// 后端不解密，返回的是客户端上传时的原始二进制。
+  /// 下载指定存档到 [dest]。返回写入字节数（明文）。
+  /// 后端只存密文，本方法下载后即时以 [passphrase] 解密再落盘。
   Future<int> downloadSave(
     String saveId, {
     required File dest,
+    required String passphrase,
   }) async {
     final base = await _base;
     if (base.isEmpty) throw CloudException('未配置后端地址');
@@ -296,19 +304,21 @@ class CloudClient {
         } catch (_) {}
         throw CloudException(msg, statusCode: res.statusCode);
       }
+      // 收集密文 → 客户端解密 → 落盘明文。
+      final cipher = <int>[];
+      await for (final chunk in res) {
+        cipher.addAll(chunk);
+      }
+      final plain = await CloudCrypto.decrypt(Uint8List.fromList(cipher), passphrase);
       await dest.parent.create(recursive: true);
       final sink = dest.openWrite(mode: FileMode.write);
-      var written = 0;
       try {
-        await for (final chunk in res) {
-          sink.add(chunk);
-          written += chunk.length;
-        }
+        sink.add(plain);
         await sink.flush();
       } finally {
         await sink.close();
       }
-      return written;
+      return plain.length;
     } on SocketException catch (e) {
       throw CloudException('下载中断：${e.osError?.message ?? e.message}');
     } finally {

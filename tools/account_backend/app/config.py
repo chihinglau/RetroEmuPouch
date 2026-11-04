@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES: int = 15
     JWT_REFRESH_TOKEN_EXPIRE_DAYS: int = 30
     ADMIN_TOKEN_SECRET: str = "dev-admin-secret-change-me"
+    ADMIN_WEB_PASSWORD: str = "admin"  # 管理后台网页登录口令（生产务必通过环境变量修改）
 
     # ── 收据校验 ──
     GOOGLE_PLAY_SA_KEY_B64: str = ""

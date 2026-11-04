@@ -1970,6 +1970,11 @@ start_peer.bat --no-mdns
 | 合规防线 | 多层依赖守卫 | 会员门控（`require_cloud_save_entitlement`）、扩展名白名单、版本号比对、SHA-256 哈希 |
 | Swagger | `https://api.gamepouch.cn/docs` | 完整 30 端点在线文档 |
 
+> **设计文档与冲突裁决**：账号云 / 会员 / 权益的完整方案见三份设计文档——
+> `docs/design-account-backend.md`（**权威源**）、`docs/design-account-cloud-ads-membership.md`、
+> `docs/design-auth-membership-entitlement.md`。**三份冲突以 `design-account-backend.md` 为准；文档与代码冲突以代码为最终裁定**。
+> 客户端对接（CMS 动态化 / ConsentGate 版本号 / 注册登录 / entitlement / 云存档 4 端点 / `ReceiptVerifier` 真实校验 / **云存档客户端 AES-256-GCM 加密 + App 云存档 UI** / **Admin Web UI（Jinja2）** / **Alembic 初始迁移**）**已于 2026-11-04 全部落地**，状态以 `design-account-backend.md`「实施进度 / 客户端对接完成状态」一节为准。仍待做（被外部凭证/签名阻塞）：OHOS 华为/Petals 广告原生通道、Play Billing / 华为 IAP 真实验真分支（需商店配置 + 凭证，Phase 5）。
+
 ### 24.2 启动后端（**唯一正确姿势：手动双击 boot.bat**）
 
 Trae PowerShell 会 kill 子进程，**绝不能在 Trae 终端里直接跑 uvicorn / cloudflared**。
@@ -1986,6 +1991,26 @@ boot.bat 守护循环：每 30 秒 `tasklist` 检查 python + cloudflared，死�
 cloudflared.exe tunnel --retries 9999 run --token <token> retroemupouch
                       ↑ retries 在 tunnel 和 run 之间！
 ```
+
+### 24.2.1 管理后台 Web UI 与公开法律页
+
+后端已内置 **Jinja2 管理后台**（`app/admin_ui.py`）与**应用商店合规网页**（随 `api.gamepouch.cn` 一起部署）：
+
+| 用途 | URL | 登录 |
+|------|-----|------|
+| 管理后台 | `https://api.gamepouch.cn/admin/ui/login` | 口令 = `ADMIN_WEB_PASSWORD`（默认 `admin`，**生产务必通过环境变量改掉**）；登录后 HttpOnly cookie 鉴权 |
+| 隐私政策（商店提交） | `https://api.gamepouch.cn/privacy` | 无需登录，服务端渲染 CMS 已发布 `privacy_policy` |
+| 用户协议（商店提交） | `https://api.gamepouch.cn/terms`（亦 `/eula`、`/user-agreement`） | 无需登录，渲染 `eula` |
+
+- 管理后台可：CMS 文档（隐私政策 / 用户协议）建草稿、发布、编辑；AppConfig 修改；同意统计查看。
+- 公开法律页由 `app/routers/legal_public.py` 提供（`markdown==3.7` 将 CMS 文档 Markdown 渲染为响应式 HTML），**直接作为应用商店「隐私政策 / 用户协议 URL」填写**。
+- **刷新法律文档到最新 v2 合规版**：首次部署或内容更新后跑一次 seed（已改为可就地更新已发布文档）：
+  ```powershell
+  cd tools/account_backend
+  $env:DATABASE_URL = "sqlite:///D:/RetroEmuPouch/backend/sqlite/dev.db"   # 与部署一致的库
+  python -c "from app.database import SessionLocal; from app.services.seed import run_seed; db=SessionLocal(); print(run_seed(db)); db.close()"
+  ```
+  版本号升高（v1→v2）会触发 App 端 ConsentGate 重新征求同意。
 
 ### 24.3 ADB / 构建命令
 
@@ -2042,7 +2067,7 @@ Invoke-RestMethod -Uri "https://api.gamepouch.cn/api/cloud/saves/list" -Headers 
 |------|------|------|
 | `POST /api/cloud/saves/upload` | 会员门控 | `require_cloud_save_entitlement` 依赖 → 免费 403 |
 | `POST /api/cloud/saves/upload` | 扩展名白名单 | 后端校验 `.sav/.state/.dat` 等，拒 `.zip/.exe` |
-| `POST /api/cloud/saves/upload` | 客户端加密提醒 | 后端不解密，要求 App AES-256-GCM（P2 待实现） |
+| `POST /api/cloud/saves/upload` | 客户端加密提醒 | 后端不解密，App 端 `CloudCrypto.encrypt`（AES-256-GCM）已落地 ✅ |
 | `POST /api/consent/accept` | 设备哈希 | `device_id_hash = sha256(X-Device-Id)`，IP 同样哈希 |
 | `GET /api/consent/status` | 版本号比对 | 后端维护 `latest_published_version`，版本升级强制重同意 |
 | 全部端点 | CORS | 仅 `https://retroemupouch.cn` + localhost |
