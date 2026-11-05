@@ -2003,6 +2003,17 @@ cloudflared.exe tunnel --retries 9999 run --token XXX
   `remoteNewer` → 行尾「用云端覆盖本机」（自动 `.bak`）；
   顶部批量按钮分别是「恢复云端较新的 N 份」与「上传本地较新的 M 份」，并明示
   「上传会覆盖云端旧版本；恢复会覆盖本机且自动备份」。
+**自动同步开关（2026-11-05）**
+
+- 新增 `CloudSaveService`（`data/cloud/cloud_save_service.dart`）：把「账号存储 + 密码读取
+  （安全存储 → 鸿蒙文件兜底）+ 会员校验 + 差异刷新 + 上传未同步」从账号页 widget 抽出，
+  供 UI 与后台钩子共用同一套逻辑。
+- 两个 **opt-in** 开关（默认关闭，设置页「个性化设置 → 云存档」）：
+  - `autoCheckSavesOnLaunch`：首帧之后后台比对一次，若 `pendingDownload > 0` 则在**游戏库顶部**
+    显示「云端有 N 份存档可恢复」横幅，点击进入账号页；
+  - `autoUploadSavesOnExit`：从模拟器返回游戏库时自动上传「未上传 / 本地较新」的存档，
+    成功弹 3 秒提示，失败只写日志，不影响返回主界面。
+- 三重门控：未登录 / 非会员 / 未设置云存档密码 → `syncIfReady()` 返回 null，钩子静默跳过。
 - 回归：Dart `test/data/cloud/cloud_save_sync_test.dart` **20 项**（命名互逆、
   噪声过滤、diff 五态、覆盖上传、单条失败不中断、恢复逐字节一致、
   覆盖前 `.bak`、下载失败不破坏本地、多份取最新、`includeThumbs=false`、
