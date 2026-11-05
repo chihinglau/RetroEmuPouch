@@ -69,9 +69,34 @@ class _CloudSaveSectionState extends State<CloudSaveSection> {
   Future<void> _writePass(String pwd) async =>
       (await _service()).setPassphrase(pwd);
 
+  /// 进程内保留上一次成功渲染的派生状态：反复进出「网络」页时不必等本地
+  /// 扫描，也不会闪一下「正在读取本机存档…」。按 userId 区分，避免换号后串数据。
+  static String? _lastUserId;
+  static List<CloudSaveSummary>? _lastSaves;
+  static List<LocalSave>? _lastLocalSaves;
+  static List<CloudSave>? _lastCloudSaves;
+  static SaveDiff? _lastDiff;
+  static Map<String, String>? _lastRomTitles;
+
+  void _saveSnapshot() {
+    _lastUserId = widget.userId;
+    _lastSaves = _saves;
+    _lastLocalSaves = _localSaves;
+    _lastCloudSaves = _cloudSaves;
+    _lastDiff = _diff;
+    _lastRomTitles = _romTitles;
+  }
+
   @override
   void initState() {
     super.initState();
+    if (_lastUserId == widget.userId && _lastDiff != null) {
+      _saves = _lastSaves ?? const [];
+      _localSaves = _lastLocalSaves ?? const [];
+      _cloudSaves = _lastCloudSaves ?? const [];
+      _diff = _lastDiff;
+      _romTitles = _lastRomTitles ?? const {};
+    }
     _init();
   }
 
@@ -83,7 +108,8 @@ class _CloudSaveSectionState extends State<CloudSaveSection> {
       _entitled = m.entitlement.current.cloudSaveEnabled;
       _passphrase = await _readPass();
       if (_entitled && _passphrase != null) {
-        await _refresh();
+        // 命中本地缓存时不闪加载态：列表与差异直接从磁盘/内存恢复。
+        await _refresh(silent: true);
         await _loadGameSaves();
       }
     } catch (e) {
@@ -101,14 +127,22 @@ class _CloudSaveSectionState extends State<CloudSaveSection> {
       final sync = _sync ??= CloudSaveSync(filesDir: dir, client: client);
       final local = sync.scanLocal();
       final cloud = await sync.listCloud();
-      final roms = await RomLibrary(dir).load();
+      // ROM 标题只是锦上添花：库索引损坏/为空时不能让整个存档列表消失。
+      var titles = const <String, String>{};
+      try {
+        final roms = await RomLibrary(dir).load();
+        titles = {for (final r in roms) r.crcKey: r.displayTitle};
+      } catch (e) {
+        debugPrint('cloud save: rom titles unavailable: $e');
+      }
       if (!mounted) return;
       setState(() {
         _localSaves = local;
         _cloudSaves = cloud;
         _diff = sync.diff(local, cloud);
-        _romTitles = {for (final r in roms) r.crcKey: r.displayTitle};
+        _romTitles = titles;
       });
+      _saveSnapshot();
     } on CloudException catch (e) {
       if (mounted) _snack('读取云端存档失败：$e', error: true);
     } catch (e) {
@@ -194,14 +228,30 @@ class _CloudSaveSectionState extends State<CloudSaveSection> {
     }
   }
 
-  Future<void> _refresh() async {
+  /// [silent] 用于页面初始化：命中本地缓存时不要闪一下进度圈。
+  Future<void> _refresh({bool silent = false}) async {
     if (_client == null || _passphrase == null) return;
-    setState(() => _busy = true);
+    if (!silent && mounted) setState(() => _busy = true);
     try {
       _saves = await _client!.listSaves();
       _error = null;
     } on CloudException catch (e) {
       _error = e.toString();
+    } finally {
+      if (!silent && mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 用户主动同步另一台设备新上传的存档时，绕过 TTL 强制拉一次。
+  Future<void> _forceRefresh() async {
+    final client = _client;
+    if (client == null || _busy) return;
+    if (mounted) setState(() => _busy = true);
+    try {
+      await client.invalidateSavesCache();
+      await _refresh(silent: true);
+      await _loadGameSaves();
+      if (mounted) _snack('云端列表已刷新');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -358,7 +408,16 @@ class _CloudSaveSectionState extends State<CloudSaveSection> {
               const SizedBox(
                   width: 16,
                   height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
+                  child: CircularProgressIndicator(strokeWidth: 2))
+            else
+              IconButton(
+                tooltip: '刷新云端列表',
+                onPressed: _forceRefresh,
+                icon: const Icon(Icons.refresh, size: 18),
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                constraints: const BoxConstraints(),
+              ),
           ],
         ),
         const SizedBox(height: 8),
@@ -400,7 +459,14 @@ class _CloudSaveSectionState extends State<CloudSaveSection> {
 
   Widget _gameSavesSection() {
     final diff = _diff;
-    if (diff == null) return const SizedBox.shrink();
+    if (diff == null) {
+      // 不该静默消失：读不到就说清楚，否则用户以为「云存档页面没做」。
+      return const Padding(
+        padding: EdgeInsets.only(top: 12),
+        child: Text('正在读取本机存档…（若一直停在这里，说明读不到 files/saves 目录）',
+            style: TextStyle(fontSize: 12, color: Colors.grey)),
+      );
+    }
     final theme = Theme.of(context);
     final cloudTotal = _cloudSaves.where((c) => !c.isThumb).length;
     final cloudOnly = diff.cloudOnly.length;

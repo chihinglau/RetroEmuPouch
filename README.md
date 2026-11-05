@@ -9,7 +9,7 @@
 > Flutter + Kotlin + NDK 的多平台复古游戏模拟器 Android 端，并提供 **OpenHarmony / HarmonyOS NEXT** 同构移植（ArkTS + NAPI 原生宿主）。
 > 让历史更安心 —— 家庭主机、街机的 ROM 与存档都装在 App 私有目录里，可单文件备份、可在局域网内与伙伴互导。
 
-Dart package: `gamepouch` · Android applicationId: `com.retroemupouch.app` · HarmonyOS bundleName: `com.gamepouch.gamepouch`
+Dart package: `retroemupouch` · Android applicationId: `com.retroemupouch.app` · HarmonyOS bundleName: `com.retroemupouch.app` · version `1.8.4+49`
 
 ---
 
@@ -130,7 +130,7 @@ GamePouch 的鸿蒙版与 Android 版**共享同一套 Flutter UI 与 libretro �
 # 2) 构建并安装 HAP 到真机
 powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1
 hdc -t <device-sn> install -r app\build\ohos\hap\entry-default-signed.hap
-hdc -t <device-sn> shell aa start -a EntryAbility -b com.gamepouch.gamepouch
+hdc -t <device-sn> shell aa start -a EntryAbility -b com.retroemupouch.app
 
 # 3) 抓核心日志（GPRETRO / CORE: 前缀）
 hdc shell hilog > hilog.txt
@@ -342,6 +342,8 @@ powershell -ExecutionPolicy Bypass -File scripts\make-release-keystore.ps1
 - **Phase 2 广告接入：Android AdMob（2026-11-01）**：`lib/pal/ad_pal.dart` 新增 `GoogleMobileAdsAdPal`（`google_mobile_ads`，默认 Google **测试广告位 ID**，发布前替换为真实 ID），`createAdPal()` 按平台分流——Android 走 AdMob、OHOS 暂 `NoOpAdPal`（华为/Petals 广告待 HMS 签名+广告位 ID）；`AdService` 频控升级为「每日≤3 + 冷却 1min + 跨会话按日重置」。`LibraryPage` 在「退出游戏回库页」安全断点弹插屏，并在库页底部挂横幅。设计见 [`docs/design-account-cloud-ads-membership.md`](./docs/design-account-cloud-ads-membership.md)。
 - **完整运营后台（2026-11-04）**：管理后台从「只有 CMS + AppConfig」扩展为涵盖**运营概览、用户管理、权益管理、云存档、配对设备、同意记录、账单流水、审计日志、CMS 文档、AppConfig** 共 11 个页面；用户可搜索/编辑/禁用/重置密码/级联删除，权益可授予 7 档 / 设有效期 / 终身 / 撤销 / 开关试用；新增 `users.is_active` 与 `admin_audit_logs`、Alembic `0002` 迁移与运行时 schema 自愈、完整 Admin JSON API 及 44 项端到端自测（`tools/account_backend/tests/test_admin_management.py`）。详见 [`docs/skills.md` §24.2.2](./docs/skills.md) 与 [`docs/design-account-backend.md`](./docs/design-account-backend.md) Phase 7。
 - **账号后端 / 合规页面真机联调修复（2026-11-04）**：`CloudConfigService` 的 CMS 文档与 AppConfig 改为固定走公网 `https://api.gamepouch.cn`（**公开内容与用户可配置的账号后端地址解耦**，任何用户含未登录都能打开）；`ConsentGate` 作为 `runApp` 根组件改用 `navigatorKey` 修复欢迎页「查看隐私政策 / 用户协议」点击无响应；「网络」页加 `_ready` 守卫修复首帧 `LateInitializationError` 红屏；调试入口地址默认公网域名、真实后端始终 Http、空地址自动回退；「关于与支持」页改为展示云端配置（客服邮箱/反馈入口/法律页 URL/备案号/官方社群/同步状态）并在每次打开时刷新；`LegalConstants` 与后端 seed 默认值同步更新（AppConfig 8→10 条，新增 `privacy_policy_url` / `terms_url`）。华为真机逐级点击验证通过，详见 [`docs/design-account-backend.md`](./docs/design-account-backend.md) 与 [`docs/skills.md` §24.9](./docs/skills.md)。
+- **首启体验与本地缓存重构（2026-11-05）**：修复欢迎页「每次冷启动都弹」——旧的已同意跳过分支写在 `base.isEmpty` 里，而 `effectiveBaseUrl()` 恒回退公网默认地址，属死代码；现改为单一根组件 `ConsentGate(mainApp:)`，仅首次安装或政策版本升版才弹，24h 静默校验、升版延到下次冷启动生效，判定逻辑抽为纯函数 `lib/features/legal/consent_policy.dart`。库页标题「趣玩匣文件库」→「**我的文件库**」。AppConfig / CMS 文档 / 账号资料 / 云存档列表全部补齐**落盘缓存 + TTL**（24h / 24h / 24h / 30min），断网回退旧缓存、登出或上传删除后失效；云存档区新增手动刷新，页面命中缓存不再闪加载态。新增 28 例单测（`cloud_save_models_test.dart` / `cloud_config_service_test.dart` / `consent_gate_test.dart`），`flutter analyze` 0 error、全量 `flutter test` **84/84** 通过。`scripts/build-hap.ps1` 重建签名 HAP（124.6 MB）并 `hdc install -r` 到 Pura70，`aa start` 成功、截图确认首屏直接进入「我的文件库」且无欢迎页。详见 [`docs/release-plan.md`](./docs/release-plan.md)「2026-11-05 客户端改动」与 [`docs/design-account-backend.md`](./docs/design-account-backend.md) 文末验证记录。
+- **本机账号后端守护脚本修复（2026-11-05）**：`D:\RetroEmuPouch\boot.bat` 原为 UTF-8 中文 + LF-only，被 `cmd.exe` 按 GBK 解析后吞掉 `if` 关键字，导致健康检查从不执行、重启块每 30 秒无条件 `taskkill /F /IM python.exe`，把后端反复杀掉再拉起。改为纯 ASCII + CRLF 薄启动器 + `daemon.ps1`（按 `:8000` 监听 PID 精确停进程、连续 2 次健康检查失败才重启、复用已有健康进程）；`start.bat` / `stop.bat` / `start-gamepouch.ps1` 一并收编，消除全杀 Python 的隐患。注意这些是工作区外的本机运维脚本，**不随仓库分发**。
 
 ---
 

@@ -1212,7 +1212,7 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 
 > **Pura70 真机验证（2026-10-20）**：按 `skills.md` §2.6 流程执行
 > `powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1`（默认 DevEco 自动签名，产出
-> `entry-default-signed.hap` 约 146 MB）→ `hdc install -r ...` 成功 → `aa start -a EntryAbility -b com.gamepouch.gamepouch`
+> `entry-default-signed.hap` 约 146 MB）→ `hdc install -r ...` 成功 → `aa start -a EntryAbility -b com.gamepouch.gamepouch`（当时的旧包名，现行为 `com.retroemupouch.app`）
 > → 进入 `pages/EmulatorSpike`，`libgpretro.so` 加载、`dlopen(libgs_fceumm.so)` 成功、`core=FCEUmm`、
 > `emu_xcSurface` 上树、音频路由就绪、`SetGestureBackEnabled enable 0`；截图确认 NES 画面实时渲染、
 > 虚拟手柄（摇杆 + SELECT/START/B/A + 顶部工具栏）正常，无白屏/崩溃。
@@ -1285,7 +1285,7 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 
 | 状态 | 标题 | leading | actions |
 |---|---|---|---|
-| 非选择 | `趣玩匣文件库` | `null` | ① 云图标（`tooltip 账号 / 云服务 / 升级`）→ push AccountPage；② `more_vert` 弹出菜单（见下）；③ 设置图标（`tooltip 设置`）→ `SettingsSheet.show` |
+| 非选择 | `我的文件库` | `null` | ① 云图标（`tooltip 账号 / 云服务 / 升级`）→ push AccountPage；② `more_vert` 弹出菜单（见下）；③ 设置图标（`tooltip 设置`）→ `SettingsSheet.show` |
 | 选择 | `已选 ${_selected.length} 个` | `close` 图标（`tooltip 退出选择`） | `select_all` 图标（`tooltip 全选 / 取消全选`） |
 
 - 弹出菜单项：`导入 ROM（单文件）` / `导入游戏资源包 / ZIP（自动识别）` / `选择游戏并导出资源包`（`702-723`）。
@@ -1514,7 +1514,7 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 > 覆盖「功能正确性 + 1:1 复刻」双目标。每项给出触发路径与预期。
 
 **文件库 / 导入**
-- [ ] 冷启动进入 `趣玩匣文件库`；深色主题、浅蓝主色。
+- [ ] 冷启动进入 `我的文件库`；深色主题、浅蓝主色。
 - [ ] 右上云图标→`账号与云服务`；`more_vert`→三项导入菜单文案精确。
 - [ ] `导入 ROM（单文件）`→ SAF 选文件 → 网格出现新卡，CRC32 正确，落 `filesDir/roms/`。
 - [ ] `导入游戏资源包 / ZIP`→ 自动识别 gamepouch 包 / 纯 ROM zip。
@@ -1592,7 +1592,7 @@ Android 用 `Theme_Material_Light_Dialog_Alert`（浅底深字）。
 # 构建并签名 HAP（需 Linux 原生 OHOS SDK 自编译 libgs_mame.so，见 README §OpenHarmony）
 powershell -ExecutionPolicy Bypass -File scripts\build-hap.ps1
 hdc -t <sn> install -r app\build\ohos\hap\entry-default-signed.hap
-hdc -t <sn> shell aa start -a EntryAbility -b com.gamepouch.gamepouch
+hdc -t <sn> shell aa start -a EntryAbility -b com.retroemupouch.app
 hdc shell hilog | findstr GamePouchPlugin GPRETRO
 # 验证：冷启动若走 main.dart 的 M1 自动启动，则 2s 后进入 EmulatorSpike；
 # 进 kof97 验证 NEOGEO 四键 + 招式面板；改 SettingsSheet 死区/平移后重开游戏应即时生效。

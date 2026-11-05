@@ -33,7 +33,7 @@
 |---|---|
 | **首发渠道** | 华为 AppGallery + 小米应用商店（国内，个人可落地）+ Google Play（海外） |
 | **首发形态** | 免费 + 可选一次性买断 Pro；广告第二阶段再接 |
-| **上架前必须补齐** | ① 软著 ② APP 备案 ③ ~~隐私政策公网 URL~~（✅ 已上线 `https://api.gamepouch.cn/privacy`，后端 CMS 渲染） ④ **AAB 构建能力** ⑤ App 内开源许可页 |
+| **上架前必须补齐** | ① **软著**（未做，最长周期） ② **APP 备案**（未做） ③ ~~隐私政策公网 URL~~（✅ 已上线 `https://api.gamepouch.cn/privacy`） ④ ~~AAB 构建能力~~（✅ `build-apk.ps1 -BuildAab` + `ci.ps1` 校验） ⑤ ~~App 内开源许可页~~（✅ 设置 → 关于 → 开源许可） ⑥ ~~备案号占位字段~~（✅ 云端 AppConfig 下发）。**代码侧缺口已清零，剩余全是本人办理的资质 + 备案号实值回填 + release 签名包** |
 | **个人主体可行性** | 可以走通华为 / 小米 / Google Play / 酷安；**应用宝、国内广告 SDK 基本要公司** |
 | **最大政策风险** | 模拟器被归入"游戏"分类 → 需版号（个人不可得） |
 | **核心对策** | 一律按 **工具 / 实用工具** 申报；名称、描述、截图全部工具化；绝不内置/提供 ROM 与 BIOS |
@@ -546,5 +546,19 @@ powershell -ExecutionPolicy Bypass -File scripts\check-apk-content.ps1 `
 | 5 | `ci.ps1` 增加 AAB 产物校验 | 缺口 1 | ✅ 已完成 |
 | 6 | `skills.md` 固化包名/签名不可变更更说明 | 风险缓解 | ⬜ 未做（本次未触及） |
 | 7 | 客户端公开内容解耦 / 欢迎页导航 / 账号页首帧红屏 / 关于页动态化（2026-11-04） | 真机联调 | ✅ 已完成，详见 `design-account-backend.md`「端到端验证记录」 |
+| 8 | 首启/升版才弹欢迎页 + 全链路本地缓存（2026-11-05） | 体验 / 合规 | ✅ 已完成，见下方「2026-11-05 客户端改动」 |
+
+### 2026-11-05 客户端改动
+
+| 项 | 说明 |
+|---|---|
+| 欢迎页 | 旧实现的"已同意则跳过"分支写在 `base.isEmpty` 里，而 `effectiveBaseUrl()` 恒回退公网默认地址 → **每次冷启动都弹**、每次重 POST `/api/consent/accept`。改为单一根组件 `ConsentGate(mainApp:)`：本地已有同意记录直接进主界面、不联网；仅首次安装或政策升版才弹；每 24h 静默校验一次版本，升版标记延到下次冷启动生效（不打断游戏）。判定逻辑抽为纯函数 `lib/features/legal/consent_policy.dart` |
+| 页面标题 | 库页 `趣玩匣文件库` → **`我的文件库`**（同步 `android-ui-spec.md` 验收清单） |
+| 云端公开配置 | `CloudConfigService` 的 AppConfig 与 CMS 文档正文落盘缓存 + 24h TTL，网络失败回退旧缓存；`main()` 改为先读磁盘缓存再后台静默更新，冷启动不再等 5 秒超时 |
+| 账号资料 | `HttpAccountService.load()` 用本地资料快照 + 24h TTL；登出/换号清缓存；**断网不再误判为未登录** |
+| 云存档列表 | `CloudClient.listSaves()` 内存 + 磁盘两级缓存（30 分钟 TTL，按 `base\|userId` 而非 access_token 区分），上传/删除后失效，断网回退过期缓存；页面命中缓存不闪加载态、右上新增手动刷新；派生状态做进程内快照消除反复进出页面的空窗 |
+| 单测 | 新增 28 例：`cloud_save_models_test.dart`、`cloud_config_service_test.dart`、`consent_gate_test.dart`（`flutter analyze` 0 error，全量 `flutter test` **84/84**） |
+| HAP 重建与真机验证 | 2026-11-05 23:18 `scripts/build-hap.ps1` 产出自动签名 `entry-default-signed.hap`（124.6 MB，debug），`hdc install -r` 到 Pura70 `2MN0224730027764` 成功、`aa start` 成功；截图确认首屏为「我的文件库」且无欢迎页。详见 `design-account-backend.md` 文末「端到端验证记录（2026-11-05）」 |
+| 本机服务守护 | `D:\RetroEmuPouch\boot.bat` 原来是 UTF-8 中文 + LF，被 cmd 按 GBK 解析后吞掉 `if` 关键字，导致重启块每 30 秒无条件 `taskkill /F /IM python.exe`。改为纯 ASCII + CRLF 薄启动器 → `daemon.ps1`（按端口精确停进程、连续 2 次失败才重启、复用已有健康进程）；`start.bat` / `stop.bat` / `start-gamepouch.ps1` 一并收编 |
 
 > 需要执行时告知序号即可。

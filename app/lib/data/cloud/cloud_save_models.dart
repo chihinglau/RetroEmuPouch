@@ -33,6 +33,16 @@ class CloudSaveSummary {
           DateTime.now(),
     );
   }
+
+  /// 落盘缓存用（键名与后端 `/api/cloud/saves/list` 保持一致）。
+  Map<String, dynamic> toJson() => <String, dynamic>{
+        'id': id,
+        'save_name': saveName,
+        'size_bytes': sizeBytes,
+        'sha256': sha256,
+        'created_at': createdAt.toIso8601String(),
+        'updated_at': updatedAt.toIso8601String(),
+      };
 }
 
 /// 云存档传输层接口 —— 由 `CloudClient` 实现（真实 HTTP），

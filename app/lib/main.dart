@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import 'data/play/multiplayer_catalog.dart';
 import 'features/legal/cloud_config_service.dart';
@@ -70,13 +69,10 @@ Future<void> main() async {
   // Warm the settings cache before the first frame so the Settings sheet
   // can read AppSettings.current synchronously on first open.
   await AppSettings.load().then(AppSettings.cacheFrom);
-  try {
-    await CloudConfigService.instance
-        .load()
-        .timeout(const Duration(seconds: 5));
-  } catch (_) {
-    // 后端不可用时 fallback 到本地 LegalConstants 默认值
-  }
+  // 云端公开配置：先读磁盘缓存（无网络、毫秒级），再后台按 24h TTL 静默
+  // 更新。后端不可达时不再让冷启动白等 5 秒，已缓存的合规内容照常可用。
+  await CloudConfigService.instance.warmCache();
+  unawaited(CloudConfigService.instance.load());
   // Verify (do NOT ship) emulator BIOS files. Users must supply their own
   // legitimate copies (R1 compliance); missing BIOS are surfaced in the UI.
   try {
@@ -91,9 +87,7 @@ Future<void> main() async {
   } catch (_) {
     // Asset unavailable: catalog stays empty (single-player).
   }
-  runApp(ConsentGate(onAccept: () {
-    runApp(GamePouchApp());
-  }));
+  runApp(ConsentGate(mainApp: (_) => GamePouchApp()));
 
   // TEMP OHOS WIRING SELF-TEST: exercises every Settings-sheet backend path
   // headlessly (the OpenHarmony `uitest` driver cannot reach Flutter widgets),

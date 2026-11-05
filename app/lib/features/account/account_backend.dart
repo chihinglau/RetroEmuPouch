@@ -165,6 +165,10 @@ void setFallbackStore({
 Future<AccountStore>? _openStoreCache;
 Future<AccountStore> _openStore() => _openStoreCache ??= _doOpenStore();
 
+/// Test-only: drop the cached singleton so each test can inject a fresh
+/// fallback store. Never called in production (the singleton is deliberate).
+void resetAccountStoreForTest() => _openStoreCache = null;
+
 Future<AccountStore> _doOpenStore() async {
   SharedPreferences? prefs;
   try {

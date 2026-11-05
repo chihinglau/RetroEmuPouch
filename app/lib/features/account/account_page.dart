@@ -361,8 +361,7 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
-  /// 云存档（会员专属权益）占位：把"云服务"显式绑定到会员 / 去广告。
-  /// 后端就绪后此区接入开发者云空间。
+  /// 未登录时的云存档引导（登录后由 [CloudSaveSection] 接管真正的上传/恢复）。
   Widget _cloudSaveSection() {
     return _section(
       icon: Icons.cloud_queue_outlined,
@@ -370,10 +369,10 @@ class _AccountPageState extends State<AccountPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('云存档让进度、设置、金手指随身同步到你的私有云，'
-              '是会员核心权益之一，正在接入中。'),
+          const Text('登录后即可使用：把真实游戏存档（电池存档 / 自动存档 / 手动槽位 + 缩略图）'
+              '在客户端加密后同步到你的私有云，换设备输入同一密码即可恢复。'),
           const SizedBox(height: 8),
-          _chip('即将上线 · 会员解锁', mono: false),
+          _chip('先登录账号 · 云存档需会员', mono: false),
         ],
       ),
     );

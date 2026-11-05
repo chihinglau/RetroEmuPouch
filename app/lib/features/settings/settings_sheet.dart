@@ -438,8 +438,9 @@ class _SettingsSheetState extends State<SettingsSheet> {
       ]));
 
   void _openAbout() {
-    // 每次打开都重新拉取云端 AppConfig：后台改了备案号 / 客服邮箱 / 隐私政策
-    // 链接后，无需重启 App，重进此页即可看到最新值。成功后通知子页重建。
+    // CloudConfigService 已落盘缓存 + 24h TTL：打开页面不再无条件联网，
+    // 只有缓存过期才静默更新；后台改了备案号 / 客服邮箱 / 隐私政策链接后，
+    // 最迟一天内自动生效。成功后通知子页重建。
     CloudConfigService.instance.load().then((ok) {
       if (ok && mounted) _changes.ping();
     });

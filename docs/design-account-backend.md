@@ -2566,3 +2566,34 @@ start "" /MIN cloudflared.exe tunnel --retries 9999 run --token <token> retroemu
 | Admin JSON API（第四波） | ✅ | stats / users / entitlement PUT / 各列表端点均 200，分页结构一致 |
 | 审计留痕与迁移（第四波） | ✅ | `admin_audit_logs` 覆盖 user.update / entitlement.set / cms.publish / config.update / cloud_save.delete；`alembic 0002` 与运行时自愈幂等 |
 | 自测总计 | ✅ | **44 项全部通过**，`python -m compileall -q app` 退出码 0 |
+
+---
+
+### 端到端验证记录（2026-11-05，Pura70 `2MN0224730027764`）
+
+> 本轮为**客户端体验 / 缓存一致性**改造，后端接口零改动。公网 `api.gamepouch.cn` 仍由本机 Cloudflare Tunnel → `127.0.0.1:8000`（SQLite `dev.db`）提供，`/healthz` 返回 `env:"local"`；ECS（`env:"prod"` + Postgres + cron 备份）已就绪但未接流量，切换步骤见 `docs/release-plan.md` P2。
+
+| 验证点 | 结果 | 证据 |
+|---|---|---|
+| `flutter analyze` | ✅ | **0 error**（27 条 info/warning 均为改动前既存） |
+| 全量 `flutter test` | ✅ | **84/84** 通过，含本轮新增 28 例 |
+| 新增单测 | ✅ | `cloud_save_models_test.dart`（4，磁盘缓存序列化往返）、`cloud_config_service_test.dart`（8，TTL/离线回退/强制刷新，用 `HttpOverrides` 断言缓存命中时零网络请求）、`consent_gate_test.dart`（16，首次/已同意/升版/离线三态与 24h 边界） |
+| `scripts/build-hap.ps1` | ✅ | `√ Built build\ohos\hap\entry-default-signed.hap`，hvigor `assembleHap` 28.7s，产物 **124.6 MB**（2026-11-05 23:18，DevEco 自动签名 debug） |
+| `hdc install -r` | ✅ | `install bundle successfully`，`-r` 保留沙盒数据 |
+| `aa start -a EntryAbility -b com.retroemupouch.app` | ✅ | `start ability successfully`，`pidof` = 45209 |
+| 首屏 / 欢迎页 | ✅ | 真机截图：标题「**我的文件库**」、**未出现欢迎页**，库内 96 个游戏与「继续游戏」横幅正常渲染 |
+| 已同意用户冷启动直接进主界面 | ✅ | 设备 `account.json` 已有 `consent_given=true` + `consent_ver_privacy_policy/eula=1`；新 `ConsentGate` 按本地记录判定，不等网络 |
+| 本机服务守护稳定性 | ✅ | 替换坏 `boot.bat` 后观察 2 分钟：uvicorn PID 未变（跨 3 个 30s 周期），`cloudflared` PID 未变，`127.0.0.1:8000/healthz` 与公网 `/healthz` 均 200，仅 1 个守护实例 |
+
+**本轮修复的欢迎页根因**：旧实现的「已同意则跳过」分支写在 `base.isEmpty` 里，而 `effectiveBaseUrl()` 在空配置时恒回退 `kDefaultBackendUrl='https://api.gamepouch.cn'`，该分支是死代码；每次冷启动都渲染欢迎页并逐篇重 POST `/api/consent/accept`（同意记录持续增长）。决策逻辑现抽为纯函数 `lib/features/legal/consent_policy.dart`，`ConsentGate` 只负责 IO / UI。
+
+**缓存分层**（登出或账号切换时失效）：
+
+| 数据 | 存储 | TTL | 网络失败 |
+|---|---|---|---|
+| AppConfig `/api/cms/config` | `AccountStore`（鸿蒙 `files/account.json`） | 24h | 保留旧缓存 |
+| CMS 文档正文 | 同上，按 `docKey_lang` | 24h | 返回旧正文，否则由页面回退内置模板 |
+| 账号资料 `/api/auth/me` | 已有 `account_user_id/name` 快照 + 时间戳 | 24h | **不误判为已登出** |
+| 云存档列表 `/api/cloud/saves/list` | 内存 + 磁盘两级，key 为 `base\|userId`（不用 15 分钟就变的 access_token） | 30min | 回退过期缓存；上传/删除/手动刷新后失效 |
+
+**未自动化验证项**（`uitest` 点不到 Flutter 渲染内容，需手动确认）：云存档跨冷启动命中缓存时 `account.json` 出现 `cloud_saves_list_json/_at/_key` 三键且 30 分钟内 `_at` 不变；设置页 9 字段 `settings.json` 写入；FPS 浮窗开关；加速静音。

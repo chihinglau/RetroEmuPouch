@@ -73,6 +73,21 @@ class HttpAccountService implements AccountBackend {
     }
   }
 
+  /// 账号资料（昵称 / 邮箱）变更极少：缓存有效期内进「网络」页或冷启动
+  /// 都不再打 `/api/auth/me`。登出 / 换账号 / 重新登录时主动清除。
+  static const String _kMeAt = 'account_me_at';
+  static const Duration _meTtl = Duration(hours: 24);
+
+  AccountUser? _cachedUserFromStore() {
+    final id = _store.getString(kAccountUserId);
+    final name = _store.getString(kAccountUserName);
+    if (id == null || id.isEmpty || name == null || name.isEmpty) return null;
+    return AccountUser(id: id, name: name, online: true);
+  }
+
+  Future<void> _markProfileFresh() async => _store.setString(
+      _kMeAt, DateTime.now().millisecondsSinceEpoch.toString());
+
   @override
   Future<AccountUser?> load() async {
     final t = _token;
@@ -80,14 +95,27 @@ class HttpAccountService implements AccountBackend {
       _setSession(null);
       return null;
     }
+    final cached = _cachedUserFromStore();
+    final at = int.tryParse(_store.getString(_kMeAt) ?? '') ?? 0;
+    final fresh = at > 0 &&
+        DateTime.now().millisecondsSinceEpoch - at < _meTtl.inMilliseconds;
+    if (cached != null && fresh) {
+      _setSession(AuthSession(cached, t));
+      return cached;
+    }
     try {
       final j = await _json('GET', '/api/auth/me');
       final u = _toUser(j);
-      _persistUser(j);
+      await _persistUser(j);
+      await _markProfileFresh();
       _setSession(AuthSession(u, t));
       return u;
     } catch (_) {
-      // token 失效或网络不可达：保守地视为未登录，避免卡死在错误态。
+      // 网络不可达时不要误判为「已登出」：本地凭据与资料快照都还在。
+      if (cached != null) {
+        _setSession(AuthSession(cached, t));
+        return cached;
+      }
       _setSession(null);
       return null;
     }
@@ -116,7 +144,8 @@ class HttpAccountService implements AccountBackend {
     if (rt.isNotEmpty) await _store.setString(kAccountRefreshToken, rt);
     final me = await _json('GET', '/api/auth/me');
     final u = _toUser(me);
-    _persistUser(me);
+    await _persistUser(me);
+    await _markProfileFresh();
     final s = AuthSession(u, tok);
     await _maybeStartTrial();
     _setSession(s);
@@ -141,7 +170,8 @@ class HttpAccountService implements AccountBackend {
     if (rt.isNotEmpty) await _store.setString(kAccountRefreshToken, rt);
     final me = await _json('GET', '/api/auth/me');
     final u = _toUser(me);
-    _persistUser(me);
+    await _persistUser(me);
+    await _markProfileFresh();
     final s = AuthSession(u, tok);
     await _maybeStartTrial();
     _setSession(s);
@@ -159,6 +189,7 @@ class HttpAccountService implements AccountBackend {
     await _store.remove(kAccountRefreshToken);
     await _store.remove(kAccountUserId);
     await _store.remove(kAccountUserName);
+    await _store.remove(_kMeAt);
     _setSession(null);
   }
 
@@ -175,6 +206,7 @@ class HttpAccountService implements AccountBackend {
     await _store.remove(kAccountRefreshToken);
     await _store.remove(kAccountUserId);
     await _store.remove(kAccountUserName);
+    await _store.remove(_kMeAt);
     _setSession(null);
   }
 
@@ -198,11 +230,11 @@ class HttpAccountService implements AccountBackend {
         online: true,
       );
 
-  void _persistUser(Map<String, dynamic> j) {
+  Future<void> _persistUser(Map<String, dynamic> j) async {
     final id = (j['user_id'] ?? j['id']);
     final name = j['display_name'] ?? j['email'];
-    if (id != null) _store.setString(kAccountUserId, id.toString());
-    if (name != null) _store.setString(kAccountUserName, name.toString());
+    if (id != null) await _store.setString(kAccountUserId, id.toString());
+    if (name != null) await _store.setString(kAccountUserName, name.toString());
   }
 
   /// 统一 JSON 请求；复用 [SecurityPolicy] 作为唯一明文闸门（store 包只放行 HTTPS）。

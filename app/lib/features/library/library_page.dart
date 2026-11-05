@@ -827,7 +827,7 @@ class _LibraryPageState extends State<LibraryPage>
       appBar: AppBar(
         title: _selecting
             ? Text('已选 ${_selected.length} 个')
-            : const Text('趣玩匣文件库'),
+            : const Text('我的文件库'),
         leading: _selecting
             ? IconButton(
                 tooltip: '退出选择',

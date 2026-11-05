@@ -7,7 +7,7 @@ import 'package:cryptography/cryptography.dart' show Sha256;
 import 'package:flutter/foundation.dart' show kDebugMode;
 
 import '../../features/account/account_backend.dart'
-    show AccountStore, effectiveBaseUrl, kAccountToken;
+    show AccountStore, effectiveBaseUrl, kAccountToken, kAccountUserId;
 import '../../features/cloud/cloud_crypto.dart';
 import 'cloud_save_models.dart';
 import 'security_policy.dart';
@@ -45,6 +45,53 @@ class CloudException implements Exception {
 class CloudClient implements CloudSaveTransport {
   CloudClient(this._store);
   final AccountStore _store;
+
+  /// 云存档列表的**本地磁盘缓存**：跨冷启动复用，TTL 内打开页面不联网。
+  /// 内存层只是进程内快速路径，磁盘层才是"本地缓存"的本体。
+  ///
+  /// 一次打开「网络」页里 `_refresh()` 与 `sync.listCloud()` 会各调一次
+  /// [listSaves]，缓存也能把这两次合并掉。上传 / 删除 / 手动刷新后失效。
+  /// 缓存 key 用 `base|userId`，**不能用 access_token**：后者 15 分钟刷新一次，
+  /// 拿它做 key 会导致缓存几乎永远不命中（上一版的疏漏）。
+  static const Duration savesListTtl = Duration(minutes: 30);
+  static const String _kListJson = 'cloud_saves_list_json';
+  static const String _kListAt = 'cloud_saves_list_at';
+  static const String _kListKey = 'cloud_saves_list_key';
+
+  static List<CloudSaveSummary>? _savesListCache;
+  static DateTime? _savesListCacheAt;
+  static String? _savesListCacheKey;
+
+  static List<CloudSaveSummary>? _decodeList(String? raw) {
+    if (raw == null || raw.isEmpty) return null;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return null;
+      return decoded
+          .whereType<Map>()
+          .map((m) => CloudSaveSummary.fromJson(m.cast<String, dynamic>()))
+          .toList();
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static bool _fresh(int atMs) =>
+      atMs > 0 &&
+      DateTime.now().millisecondsSinceEpoch - atMs <
+          savesListTtl.inMilliseconds;
+
+  /// 让缓存失效（内存 + 磁盘）。上传 / 删除成功后、以及用户手动刷新时调用。
+  Future<void> invalidateSavesCache() async {
+    _savesListCache = null;
+    _savesListCacheAt = null;
+    _savesListCacheKey = null;
+    try {
+      await _store.remove(_kListJson);
+      await _store.remove(_kListAt);
+      await _store.remove(_kListKey);
+    } catch (_) {}
+  }
 
   Future<String> get _base async => await effectiveBaseUrl(_store);
   String get _token => _store.getString(kAccountToken) ?? '';
@@ -209,7 +256,7 @@ class CloudClient implements CloudSaveTransport {
     SecurityPolicy.assertSafe(uri);
     final client = _http();
     try {
-      return await _guard(() async {
+      final id = await _guard(() async {
         final req = await client.postUrl(uri);
         final t = _token;
         if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
@@ -270,6 +317,8 @@ class CloudClient implements CloudSaveTransport {
         }
         return saveId;
       });
+      await invalidateSavesCache();
+      return id;
     } finally {
       client.close(force: true);
     }
@@ -281,41 +330,96 @@ class CloudClient implements CloudSaveTransport {
   Future<List<CloudSaveSummary>> listSaves() async {
     final base = await _base;
     if (base.isEmpty) throw CloudException('未配置后端地址');
+    final cacheKey = '$base|${_store.getString(kAccountUserId) ?? ''}';
+
+    // 1) 内存缓存：同一进程内反复打开页面直接命中。
+    final mem = _savesListCache;
+    final memAt = _savesListCacheAt;
+    if (mem != null &&
+        memAt != null &&
+        _savesListCacheKey == cacheKey &&
+        DateTime.now().difference(memAt) < savesListTtl) {
+      return mem;
+    }
+    // 2) 磁盘缓存：跨冷启动命中，页面秒开、不联网。
+    final disk = _readDiskCache(cacheKey);
+    if (disk != null) return disk;
+
+    // 3) 都没命中才真正联网。
     final uri = Uri.parse('$base/api/cloud/saves/list');
     SecurityPolicy.assertSafe(uri);
     final client = _http();
     try {
-      return await _guard(() async {
-        final req = await client.getUrl(uri);
-        final t = _token;
-        if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
-        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
-        final res = await req.close().timeout(const Duration(seconds: 15));
-        final text = await res
-            .transform(utf8.decoder)
-            .join()
-            .timeout(const Duration(seconds: 15));
-        if (res.statusCode >= 400) {
-          Map<String, dynamic> j = const {};
-          try {
-            final d = jsonDecode(text);
-            if (d is Map<String, dynamic>) j = d;
-          } catch (_) {}
-          throw CloudException(
-            errorOf(j) ?? '列表获取失败（${res.statusCode}）',
-            statusCode: res.statusCode,
-          );
+      late final List<CloudSaveSummary> result;
+      try {
+        result = await _guard(() async {
+          final req = await client.getUrl(uri);
+          final t = _token;
+          if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
+          req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
+          final res = await req.close().timeout(const Duration(seconds: 15));
+          final text = await res
+              .transform(utf8.decoder)
+              .join()
+              .timeout(const Duration(seconds: 15));
+          if (res.statusCode >= 400) {
+            Map<String, dynamic> j = const {};
+            try {
+              final d = jsonDecode(text);
+              if (d is Map<String, dynamic>) j = d;
+            } catch (_) {}
+            throw CloudException(
+              errorOf(j) ?? '列表获取失败（${res.statusCode}）',
+              statusCode: res.statusCode,
+            );
+          }
+          final decoded = jsonDecode(text);
+          final List list = decoded is List ? decoded : const [];
+          return list
+              .whereType<Map>()
+              .map((m) => CloudSaveSummary.fromJson(m.cast<String, dynamic>()))
+              .toList();
+        });
+      } on CloudException {
+        // 断网 / 后端不可达：用过期缓存兜底，页面不会变空白。
+        final stale = _decodeList(_store.getString(_kListJson));
+        if (stale != null && _store.getString(_kListKey) == cacheKey) {
+          _remember(cacheKey, stale);
+          return stale;
         }
-        final decoded = jsonDecode(text);
-        final List list = decoded is List ? decoded : const [];
-        return list
-            .whereType<Map>()
-            .map((m) => CloudSaveSummary.fromJson(m.cast<String, dynamic>()))
-            .toList();
-      });
+        rethrow;
+      }
+      _remember(cacheKey, result);
+      await _persistList(cacheKey, result);
+      return result;
     } finally {
       client.close(force: true);
     }
+  }
+
+  List<CloudSaveSummary>? _readDiskCache(String key) {
+    if (_store.getString(_kListKey) != key) return null;
+    final atMs = int.tryParse(_store.getString(_kListAt) ?? '') ?? 0;
+    if (!_fresh(atMs)) return null;
+    final list = _decodeList(_store.getString(_kListJson));
+    if (list != null) _remember(key, list);
+    return list;
+  }
+
+  void _remember(String key, List<CloudSaveSummary> list) {
+    _savesListCache = list;
+    _savesListCacheAt = DateTime.now();
+    _savesListCacheKey = key;
+  }
+
+  Future<void> _persistList(String key, List<CloudSaveSummary> list) async {
+    try {
+      await _store.setString(
+          _kListJson, jsonEncode(list.map((s) => s.toJson()).toList()));
+      await _store.setString(_kListKey, key);
+      await _store.setString(
+          _kListAt, DateTime.now().millisecondsSinceEpoch.toString());
+    } catch (_) {}
   }
 
   /// 下载指定存档到 [dest]。返回写入字节数（明文）。
@@ -391,6 +495,7 @@ class CloudClient implements CloudSaveTransport {
   @override
   Future<void> deleteSave(String saveId) async {
     await _json('DELETE', '/api/cloud/saves/$saveId');
+    await invalidateSavesCache();
   }
 }
 
