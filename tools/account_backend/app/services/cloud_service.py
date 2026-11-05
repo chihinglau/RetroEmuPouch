@@ -55,15 +55,36 @@ async def upload_blob(
     if len(data) > MAX_UPLOAD_SIZE:
         raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="too_large")
 
-    blob = CloudSaveBlob(
-        user_id=user.id,
-        save_name=save_name,
-        client_key_hash=_hash_device_key(client_key),
-        encrypted_blob=data,
-        sha256=hashlib.sha256(data).hexdigest(),
-        size_bytes=len(data),
+    digest = hashlib.sha256(data).hexdigest()
+    key_hash = _hash_device_key(client_key)
+
+    # client_key 是「同一存档槽」的稳定标识：同一用户重复上传同一 key 时
+    # 覆盖原 blob（id 不变），避免 App 每次备份都新插一行导致无限堆积。
+    blob = (
+        db.query(CloudSaveBlob)
+        .filter(
+            CloudSaveBlob.user_id == user.id,
+            CloudSaveBlob.client_key_hash == key_hash,
+        )
+        .first()
     )
-    db.add(blob)
+    if blob is None:
+        blob = CloudSaveBlob(
+            user_id=user.id,
+            save_name=save_name,
+            client_key_hash=key_hash,
+            encrypted_blob=data,
+            sha256=digest,
+            size_bytes=len(data),
+        )
+        db.add(blob)
+    else:
+        blob.save_name = save_name
+        blob.encrypted_blob = data
+        blob.sha256 = digest
+        blob.size_bytes = len(data)
+        blob.updated_at = datetime.now(timezone.utc)
+
     db.commit()
     db.refresh(blob)
     return blob

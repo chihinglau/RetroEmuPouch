@@ -1,12 +1,11 @@
-# =================================================================
-# 首次启动 DB 时执行（PostgreSQL 初始化）
-# =================================================================
+-- =================================================================
+-- 首次启动 DB 时执行（PostgreSQL 官方镜像会自动把 *.sql 交给 psql）
+-- 注意：这里必须是纯 SQL，不能写 psql <<-EOSQL heredoc / echo 等 shell 语法，
+-- 否则会报 "syntax error at or near #" 且容器初始化失败。
+-- =================================================================
 
-# 启用 pgcrypto（生成 UUID 用）
-psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<-EOSQL
-    CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-    -- 额外的优化（可选）
-    ALTER SYSTEM SET max_connections = '200';
-EOSQL
+-- 启用 pgcrypto（gen_random_uuid() 生成 UUID 用）
+CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
-echo "✅ PostgreSQL 初始化完成"
+-- 额外的优化（下次启动生效）
+ALTER SYSTEM SET max_connections = '200';

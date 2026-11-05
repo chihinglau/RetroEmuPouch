@@ -1024,7 +1024,7 @@ class _MembershipPageBodyState extends State<_MembershipPageBody> {
                     style: TextStyle(fontWeight: FontWeight.w800)),
               ]),
               const SizedBox(height: 8),
-              Text('· 试用期内去除所有广告、解锁云存档权益',
+              Text('· 试用期内去除所有广告（云存档需购买正式档位）',
                   style: theme.textTheme.bodySmall),
               Text('· 到期后自动回到免费版，不会自动扣费',
                   style: theme.textTheme.bodySmall),

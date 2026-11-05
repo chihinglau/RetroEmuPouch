@@ -7,11 +7,26 @@
 
 | 项 | 值 |
 |---|---|
-| 版本 | v0.2（补充 CMS 与同意管理） |
-| 日期 | 2026-11-02 |
-| 范围 | 技术栈、数据模型、API、CMS/隐私内容管理、部署、分阶段交付 |
+| 版本 | v0.3（线上 staging 运行中 + 云存档产品化） |
+| 日期 | 2026-11-05 |
+| 范围 | 技术栈、数据模型、API、CMS/隐私内容管理、部署、分阶段交付、运维双轨 |
 | 依赖 | `docs/design-account-cloud-ads-membership.md`（总方案）；客户端 `ReceiptVerifier` / `BillingService` / `AccountService` / `LegalConstants` / `ConsentGate` 骨架 |
-| 状态 | 待决策 |
+| 状态 | **已上线（备案前 staging）**：ECS `112.74.114.146` 纯 HTTP + Caddy，`smoke` 38/38 |
+
+---
+
+## 当前状态快照（2026-11-05）
+
+| 维度 | 现状 |
+|---|---|
+| 线上环境 | 阿里云 ECS `112.74.114.146`（Ubuntu 24.04，Docker Compose：app + db + caddy），`http://<IP>/healthz` = 200，`smoke.sh` PASS=38 FAIL=0 |
+| 备案 | 阿里云订单 `2036873543813`（首次备案），处于**第 4 步「工信部短信核验」**（24h 内用手机流量打开 12381 短信链接）；后续为管局审核 |
+| HTTPS | 安全组已放行 80/443；443 当前 `RST` 属预期（远端仍是 `Caddyfile.staging`，只有 `:80` 站点，Caddy 未在 443 提供 TLS）。备案下号后 `deploy.ps1 -Action deploy -Domain <域名>` 自动签发证书 |
+| 运维 | cron：`03:15 backup-db.sh` / `*/10 healthcheck.sh` / 周日 `04:30 docker system prune`；compose 日志轮转 10m×3；备份恢复演练通过（9 表行数一致） |
+| 开发/发布双轨 | 本地 `scripts/dev.ps1`（Postgres 同构，无 Docker 自动退化 SQLite）+ 云端 `deploy.ps1 -Action update`（只换代码，不碰 Caddy/compose）；三条红线见「本地 / 云端双轨维护」 |
+| 云存档 | 契约对齐 + `client_key` 覆盖语义；真实存档同步（电池/自动/手动槽 + 缩略图）**上传 / 恢复 / 冲突决策**三件事全部完成；库设置备份走独立 `library-backup` key |
+| 测试基线 | Flutter `flutter test`=56 全绿、`flutter analyze` 无新增告警；后端 `tests/test_cloud_saves.py`=39、`tests/test_admin_management.py`=44 全绿；Dart 云存档层 20 项单测 + 一次真实后端端到端（上传→清空→恢复逐字节一致） |
+| 未完成 | Phase 5 真实收据校验（Google/华为凭证）、备案下号切 HTTPS、自动同步开关（启动检查/退出上传）、OHOS Asset Store Kit 替换明文密码兜底 |
 
 ---
 
@@ -484,6 +499,7 @@ PC (peer_host)  ──一次性 code──►  App
 | 2026-11-02 | 待决策 | v0.1 初稿输出 | 基础账号/配对/会员/云存档方案 |
 | 2026-11-02 | 待决策 | v0.2 补充 CMS + 同意管理 | 新增 `cms_documents`/`app_configs`/`consent_records` 三表、CMS 公开端点、Admin 管理端点、客户端改造方案、Phase 2/3 提前 |
 | 2026-11-04 | 实施者 | 公开内容与账号后端地址解耦 | `CloudConfigService` 的 `load()`/`fetchDoc()` 不再经 `effectiveBaseUrl`，硬走公网 `kDefaultBackendUrl`；隐私政策/协议/备案号/客服信息等属于任何用户均可访问的公开内容，不受调试入口私有地址影响。同时修正 `ConsentGate` 导航、账号页首帧红屏、关于页动态化、seed 默认项 8→10 条 |
+| 2026-11-05 | 实施者 | 运维收尾 + 云存档产品化 + 双轨定稿 | ① J3 探活/日志轮转/prune、J2b 备份恢复演练落地；② 云存档契约对齐（错误体 `detail`、网络异常收敛、`X-Save-SHA256` 校验）并把 `client_key` 改成覆盖语义；③ 新增真实存档同步层（上传/恢复/冲突决策）；④ 本地开发与云端生产双轨流程（`dev.ps1`、`update` 不再覆盖 Caddyfile、三条红线）。事故：`-Action update` 曾把 prod Caddyfile 覆盖到远端导致整站 308，已修并回归 |
 | 2026-11-04 | 实施者 | 补齐完整运营后台（Phase 7） | 原后台仅 CMS/AppConfig，注册用户与权益不可运维。新增 `users.is_active` + `admin_audit_logs`、迁移 0002 + 运行时 schema 自愈、`admin_service` 分页/统计/CRUD、`billing_service` 公共权益写入、Admin JSON API 与 11 个 Web UI 页面。决策：人工调整权益不写账单流水（避免污染对账）、云存档只展示元数据不解密、删除用户级联且不可恢复、所有写操作强制审计 |
 
 ---
@@ -651,27 +667,33 @@ tools/account_backend/
 └── app/
 ```
 
-### 方式 A：Dev 模式（推荐，零依赖，SQLite）
-
-**首次启动**（3 步）：
+### 方式 A：一键脚本（推荐）
 
 ```powershell
-# 1. 进入目录
 cd tools\account_backend
-
-# 2. 装依赖（只第一次）
-pip install -r requirements.txt
-
-# 3. 启动（自动建表 + 热重载）
-python -c "from app import Base, engine; import app.models; Base.metadata.create_all(engine)"
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+pip install -r requirements.txt      # 只第一次
+./scripts/dev.ps1                    # 自动选库：有 Docker→Postgres（与云端同构），否则 SQLite
 ```
 
-**后续启动**（1 步）：
+脚本会做完：检查依赖 → 起本地 Postgres 容器（或退化为 SQLite）→ 跑 `alembic upgrade head` →
+打印 `http://<局域网IP>:8000` 供 App 填写 → 启动 `uvicorn --reload`。
+
+常用变体：
+
+| 场景 | 命令 |
+|---|---|
+| 强制与云端同构的 Postgres（推荐） | `./scripts/dev.ps1 -Db postgres` |
+| 无 Docker 时的快速调试 | `./scripts/dev.ps1 -Db sqlite` |
+| 只准备库 + 迁移，不起服务 | `./scripts/dev.ps1 -MigrateOnly` |
+| 换端口 | `./scripts/dev.ps1 -Port 8001` |
+
+> `-Db postgres` 需要先在 `.env.local` 里设 `DB_PASSWORD`（脚本首次会从模板生成）。
+
+**手动等价命令**（脚本坏掉时的退路）：
 
 ```powershell
 cd tools\account_backend
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload   # SQLite 由 main.py create_all 兜底
 ```
 
 **首次 Seed 初始化**（10 条 AppConfig + 4 篇 CMS 文档）：
@@ -685,21 +707,20 @@ Invoke-RestMethod -Method Post -Uri http://localhost:8000/admin/seed -Headers @{
 # 返回: { "app_configs_seeded": 10, "cms_docs_seeded": 4 }
 ```
 
-### 方式 B：Docker Compose（PostgreSQL）
+### 方式 B：Docker Compose 整栈（本地生产级）
 
 ```powershell
 cd tools\account_backend
-copy .env.example .env     # 改 DB_PASSWORD / JWT_SECRET 等
-docker compose up -d
-```
-
-首次需要 Alembic 迁移：
-
-```powershell
-docker compose exec app alembic revision --autogenerate -m "initial"
-docker compose exec app alembic upgrade head
+copy .env.local.example .env.local   # 改 DB_PASSWORD / JWT_SECRET 等
+docker compose -f docker-compose.local.yml up -d --build
+docker compose -f docker-compose.local.yml exec -T app alembic upgrade head
 # 然后同上 seed
 ```
+
+`docker-compose.local.yml` 的 `db` 只绑 `127.0.0.1:5432`（供宿主机 uvicorn / alembic / 测试脚本连），
+不对局域网暴露数据库；数据目录在 `D:\RetroEmuPouch\backend\postgres-data`。
+迁移脚本仓库里已有（`alembic/versions/0001_initial.py`、`0002_admin_management.py`），
+**不要**再 `alembic revision --autogenerate` 造第二份 initial。
 
 ### 访问入口
 
@@ -717,6 +738,9 @@ docker compose exec app alembic upgrade head
 
 | 目的 | 命令 |
 |---|---|
+| 一键起本地开发环境 | `./scripts/dev.ps1 -Db postgres` |
+| 本地端到端冒烟 | `bash scripts/smoke.sh http://127.0.0.1` |
+| 后端自测 | `python tests/test_cloud_saves.py`、`python tests/test_admin_management.py` |
 | 启动（dev + reload） | `python -m uvicorn app.main:app --reload` |
 | 安装依赖 | `pip install -r requirements.txt` |
 | 语法检查 | `python -m compileall app` |
@@ -736,6 +760,96 @@ docker compose exec app alembic upgrade head
 | SQLite 启动报 timezone 错 | SQLite 不保留 DateTime tzinfo | 已在 `entitlement.py` 加 `_ensure_utc()` helper，无需额外处理 |
 | 端口 8000 被占用 | 上次进程没退出 | `netstat -ano \| findstr :8000` 找 PID → `taskkill /PID xxx /F` |
 | admin 端点返回 401/403 | token 过期或用错 secret | 重新生成 admin token，确保用的是 `.env` 里的 `ADMIN_TOKEN_SECRET` |
+
+---
+
+## 本地 / 云端双轨维护（2026-11-05 定稿）
+
+**定位**：本地是唯一开发/调试环境，云端是唯一对外生产环境；两者代码同源、数据隔离，
+「本地改 → 本地测通 → 部署云端 → 云端再验」是唯一上线路径。不搞灰度双写，也不允许
+本地直连生产库。
+
+### 三条红线
+
+1. **库不互连、不双写。** 本地（SQLite 或本地 Postgres）与云端 Postgres 之间没有任何
+   连接配置。要复现线上问题，用远端 `pg_dump` 拉一份副本到本地（涉及用户数据先脱敏），
+   绝不反向回写。用完即删。
+2. **schema 只走 alembic。** 改模型 = 同时写 `alembic/versions/xxxx.py`。
+   本地 `alembic upgrade head` 验证 → 部署时 `deploy.ps1` 已在远端执行 `alembic upgrade head`。
+   `create_all`（仅非 prod）与 `schema_bootstrap`（幂等补列）只是兜底，不能当作迁移来源。
+3. **本地默认 Postgres。** SQLite 仅在没有 Docker 时降级使用，涉及 schema/约束/时区的改动
+   必须在 Postgres 上再跑一遍（`scripts/dev.ps1 -Db postgres`）。
+
+### 环境对照
+
+| 维度 | 本地开发 | 云端生产 |
+|---|---|---|
+| 入口 | `scripts/dev.ps1` | `scripts/deploy.ps1 -Action deploy\|update` |
+| compose | `docker-compose.local.yml`（或裸 uvicorn） | `docker-compose.prod.yml` |
+| 环境变量 | `.env`（dev 值）+ `.env.local`（本地 compose 用） | `.env.production`（仅存在于 ECS） |
+| 数据库 | SQLite（降级）或本地 Postgres:16 | 云端 Postgres:16（容器 `db`，不对外暴露端口） |
+| 反向代理 | 无（直连 8000） | Caddy（`Caddyfile.staging` 纯 HTTP / `Caddyfile.prod` 自动 HTTPS） |
+| 数据目录 | `D:\RetroEmuPouch\backend\{sqlite,postgres-data,logs,backups}` | ECS `/opt/retroemupouch-account` + 容器卷 |
+| 备份 | 无需 | `backup-db.sh`（cron 03:15）+ `migrate-db.sh --restore-drill` 演练 |
+| 探活 | 手动 `curl /healthz` | `healthcheck.sh`（cron 每 10 分钟，失败写 `/var/log/gp-health.log`） |
+| 冒烟 | `bash scripts/smoke.sh http://127.0.0.1` | `ssh … 'cd /opt/retroemupouch-account && scripts/smoke.sh http://127.0.0.1'` |
+| 客户端地址 | `http://<PC局域网IP>:8000`（debug/community 才允许明文） | `https://api.<域名>`（store 渠道唯一允许的形态） |
+
+### 日常循环
+
+```powershell
+# ① 本地起服务（自动选库 + 迁移 + 局域网地址提示）
+cd tools\account_backend; ./scripts/dev.ps1 -Db postgres
+
+# ② 改代码后跑自测（后端两个脚本 + 客户端 Dart 测试）
+python tests/test_cloud_saves.py
+python tests/test_admin_management.py
+cd ..\..\app; flutter analyze; flutter test
+
+# ③ 本地端到端冒烟（PASS=38 才算过）
+cd ..\tools\account_backend; bash scripts/smoke.sh http://127.0.0.1
+
+# ④ 真机联调（可选，App 里把后端地址改成 http://<PC局域网IP>:8000）
+```
+
+发布：
+
+```powershell
+$env:ECS_HOST="112.74.114.146"; $env:ECS_USER="root"; $env:ECS_SSH_KEY="C:\Users\<你>\.ssh\id_ecs99"
+./scripts/deploy.ps1 -Action update                  # 只换 app 代码 + alembic upgrade（Caddy/compose/库都不动）
+./scripts/deploy.ps1 -Action deploy -Staging         # 动了 compose/Caddyfile/环境变量时用（备案前必须带 -Staging）
+# 远端回归
+ssh … 'cd /opt/retroemupouch-account && scripts/smoke.sh http://127.0.0.1 | tail -3'
+```
+
+> ⚠️ 2026-11-05 踩坑：`-Action update` 原本会顺手把本地 `Caddyfile.prod`（HTTPS + 自动 ACME）
+> 覆盖到远端，把备案前的 staging 纯 HTTP 站点切成整站 308 → 线上不可用。
+> 现已改为 update **不碰** Caddyfile/compose；Caddy 配置只由 `deploy`（带 `-Staging`/`-Domain`）切换。
+
+### 发布门禁（缺一不部署）
+
+- [ ] `python tests/test_cloud_saves.py` = ALL GREEN
+- [ ] `python tests/test_admin_management.py` = 44/44
+- [ ] `flutter analyze` 无新增 error/warning；相关 `flutter test` 全绿
+- [ ] 本地 `scripts/smoke.sh` PASS=38 FAIL=0
+- [ ] 模型改动已配套 alembic revision，且本地 `alembic upgrade head` 通过
+- [ ] 若改了环境变量/端口/compose，`deploy.ps1 -Action deploy` 且远端 `/healthz` = 200
+
+### 回滚
+
+1. 代码：`git revert`/回退到上一个 commit 后 `deploy.ps1 -Action update`（镜像重建，库不动）。
+2. 数据：`/opt/backups/gp-*.sql.gz`（每日 03:15）。**先演练**再真恢复：
+   `scripts/migrate-db.sh --restore-drill`（恢复到临时库 `gp_migrate_test` 并逐表比行数），
+   确认无误后 `--apply`，最后 `--cleanup`。
+3. 部署后异常：`deploy.ps1 -Action logs -Service app|caddy`；`/var/log/gp-health.log` 看探活记录。
+
+### 已知限制
+
+- 本机（Windows，2026-11-05）**没有安装 Docker**，`scripts/dev.ps1` 会自动降级 SQLite 并打警告；
+  Postgres 同构路径需要在装有 Docker Desktop 的机器上验证。
+- store 渠道 release 包只允许 HTTPS；本地明文联调必须用 debug 或 `--dart-define=CHANNEL=community`
+  （`SecurityPolicy` 只对 loopback 与 RFC1918 私网放行明文）。
+- 云端当前是备案前的 `-Staging` 纯 HTTP IP 直连；备案下号后切 DNS + 去掉 `-Staging` 即可上自动 HTTPS。
 
 ---
 
@@ -985,14 +1099,20 @@ App 访问地址：`http://<PC局域网IP>:8000`
 tools/account_backend/
 ├── Dockerfile.prod              ← 生产镜像（多阶段构建 + gunicorn + 非 root 用户）
 ├── docker-compose.prod.yml      ← 生产编排（FastAPI + PostgreSQL + Caddy HTTPS）
-├── Caddyfile.prod               ← Caddy 反向代理 + 自动 HTTPS + CORS 头
+├── Caddyfile.prod               ← Caddy 反向代理 + 自动 HTTPS + 安全头
+├── Caddyfile.staging            ← 备案前临时配置：`:80` 纯 HTTP、无域名站点（不触发 ACME）
 ├── .env.production.example      ← 生产环境变量模板（密码/JWT/数据库）
 ├── .dockerignore                ← Docker 构建时排除无关文件
 └── scripts/
     ├── deploy.ps1               ← ⭐ 一键部署（6 个动作：setup/deploy/seed/logs/stop/update）
-    ├── setup-ecs.sh             ← ECS 初始化（装 Docker + Docker Compose）
+    ├── setup-ecs.sh             ← ECS 初始化（Docker CE + 镜像加速 + ufw）
+    ├── backup-db.sh             ← 每日 pg_dump（setup 时装进 root crontab，保留 7 天）
+    ├── smoke.sh                 ← H2/H3 回归（公开端点 + 账号/权益/配对 + 后台 11 页，自清理）
+    ├── healthcheck.sh           ← 探活（cron 每 10 分钟，失败才写 /var/log/gp-health.log）
+    ├── migrate_sqlite.py        ← G 阶段：本地 SQLite → 可审阅 SQL（inspect / dump）
+    ├── migrate-db.sh            ← G 阶段：临时库试跑 / --apply 正式导入（先快照）/ --restore-drill / 清理
     └── db-init/
-        └── 01-extensions.sql    ← PostgreSQL 首次启动时启用 pgcrypto
+        └── 01-extensions.sql    ← PostgreSQL 首次启动时启用 pgcrypto（必须是纯 SQL）
 ```
 
 ### 一键部署流程（5 步）
@@ -1032,13 +1152,15 @@ notepad .env.production
 # ══════════════════════════════════════════════════
 # Step 4: 上传 + 构建 + 启动（一条命令）
 # ══════════════════════════════════════════════════
-# 有域名的话（推荐）：
-$env:ECS_DOMAIN = "api.yourdomain.com"   # 域名 DNS 先指向 ECS 公网 IP
-.\scripts\deploy.ps1 -Action deploy -Domain "yourdomain.com"
+# 有域名且已备案、DNS 已指向 ECS 公网 IP：
+$env:ECS_DOMAIN = "gamepouch.cn"          # 只传主域，脚本内部拼成 api.gamepouch.cn
+.\scripts\deploy.ps1 -Action deploy -Domain "gamepouch.cn"
 
-# 没域名的话（先用 IP 测试）：
-.\scripts\deploy.ps1 -Action deploy
-# Caddyfile 里的 yourdomain.com 注释掉 HTTPS 段，临时用 HTTP
+# 没域名 / 域名未备案（推荐：加 -Staging，纯 HTTP + IP 直连）：
+.\scripts\deploy.ps1 -Action deploy -Staging
+# 脚本会把 Caddyfile.staging 上传为远程的 Caddyfile.prod（compose 挂载路径不变），
+# Caddy 只监听 :80、站点块不含域名 → 不触发自动 HTTPS，也绕开未备案域名拦截。
+# 备案通过后去掉 -Staging 再跑一次 deploy 即可切回 api.<domain> 自动证书。
 
 # ══════════════════════════════════════════════════
 # Step 5: Seed 初始化（首次启动必须跑）
@@ -1051,12 +1173,18 @@ $env:ECS_DOMAIN = "api.yourdomain.com"   # 域名 DNS 先指向 ECS 公网 IP
 
 | 检查项 | 验证方式 |
 |---|---|
-| 后端健康 | `curl https://api.yourdomain.com/healthz` → `{"ok":true,"env":"production"}` |
+| 备案前（Staging） | `curl http://<ECS公网IP>/healthz` → `{"ok":true,"env":"prod"}`；安全组需放行 TCP 80 |
+| 后端健康 | `curl https://api.yourdomain.com/healthz` → `{"ok":true,"env":"prod"}` |
 | API 文档 | 浏览器打开 `https://api.yourdomain.com/docs` → Swagger UI |
 | HTTPS 证书 | 浏览器地址栏 🔒 绿色锁 |
 | 数据库迁移 | `./deploy.ps1 -Action logs app` 看日志无 Alembic 错误 |
 | Seed 数据 | `curl https://api.yourdomain.com/api/cms/config` → 10 条 AppConfig |
-| App 端联调 | 手机打开 RetroEmuPouch → 设置 → 后端地址填 `https://api.yourdomain.com` → 开「使用真实后端」 |
+| App 端联调 | 手机打开 RetroEmuPouch → 设置 → 后端地址填 `https://api.yourdomain.com`（备案前填 `http://<ECS公网IP>`）→ 开「使用真实后端」 |
+
+> **备案前用 IP + HTTP 联调 App 时必须用 `community` flavour**：`main`（store）flavour 的
+> `network_security_config.xml` 全局 `cleartextTrafficPermitted="false"`，只放行 127.0.0.1/localhost/::1，
+> 明文打公网 IP 会被系统拦断（`Cleartext HTTP traffic not permitted`）；`community` flavour 允许明文。
+> 鸿蒙侧无 ATS 限制，`module.json5` 已声明 `ohos.permission.INTERNET`，可直接填 `http://<IP>`。
 
 ### 日常运维命令
 
@@ -1066,10 +1194,16 @@ $env:ECS_DOMAIN = "api.yourdomain.com"   # 域名 DNS 先指向 ECS 公网 IP
 .\scripts\deploy.ps1 -Action logs app     # 后端日志
 
 # 快速更新（改了 Python 代码后）
-.\scripts\deploy.ps1 -Action update       # 只重建 app 容器，DB 不动
+.\scripts\deploy.ps1 -Action update -Staging   # 只重建 app 容器，DB 不动
 
 # 完整重部署（改了 docker-compose / Caddyfile）
-.\scripts\deploy.ps1 -Action deploy
+.\scripts\deploy.ps1 -Action deploy -Staging
+
+# 回归冒烟（在 ECS 上跑，38 项断言 + 后台 11 页，自动清理测试数据）
+ssh root@<ECS_IP> /opt/retroemupouch-account/scripts/smoke.sh http://127.0.0.1
+
+# 立即备份一次（日常由 cron 03:15 自动跑）
+ssh root@<ECS_IP> /opt/retroemupouch-account/scripts/backup-db.sh
 
 # 停止
 .\scripts\deploy.ps1 -Action stop
@@ -1218,15 +1352,15 @@ $env:ECS_USER = "root"
 # 2. 初始化 ECS（装 Docker + Docker Compose）
 .\scripts\deploy.ps1 -Action setup
 
-# 3. 生产密钥 + 上传 + 启动
-.\scripts\deploy.ps1 -Action deploy
+# 3. 生产密钥 + 上传 + 启动（域名未备案时加 -Staging）
+.\scripts\deploy.ps1 -Action deploy -Staging
 
 # 4. Seed 初始化 CMS
 .\scripts\deploy.ps1 -Action seed
 
-# 5. 访问测试
-# curl http://你的公网IP:8000/healthz
-# 浏览器打开 http://你的公网IP:8000/docs
+# 5. 访问测试（Caddy 映射 80/443，宿主机不暴露 8000）
+# curl http://你的公网IP/healthz
+# 浏览器打开 http://你的公网IP/docs
 ```
 
 ---
@@ -1812,10 +1946,71 @@ cloudflared.exe tunnel --retries 9999 run --token XXX
 
 | 端点 | 状态 | 说明 |
 |---|---|---|
-| `POST /api/cloud/saves/upload` | ✅ | multipart：save_name(Form) + client_key(Form) + file(File) |
-| `GET /api/cloud/saves/list` | ✅ | |
-| `GET /api/cloud/saves/{blob_id}` | ✅ | 返回二进制 + X-Save-SHA256 header |
+| `POST /api/cloud/saves/upload` | ✅ | multipart：save_name(Form) + client_key(Form) + file(File)；**同一 user+client_key 覆盖原 blob（id 不变）** |
+| `GET /api/cloud/saves/list` | ✅ | 元信息数组，按 `updated_at DESC` |
+| `GET /api/cloud/saves/{blob_id}` | ✅ | 返回二进制 + X-Save-SHA256 header（客户端据此校验密文） |
 | `DELETE /api/cloud/saves/{blob_id}` | ✅ | |
+
+> 客户端契约对齐（2026-11-05）：`CloudClient.errorOf()` 同时解析 `{"detail":...}`（FastAPI）
+> 与 `{"error":...}`（旧接口）并翻译已知错误码；网络异常统一转 `CloudException`；
+> multipart 首段不再带前导 CRLF、boundary 去前导 `--`；下载校验 `X-Save-SHA256`，
+> 解密失败提示"密码不正确或文件损坏"。库备份固定用 `clientKey=library-backup`，
+> 重复备份只更新同一份云端 blob。
+> 回归脚本：`python tests/test_cloud_saves.py`（39 项，临时 SQLite）+ Dart
+> `test/data/cloud/cloud_client_error_test.dart`（7 项）；另做过一次「Dart 原始
+> multipart 帧 → 真实 FastAPI 路由回放」验证（200、字段解析一致、密文字节一致）。
+
+#### 真实游戏存档同步层（2026-11-05 新增）
+
+`app/lib/data/cloud/cloud_save_sync.dart` 把「库设置备份」升级到「真实存档」，
+本地布局与 `EmulatorActivity` / `peer_server` 一致（`<filesDir>/saves/`）：
+
+| 类型 | 本地文件 | 云端 `save_name` | `client_key` |
+|---|---|---|---|
+| 电池存档 | `<CRC>.sav` | `<CRC>.sav` | `gp-save:<CRC>:battery` |
+| 自动存档 | `<CRC>.state` | `<CRC>.state` | `gp-save:<CRC>:auto` |
+| 手动槽位 | `<CRC>.slotN.state` | `<CRC>.slotN.state` | `gp-save:<CRC>:slot:N` |
+| 槽位缩略图 | `<CRC>.slotN.jpg` | `<CRC>.slotN.thumb.dat` | `gp-save:<CRC>:slot:N:thumb` |
+
+- 缩略图用 `.dat` 承载 JPEG 字节，因为后端扩展名白名单不含 `.jpg`（服务端不解析内容）。
+- `client_key` 稳定 → 同一槽位反复上传只覆盖一份 blob；`save_name` 与本地同名，
+  恢复时直接写回 `saves/`。
+- 空 `.sav`（核心初始化的 0 字节产物）、`.preplay`、街机 `<driver>.nv/.fs`
+  暂不纳管（后两者不在白名单内，待放开）。
+- `scanLocal` → `listCloud` → `diff`（localOnly / localNewer / inSync / cloudOnly）
+  供 UI 显示「未同步 N 份」，其中 `localNewer` 的判定是
+  `本地 mtime > 云端 updated_at + 3s`（云端只有上传时间，没有原始 mtime）。
+
+**恢复链路（2026-11-05 同日完成）**
+
+- `restore({items})`：`items` 为空即恢复云端全部；同一槽位存在多份（不同
+  `client_key`/旧设备）时只取 `updated_at` 最新的一份。
+- 落地流程：`downloadSave` → 临时文件 `<目标>.part` → 校验非空 →
+  若本地已有旧档先 `copy` 成 `<目标>.bak-<毫秒时间戳>` → `rename` 原子替换。
+  下载或解密失败只清理 `.part`，**本地原档保持不变**（错误的云存档密码不会毁档）。
+- 槽位缩略图（`*.thumb.dat`）随本体一起恢复成 `<CRC>.slotN.jpg`。
+- UI：账号页「云存档 → 游戏存档」列出「云端有 N 份本机没有的存档」，
+  支持逐条恢复与「全部恢复」，恢复成功后自动重扫并刷新状态。
+**冲突策略（2026-11-05 同日完成）**
+
+- `diff` 改为四态：`localOnly`（未上传）/ `localNewer`（上传后本地又改）/ 
+  `remoteNewer`（别的设备上传过，云端新）/ `inSync`，另有 `cloudOnly`（本机没有）。
+  判定用时间戳，**容差 30s**（吸收上传耗时与设备/服务器时钟漂移；代价是同步后
+  30 秒内的修改会先显示为已同步）。
+- 恢复落盘后把文件 mtime 对齐云端 `updated_at`，否则刚下载的文件会因为“比云端新”
+  立刻又被判成 `localNewer`（假冲突）。
+- UI：`localNewer` / `localOnly` → 行尾「上传」（覆盖云端旧版）；
+  `remoteNewer` → 行尾「用云端覆盖本机」（自动 `.bak`）；
+  顶部批量按钮分别是「恢复云端较新的 N 份」与「上传本地较新的 M 份」，并明示
+  「上传会覆盖云端旧版本；恢复会覆盖本机且自动备份」。
+- 回归：Dart `test/data/cloud/cloud_save_sync_test.dart` **20 项**（命名互逆、
+  噪声过滤、diff 五态、覆盖上传、单条失败不中断、恢复逐字节一致、
+  覆盖前 `.bak`、下载失败不破坏本地、多份取最新、`includeThumbs=false`、
+  三种冲突决策后 `diff.isClean`）；
+  后端 `tests/test_cloud_saves.py` 第 8 组（4 种命名与 `.dat` 缩略图均 200）。
+  另做了一次真实端到端：本地 uvicorn(:8000, dev SQLite) + 真实 AES-256-GCM，
+  上传 3 份存档+1 缩略图 → 清空本机 → 恢复 → 逐字节一致；错误密码不覆盖本地；
+  测试后清理云端 blob 与临时账号。
 
 #### ConsentGate
 
@@ -1877,6 +2072,320 @@ D:\RetroEmuPouch\
 | ~~云存档 AES-256-GCM 客户端加密~~ | 算法实现 | ~~P2~~ | ✅ **已完成（2026-11-04）** |
 | ~~App 云存档 UI（列表/上传/下载/删除）~~ | 会员账号 | ~~P2~~ | ✅ **已完成（2026-11-04）** |
 | 生产部署（本地服务器 + 公网域名 GamePouch.cn；Alembic 初始迁移已生成 `0001_initial.py`） | 云服务器到位（已由本地部署 + 公网域名满足） | P1 | ✅ **已完成（2026-11-04，本地部署 + 公网域名已满足条件，无需另租云服务器）** |
+
+---
+
+## 阿里云 ECS 99 购买及部署任务清单（2026-11-04）
+
+> **状态：计划已落文档，尚未执行。按编号逐项推进，完成后把 `- [ ]` 改成 `- [x]`。**
+> 负责人标记：`用户` = 需账号/实名/付款/控制台操作；`助手` = 代码/脚本/验证；`共同` = 联调验收。
+
+### 0. 决策、费用与硬约束
+
+**决策**：放弃「本地 PC + Cloudflare Tunnel」作为线上主链路（国内偶发 502 / 需多次刷新），改用**阿里云 ECS 99 计划 + Docker Compose（PostgreSQL + FastAPI + Caddy）**。原穿透链路保留为回滚兜底。
+
+| 项 | 费用 | 说明 |
+|---|---|---|
+| ECS 99 计划 | **99 元/年** | 2 核 2G / 3M 固定带宽 / 40G ESSD Entry / 不限流量；活动页标注续费同价、新老同享，**以下单页实际条款为准** |
+| 域名 `gamepouch.cn` | 已有，按实际续费价 | 华为云注册，DNS 托管在 Cloudflare |
+| HTTPS 证书 | 0 | Caddy 自动申请/续期 Let's Encrypt |
+| ICP 备案 | 0 | 阿里云免费；条件 = ECS 位于**中国大陆节点** + 包年包月 ≥3 个月 + 有公网带宽（99 计划 1 年 + 3M 固定带宽，均符合） |
+| **合计** | **≈ 99 元/年 + 域名续费** | 对比 cpolar 付费版 ¥120/年 + 本地 PC 常开电费 |
+
+**硬约束（决定后续所有步骤）**：
+
+1. **App 不用发版**：`CloudConfigService` 的 `kDefaultBackendUrl = 'https://api.gamepouch.cn'` 固定，只要把 `api.gamepouch.cn` 的 DNS 从 Cloudflare Tunnel CNAME 切到 ECS 公网 IP，客户端无感。这是本次必须沿用同域名的原因。
+2. **备案前大陆 ECS 不能用域名开 80/443**：备案审核期（阿里云初审 1~2 工作日 + 管局审核 20 工作日内）走「双轨」——线上继续由 Cloudflare Tunnel 提供，ECS 用 `公网 IP + 非标端口` 联调；备案通过后再切 DNS。
+3. **切 DNS 必须关 Cloudflare 代理**（灰云 / DNS only），只改 A 记录不改代理状态，流量仍绕 Cloudflare 边缘，国内不稳定的老问题不会解决。
+4. **镜像推荐 `Ubuntu 24.04 LTS 64位`**（22.04 / 26.04 LTS 亦可用）：`scripts/setup-ecs.sh` 用 `apt-get` / `ufw`，Alibaba Cloud Linux、CentOS、Anolis 等 RPM 系会直接失败。版本依据：22.04 标准支持到 **2027-04**（本台 1 年期 ECS 的后半段会失去常规安全更新，需另开 Ubuntu Pro ESM）、24.04 到 **2029**、26.04 LTS 到 **2031-05**；Docker CE 官方源在 2026-11 已同时支持 24.04 / 26.04（Engine 29.x + Compose v5），所以「26.04 太新装不了 Docker」的说法已不成立。业务全部跑在容器里（`python:3.12-slim` / `postgres:16-alpine` / `caddy:2-alpine`），宿主机只提供内核与 Docker，发行版版本对业务代码几乎无影响，因此按「标准支持覆盖服务器寿命 + 线上验证年限」选 **24.04** 最稳。（本文前半部分关于华为云等方案的历史章节仍写 22.04，属当时记录，本次 ECS 99 部署一律以 24.04 为准。）
+5. **地域只要是「中国大陆节点」即可，深圳可以选**：华南 1（深圳）、华东 1（杭州）、华北 2（北京）、华东 2（上海）、华北 3（张家口）、西南 1（成都）等都满足备案要求；**ECS 地域与备案归属管局无关**（管局按备案主体证件所在地划分），地域只影响网络延迟。地域开通后不能直接变更，跨地域要靠自定义镜像 + 快照迁移重开实例，因此**购买时一次定好**：用户主要在华南就选深圳，主要在华东/华北就选杭州/北京。
+6. **2 核 2G / 3M 带宽**：约 384 KB/s，够账号 API、CMS、隐私页、几十 KB 的 `.sav` 云存档；**不适合分发 ROM / APK / 大图**。三容器（PostgreSQL + gunicorn + Caddy）内存吃紧，必须加 swap 并降 worker 数。
+7. **只放通 22 / 80 / 443**：8000（app）、5432（db）绝不暴露公网，compose 已用 `internal: true` 网络隔离 db。
+
+**迁移策略**：`双轨并行 → 数据迁移 → 全量验证 → DNS 切换 → 观察 7 天 → 停 Tunnel`。
+
+```
+[现在]  App ──https://api.gamepouch.cn──> Cloudflare ──> cloudflared(本地PC) ──> SQLite dev.db
+[过渡]  App ──https://api.gamepouch.cn──> Cloudflare ──> cloudflared(本地PC) ──> SQLite   ← 线上不动
+        验证 ──http://<ECS_IP>─────────────────────────> Caddy/ECS ──> PostgreSQL    ← 并行联调
+[切换]  App ──https://api.gamepouch.cn──> DNS A(灰云) ──> Caddy/ECS ──> PostgreSQL
+[兜底]  cloudflared 保持运行 7 天，异常时把 DNS 改回 CNAME 即回滚
+```
+
+### 1. 上线前阻塞项（已核对代码，必须在 Phase C 修完）
+
+| # | 文件 | 问题 | 后果 | 修复方式 |
+|---|---|---|---|---|
+| P0-1 | `Dockerfile.prod:44` / `requirements.txt` | CMD 用 `gunicorn`，但依赖里没有 gunicorn | 容器启动即 `executable file not found`，服务起不来 | `requirements.txt` 加 `gunicorn==22.0.0`，或 CMD 改 `uvicorn app.main:app --workers 1`（推荐前者，配合降 worker） |
+| P0-2 | `docker-compose.prod.yml:42` / `.env.production.example:8` / `config.py:52` / `main.py:32` / `billing_service.py:175` | 全链路写 `APP_ENV=production`，但代码判 `== "prod"`；且 compose 的 `environment` 会**覆盖** env_file | 生产仍执行 `create_all`（与 Alembic 冲突）、`is_prod=False` 使 dev mock 收据验真被放行，属合规风险 | 统一为 `APP_ENV=prod`（compose + example 同时改）；或把 `config.is_prod` 改成 `in ("prod","production")`，**二选一，不要两边都改** |
+| P0-3 | `Caddyfile.prod:36,40,10-13,22-33` | `client_max_body_size 10M` 是 nginx 指令；`log output file /data/logs/access.log` 目录不存在；`reverse_proxy` 内 `timeout/keepalive` 写法待校验；CORS 头与 FastAPI `CORSMiddleware` 重复 | Caddy 配置校验失败 → 443 不通 | 删除 `client_max_body_size`（或改 Caddy v2 `request_body { max_size 10MB }`）；日志改 `output stdout`；CORS 头全删交给后端；上线前跑 `caddy validate` |
+| P0-4 | `.gitignore` / `.env.production.example:4` | 模板声称「已在 .gitignore 中」，实际 `.gitignore` 只有 `.env`，**`.env.production` 未被忽略**（`git check-ignore` 无输出） | 一旦生成真实 secrets，极易误提交到 GitHub | `.gitignore` 增加 `.env.production`、`.env.production.*`，并 `git check-ignore -v` 验证 |
+| P0-5 | `.env.production.example` / `config.py:28` | 模板**没有 `ADMIN_WEB_PASSWORD`**，默认口令 `admin` | 运营后台 `/admin/ui/login` 弱口令裸奔 | 模板补 `ADMIN_WEB_PASSWORD=CHANGE_ME...`，部署时必填强口令 |
+| P0-6 | `deploy.ps1:119-122`（`seed` 分支） | 在 ECS 宿主机上 `curl http://localhost:8000/admin/seed`，但 compose 未映射 app 端口 | seed 必然失败，CMS/AppConfig 为空 | 改为容器内调用：`docker compose exec -T app python -c "import httpx; ...post('http://localhost:8000/admin/seed'...)"` |
+| P0-7 | `deploy.ps1:80-84` / `docker-compose.prod.yml:21` | `scripts/db-init/` 被 scp 到 `/opt/retroemupouch-account/db-init/`，而 compose 挂载 `./scripts/db-init` | `01-extensions.sql` 不执行，`pgcrypto` 扩展缺失 | 远程先 `mkdir -p .../scripts`，scp 目标改 `.../scripts/`，或直接把初始化 SQL 打进镜像/启动命令 |
+| P0-8 | `deploy.ps1` | `deploy` 分支不跑 `setup-ecs.sh`、不自动 seed；`alembic upgrade head` 用 `exec`（非 `-T`）在非交互 SSH 下易挂；`setup` 用 `get.docker.com` 国内易超时 | 首次部署链路断裂 | 部署顺序显式化为 `setup → deploy → seed`；`exec -T`；Docker 换阿里云镜像源 |
+| P1-1 | `docker-compose.prod.yml` / `Dockerfile.prod` | 2 核 2G 跑 PostgreSQL + gunicorn 2 workers + Caddy | OOM 风险 | gunicorn `--workers 1`；加 2G swap；`POSTGRES` 不动实为最省事路径 |
+| P1-2 | `deploy.ps1:91` / `.env.production.example:11` | `-Domain` 只 sed 替换 Caddyfile；`APP_CORS_ORIGINS` 仍是 `yourdomain.com`；`-Domain` 若传 `api.gamepouch.cn` 会变成 `api.api.gamepouch.cn` | CORS 不生效 / 证书签错域名 | 约定 `-Domain` **只传主域 `gamepouch.cn`**；同时替换 `.env.production` 的 CORS 域名 |
+| P1-3 | `scripts/setup-ecs.sh:39-41,51-56` | Compose 安装兜底写的是 `pip install docker-compose`（v1 旧包），Ubuntu 24.04/26.04 受 PEP 668 限制会拒绝全局 pip 安装；且 Docker 发布端口会绕过 `ufw` 规则（Docker 官方已知行为） | apt 装 `docker-compose-plugin` 一旦失败，兜底必然跟着失败；误以为 ufw 挡住了 8000/5432 会产生安全错觉 | 删掉 pip 兜底、改成显式报错并提示手动装 `docker-compose-plugin`；端口隔离**只依赖阿里云安全组**（compose 已用 `internal` 网络隔离 db），不依赖 ufw |
+
+> **Phase C 修复已完成（2026-11-04）**：P0-1~P0-8、P1-1~P1-3 全部落地，共改动 9 个文件；修复过程中另发现并修掉两项：
+> - **P0-9** `deploy.ps1`：原版用了 PowerShell 7 的 `??` 运算符，且文件是无 BOM 的 UTF-8 中文脚本，Windows PowerShell 5.1 直接解析失败。已改为 5.1 兼容写法、补 UTF-8 BOM，并把 `Invoke-Expression` 字符串拼接换成参数数组 `& ssh @SshOpts ...`（顺带消除引号嵌套与错误被吞）。
+> - **P0-10** `docker-compose.prod.yml:16,41`：`${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}` 未加引号，`: ` 被 YAML 当成 mapping 分隔导致解析失败；生产与 `docker-compose.local.yml` 的同类插值共四处已加双引号。
+>
+> **已验证**：`python -m compileall -q app` = 0；`tests/test_admin_management.py` 44/44 通过；`git check-ignore` 命中 `.env.production` 且 `.env.production.example` 仍可提交；`yaml.safe_load(docker-compose.prod.yml)` 通过（services = db/app/caddy）；`wsl bash -n setup-ecs.sh` = 0；`deploy.ps1` 用 `[scriptblock]::Create` 与 `powershell -File -Action __syntax_check__` 在 PS 5.1 下均通过。
+>
+> **未能本地验证**：本机没有 Docker（`docker` 命令不存在），因此 `docker compose config`、`caddy validate`、三容器演练只能在 ECS 首次部署时执行，已并入 C4 / D1 / F2 验收。
+
+### 2. 任务列表
+
+#### Phase A — 购买与账号（用户）
+
+- [x] **A1 阿里云账号 + 个人实名认证**｜前置：无 ✅ 2026-11-04
+  - 打开阿里云官网注册/登录 → 账号中心 → 实名认证（个人，支付宝/刷脸，约 10 分钟）。
+  - **验收**：控制台显示「已实名」，可下单付费产品。
+- [x] **A2 下单 ECS 99 计划**｜前置：A1 ✅ 2026-11-04（实例运行中）
+  - 进入 ECS 99 元/年活动页（官网搜「ECS 99 计划 / 经济型 e 实例」），**先核对活动条款：是否续费同价、是否新老同享、是否限购 1 台、是否限地域**。
+  - 配置：**地域选中国大陆节点，深圳（华南 1）可以选**、**公共镜像 Ubuntu 24.04 LTS 64 位**、2 核 2G、40G ESSD Entry、3M 固定带宽、时长 **1 年**、数量 1。
+  - 99 元活动常见可选地域包含北京 / 杭州 / 上海 / 呼和浩特 / **深圳** / 成都等（第三方活动规则汇总，**以购买页实际可选列表与库存为准**；深圳无库存再换杭州 / 北京）。按用户分布就近选——切灰云直连后地域直接决定延迟。
+  - **不要**选按量付费/试用机（无法申请备案服务码）；**不要**选香港/新加坡等境外地域（不能备案，且 99 活动通常不含）。
+  - **购买页实测（2026-11-04）**：地域默认「华南 1（深圳）」、规格 `ecs.e-c1m1.large` 2C2G、ESSD Entry 40GiB、专有网络 + 默认交换机、固定带宽 3Mbps、时长 1 年、数量 1、¥99.00（划线价 ¥1009.19）——这些**全部保持默认**。**唯一必须改的是镜像**：页面默认 `Alibaba Cloud Linux 3.2104 LTS 64 位`（RPM 系），`scripts/setup-ecs.sh` 用 `apt-get` 会直接失败，镜像下拉切到 Ubuntu 分类后默认落在 `Ubuntu 26.04 64位`，**改选 `Ubuntu 24.04 64位`**（普通版，任何 `UEFI版` 都不选）。理由：22.04 标准支持 2027-04，会在这台 1 年期 ECS 的后半段失去常规安全更新（需另开 Ubuntu Pro ESM）；24.04 支持到 2029 且 Docker CE / Compose 已成熟；26.04 LTS 支持到 2031-05、Docker 官方源也已适配，可作「想要最长支持周期」的备选，只是线上验证年限比 24.04 少两年。若活动页镜像列表不含 Ubuntu，则改为把 `setup-ecs.sh` 适配 `dnf/yum`，不要硬买。
+  - **其余选项**：可用区「随机分配」保持；「自动续费」可勾（页面标注提前锁定优惠、可随时取消），但到期前 30 天仍要核实实际续费价；优惠券无可用则忽略；点「查看明细」核对续费条款。
+  - **公网 IPv4 怎么确认**：阿里云官方规则是「购买公网带宽（≠0 Mbit/s）即从公网 IP 池分配一个固定公网 IPv4；带宽 0 或选『不分配』则没有」，所以购买页的 **「按固定带宽 3 Mbps」本身就是确认点**，备案要求的「有公网带宽」也由此满足；部分版本页面在「网络类型 / 虚拟交换机」附近另有独立的「公网 IP：分配 / 不分配」或「分配公网 IPv4 地址」勾选框，若看到则确认为「分配」。订单页「查看明细」应列出公网带宽 3Mbps。**最可靠的确认在开通后**：ECS 控制台 → 实例与镜像 → 实例（地域选华南 1 深圳）→ 「IP 地址」列会同时显示公网 IP 与私网 IP，实例详情 → 网络信息也可查。若只有私网 IP，用「资源变配 / 升级配置」把带宽调到 >0 Mbit/s 即可让系统补分配公网 IPv4（优先于单独购买 EIP，避免额外费用）。**切勿把带宽改成 0 Mbps**——会回收公网 IP 且不再满足备案条件。
+  - **订单确认页实测（2026-11-04）**：「参数配置」显示 操作系统 `Ubuntu 24.04 64位`、地域 `华南1(深圳)`、付费方式 `包年包月`、时长 1 年、数量 1、带宽 `按固定带宽 3`、系统盘 `ESSD Entry 40`、官网折扣价 ¥1009.19、优惠金额 ¥910.19、**应付 ¥99.00**，气泡文案「云服务器包 1 年享 99 元，仅限 1 台」——配置全部正确，可下单。**订单页未展示续费价**：开通后到控制台「续费管理 / 费用中心」核实次年价格，不要默认第二年仍是 99。
+  - **验收**：订单支付成功，收到实例 ID；记录 `实例ID / 地域 / 公网IP / 到期日` 到本节表格。
+- [x] **A3 设置登录凭据**｜前置：A2 ✅ 2026-11-04（自建 ed25519 密钥，Workbench 写入公钥）
+  - 设置 root 密码（或直接绑定 SSH 密钥对，`ECS_SSH_KEY` 给 `deploy.ps1` 用）；密码存密码管理器。实例详情页有「重置密码」按钮，**重置后需重启实例才生效**；更推荐绑定 SSH 密钥对，避免口令爆破。
+  - **推荐路线 · 自建密钥（私钥不出本机、无需重启）**：本地 `ssh-keygen -t ed25519 -f "$($env:USERPROFILE)\.ssh\id_ecs99"`（**passphrase 留空**，否则 `deploy.ps1` 非交互会卡）→ `Get-Content ...\id_ecs99.pub` 复制公钥文本 → 控制台「远程连接 / **Workbench**」网页终端（Ubuntu 云镜像默认免密可进；若要求密码，用「重置密码」+ 重启后走 **VNC** 登录）→ 终端内 `whoami` 确认 root（否则 `sudo -i`），执行 `mkdir -p /root/.ssh && chmod 700 /root/.ssh`、`echo '<公钥文本>' >> /root/.ssh/authorized_keys`、`chmod 600 /root/.ssh/authorized_keys` → 本地 `ssh -i <私钥> root@<公网IP>` 验证 → `$env:ECS_SSH_KEY="<私钥绝对路径>"` 供 `deploy.ps1` 使用。Windows 若报 `UNPROTECTED PRIVATE KEY FILE`，用 `icacls <私钥> /inheritance:r /grant:r "<当前用户>:F"` 收紧 ACL。
+  - **实测坑（2026-11-04）**：阿里云 Ubuntu 24.04 公共镜像默认 `PasswordAuthentication no`（服务端只提供 `publickey` 认证），在公钥装好**之前**任何 `ssh/scp` 都会报 `Permission denied (publickey)`——所以「先 scp 上传 `.pub` 再写 `authorized_keys`」是循环依赖，不成立；必须先用 Workbench/VNC 在服务器内写入公钥。能收到该报错说明 22 端口与安全组已通，不是网络问题。不必为此「临时打开密码登录」，降低安全性且无必要。
+  - **控制台路线 · 阿里云托管密钥对**：ECS 控制台 →「网络与安全 → 密钥对」（**地域必须选华南1深圳，密钥对与实例同地域**）→ 创建或导入 → 实例详情「全部操作 → 绑定密钥对」→ **重启实例生效**。官方规则（`AttachKeyPair`）：绑定后**禁用用户名+密码验证**、运行中实例必须重启才生效、已有密钥会被新密钥替换；自动创建的 `.pem` 私钥只提供一次下载。⚠️ `ImportKeyPair` 只接受 `rsa / dsa / ssh-rsa / ssh-dss / ecdsa`，**不支持 `ssh-ed25519`**：走本路线需另跑 `ssh-keygen -t rsa -b 4096 -f ...\id_ecs99_rsa` 并把 `ECS_SSH_KEY` 指向该 RSA 私钥；这也是优先选 Workbench 路线的原因。
+  - 确认密钥登录稳定后再在 `/etc/ssh/sshd_config` 设 `PasswordAuthentication no` / `PermitRootLogin prohibit-password` 并 `systemctl restart sshd`；保留 Workbench 作兜底，先把安全组 22 限制为自己出口 IP。
+  - **首次连接会问 host key**：第一次 `ssh/scp` 到新 ECS 会提示 `Are you sure you want to continue connecting (yes/no/[fingerprint])?`，必须输入完整 `yes`（直接回车默认 `no` → `Host key verification failed`，输 `y` 也可能不被接受）。严谨做法：先在 Workbench 终端跑 `ssh-keygen -lf /etc/ssh/ssh_host_ed25519_key.pub` 核对指纹；省事做法：`ssh/scp -o StrictHostKeyChecking=accept-new ...` 自动接受新主机并写入 `known_hosts`（比 `=no` 安全，已变更的主机仍会拒绝）。**务必先手动连一次再跑 `deploy.ps1`**，否则脚本里非交互的 `ssh/scp` 会卡在同一提示；Phase C 可在 `deploy.ps1` 的 ssh/scp 命令统一加 `-o StrictHostKeyChecking=accept-new`。写错旧记录用 `ssh-keygen -R <公网IP>` 清除。
+  - **验收**：`ssh -i <私钥> root@<ECS_IP>` 非交互直接登录成功（无密码/passphrase 提示）。**实测通过（2026-11-04）**：返回 `iZwz9bfqgjtrmiulpyesovZ` 与 `Ubuntu 24.04.5 LTS`，确认密钥认证、22 端口、host key 均已就绪，镜像为 24.04 的 point release。
+  - **环境变量（当前 PowerShell 会话有效）**：`$env:ECS_HOST` / `$env:ECS_USER="root"` / `$env:ECS_SSH_KEY="<私钥绝对路径>"` 必须逐行设置并验证（`Test-Path $env:ECS_SSH_KEY`），`deploy.ps1` 要在**同一窗口**运行；换行粘贴错位时变量会没设上，务必回显确认。
+- [ ] **A4 安全组放通**｜前置：A2
+  - ECS 控制台 → 安全组 → 入方向：`22/tcp` 来源限制为自家出口 IP、`80/tcp` 与 `443/tcp` 来源 `0.0.0.0/0`；**不放通 8000 / 5432**。
+  - 备案联调期走 `80/tcp`（已在上面放通），Caddy 的 staging 站点就监听 80；**不需要额外放通 8080**。
+  - **验收**：`curl http://<ECS_IP>` 在 80 未起服务时表现为连接被拒/超时但端口可达，`nmap`/`telnet` 确认 5432 不可达。
+- [ ] **A5 记录资产台账**｜前置：A2~A4
+  - 记录到本节表格：`实例 ID`、`地域`、`到期日`、`域名 = gamepouch.cn`、`备案服务码`。**公网 IP、root 密码、SSH 私钥只存本地密码管理器，不写入 Git 文档**——本仓库会推送到公开 GitHub，明文公网 IP 会招来端口扫描与 SSH 爆破。
+  - **实例开通实测（2026-11-04）**：状态「运行中」、地域 `华南1(深圳) 可用区 D`、`Ubuntu 24.04 64位`、规格 `ecs.e-c1m1.large 2C2G`、付费类型包年包月、到期 `2027-11-04 23:59:59`；「基本信息」显示**公网 IP 已分配**、主私网 IP `172.29.150.172`，公网 IP 下方有「转换为弹性公网 IP」（**不要点**，固定公网 IP 随 3M 带宽已够用，转换会改变计费形态）。右侧「事件和提醒」弹出「开启内存优化 / 易发生内存耗尽」——正好印证 D2 的 2G swap 与 P1-1 的单 gunicorn worker 必须做；可点「不再展示」，按自己的方案加 swap 更可控。
+
+#### Phase B — 域名与 ICP 备案（用户，可与 Phase C~F 并行）
+
+- [x] **B1 确认域名状态**｜前置：拥有 `gamepouch.cn` ✅ 2026-11-04（域名信息 + 可备案检测通过）
+  - **跨注册商核对（本项目易踩坑）**：域名在华为云注册、DNS 托管 Cloudflare，按「谁接入谁备案」原则可直接在阿里云备案，**不需要把域名转入阿里云**。但必须保证：域名已实名认证、域名持有者姓名/证件类型/证件号与备案主体（本人身份证）**完全一致**、未开启隐私保护遮挡注册人信息、`.cn` 后缀已获工信部批复。若刚做过实名认证或过户，需等 **2~3 天** 信息同步到管局系统再提交，否则会报「域名与主体信息不一致」。
+  - 核对域名有效期 ≥ 备案周期 + 1 个月；到 `beian.aliyun.com` 用「检测域名是否可备案 / 检测账号是否可备案」先自检。
+  - 记录现状：`api.gamepouch.cn` 当前是 **CNAME → `<tunnel-id>.cfargotunnel.com`**（代理开启），**切换前不要删**。
+  - **实测（2026-11-04，脱敏记录）**：华为云域名详情页显示 `域名状态 ok`、`所有者实名认证 已实名认证`、`用户类型 个人用户 / 证件类型 身份证`、域名所有者与联系人一致、`到期 2029-11-03`（远超备案周期，且覆盖 ECS 首年 2027-11-04）、DNS 为 Cloudflare NS（与现状一致，不影响跨注册商备案）；主体所在省份为广东，与华南 1 深圳 ECS 同省，备案地区选广东省。**证件号、手机号、邮箱、通讯地址一律不写入本文/仓库**。截图无法确认、需用户自行核对：① 实名证件号与阿里云备案主体逐位一致（最常见驳回原因）；② 若实名认证/过户是近 2~3 天内完成，需等管局信息同步再提交；③ 域名未开启 WHOIS 隐私保护。
+  - **可备案检测（2026-11-04）**：`beian.aliyun.com`「检测域名是否可备案」返回「后缀已获工信部批复」「注册服务商已通过工信部批复」两项均通过；第三段「域名实名信息注意事项」是**通用提示而非失败项**——域名在华为云注册，阿里云读不到实名明细，需人工保证备案订单的**姓名（中文全名）/ 证件类型（身份证）/ 证件号码**与华为云实名信息逐项一致，不要用英文名或拼音。
+  - **验收**：华为云控制台实名信息与备案主体一致；`nslookup api.gamepouch.cn` 返回 Cloudflare CNAME。
+- [ ] **B2 申请备案服务码并提交备案**｜前置：A2（包年 ECS）、B1
+  - **两条验证路径**：① 推荐 `beian.aliyun.com` →「开始备案」→ 验证方式选「**阿里云 ECS 实例**」→ 选华南 1 深圳这台，系统自动校验，无需单独申请服务码；② ECS 控制台 →「备案服务码 / 服务码获取」→ 用该 ECS 申请（中国大陆节点 + 包年包月 ≥3 个月 + 公网带宽；每台可申请 5 个、每个仅用一次）→ 在备案订单里粘贴服务码。
+  - **备案方式选择页实测（2026-11-04）**：`beian.aliyun.com` →「我的备案」→「选择备案方式」有「免费自助备案 / 付费代办服务」两个 Tab，以及「万小智备案助手（AI 引导，约 10 分钟，暂不支持 APP 备案）」「传统表单自助备案（标准表单，约 30 分钟）」两张免费卡片。**选「免费自助备案」→「传统表单自助备案」→ 开始备案**：逐字段可见，便于核对跨注册商实名三项一致性，且后续 App 备案也走表单；不要选付费代办。顶部「还没有备案服务码？开通万小智 AI 建站即赠」是营销引导，本 ECS 已符合备案条件，可直接用 ECS 实例验证或免费申请服务码，**不需要购买任何产品**。页面流程「填写信息 → 阿里云初审 → 工信部短信核验 → 管局审核 → 备案成功」与本文时间线一致。
+  - 填写要点：**备案地区按身份证住所地选，与 ECS 地域无关**；主体选个人；域名 `gamepouch.cn`；网站名称避开「博客 / 论坛」等个人备案敏感词；服务内容选非经营性，不要勾需前置审批的类目。
+  - **网站信息页实测（2026-11-04）**：网站名称 `趣玩匣`、域名 `gamepouch.cn`、网站内容 `其他`、网站语言 `中文简体`。个人备案服务内容**本来就选「其他」**（各接入商规则如此），但会强制要求备注「不少于 20 字、说明网站开办后大致内容」，为空会红字拦截。可套用的备注模板：「本网站为个人非经营性网站，由本人独立开发维护，主要用于展示本人开发的移动应用的用户协议、隐私政策、版本说明及联系方式，并提供该应用账号与数据备份功能的说明。网站仅作信息展示使用，不设论坛社区，不含企业、单位等非个人网站信息，不提供下载服务、在线交易、付费服务或广告合作，也不涉及新闻、出版、教育、医疗等需要前置审批的内容。」**不要写**「游戏下载 / ROM / 资源分发 / 会员付费 / 商城 / 交易 / 广告」等词（个人备案对软件下载站与经营性内容敏感）；初审电话的回答要与备注一致。「网站接入信息」云服务选 `ECS`，**云产品实例为必填**：直接选系统蓝色提示推荐的那台「可免费备案实例」（即华南 1 深圳 ECS，公网 IP 不写入本文），选完点「完成填写」而不是「保存草稿」。备注框下方红字「不少于 20 个字 / 不能为空」是**常驻提示文案**，填了内容仍会显示，以「完成填写」时的实际校验为准；若下拉无实例，检查地域、包年包月时长与公网带宽，或改走备案服务码路径。**互联网信息服务页（2026-11-04 20:11）**：网站信息保存成功，列表中 1 条「网站 / 趣玩匣 / gamepouch.cn」。三条流程提示里第 3 条最关键：**管局审核通过前同一阿里云账号只能有一个在审订单**（官方 App 备案 FAQ 亦确认），而阿里云允许「一次申请中同时完成网站备案与 App 备案」。因此此处需决策是否点「新增其它 App」把 App 备案并入本订单：并入可省整整一轮管局审核；不并入须等本单结束后再开订单。App 备案额外材料：App 名称/图标/截图、包名、公钥、**签名 MD5（去掉冒号）**、可访问的隐私政策 URL、接入域名、运行平台。材料不齐不要并入，避免任一不合格拖累整个订单被退回；先看页面「各地区数量规则」确认广东省是否允许同一订单同时提交网站 + App。只备案 1 个域名，不触发广东「累计超 5 个域名需网站建设方案书」，不要点「新增其它网站」。
+  - **广东省 ICP 备案重要规则（2026-11-04 核对）**：① 负责人年满 16 周岁；② **证件住所需为本省**——本项目身份证住所与通信地址同属广东省，无需居住证/房产证/社保证明，初审电话如实说明即可；③ 备案个人须在第 4 步上传资料时**下载打印《互联网信息服务核准承诺书》、本人用黑色或蓝色笔工整签字后拍照上传**（广东特有，漏传会被退回）；④ 域名有效期 >30 天（本例 2029-11-03 ✅）、域名持有者与主办人名称一致（B1 已核对 ✅）；⑤ 网站数量 >5 个才需网站建设方案书（本例 1 个，不涉及）；⑥ **已取得备案号的域名必须可访问，且页面下方须展示主体备案号并链接至工信部备案管理系统**，与实际备案号一致——对应 B4，需在隐私页/网站页脚实现；⑦ 个人网站名称另有命名要求，提交前点「个人网站名称命名要求」核对 `趣玩匣`。
+  - 材料：身份证**原件彩色拍照**（正反面、四角完整、无反光、**证件剩余有效期 >1 个月**）、网站负责人人脸核验（短信链接或阿里云 APP 扫码）、上条承诺书签字件；阿里云初审会电话核验，保持手机畅通。因广东额外要求签字件、App 备案材料更多，**本订单只提交网站备案**，App 备案待本单通过后再开订单更稳。
+  - **时间线**：阿里云初审 1 工作日 → 工信部短信核验须在 **24 小时内**完成（超时作废需重提）→ 管局审核 ≤20 工作日。常见驳回：域名实名信息不一致/未同步、证件非最新版、网站名称违规、人脸核验失败、初审电话未接。
+  - **注意**：备案期间域名不要指向大陆 ECS 的 80/443；线上继续走 Cloudflare Tunnel。若后续 App 上架，工信部另要求 **App 备案**（同一备案系统另有入口），同样依赖大陆服务器。
+  - **已提交（2026-11-04 23:06）**：审核进度显示「提交审核 已提交」→「阿里云初审 审核中，明天 20 点前审核」，后续依次为「待提交管局 / 工信部短信核验 / 管局审核」；页面提示注意接听阿里云备案审核来电（95187、0571 号段），可关注「阿里云万网」微信服务号查进度。公安联网备案显示「已完成授权，数据码将在通信管理局审核通过后生成」，本阶段无需操作。此时 B2 的**用户侧动作已全部完成**，剩余为被动配合与等待，可与 D/E/F 并行；B2 的验收（进入管局审核）尚未达成，暂不打勾。
+  - **验收**：备案订单进入「管局审核」，状态可查。
+- [ ] **B3 过渡期访问方案**｜前置：A4、B2
+  - **已实现**：`Caddyfile.staging`（站点块只有 `:80`、不含任何主机名 → 不触发自动 HTTPS/ACME），由 `deploy.ps1 -Action deploy -Staging` 上传为远程的 `Caddyfile.prod`，compose 挂载路径不变；`https://api.gamepouch.cn` 保持指向 Tunnel。
+  - **原因**：`Caddyfile.prod` 的 `api.yourdomain.com` 站点会触发 Caddy 自动申请 Let's Encrypt 证书；备案未通过时域名不能解析到大陆 ECS，ACME 校验必然失败并反复重试（刷满日志、可能触发速率限制）。staging 用 `http://<ECS_IP>`（80 端口）直连，既不涉及域名解析，也不改 compose 端口映射。备案通过、DNS 切到 ECS 后带 `-Domain` 且去掉 `-Staging` 重新 deploy 即切回 `Caddyfile.prod`。
+  - **验收**：本机 `curl http://<ECS_IP>/healthz` 返回 `{"ok":true,"env":"prod"}`，且线上 `https://api.gamepouch.cn/healthz` 仍正常。
+- [ ] **B4 备案通过确认**｜前置：B2，管局审核通过
+  - 拿到备案号 → 回填到后台 `AppConfig.filing_number`（`docs/release-plan.md` 已约定由后台下发）；网站/隐私页底部展示备案号并链接 `https://beian.miit.gov.cn`；备案成功后 30 天内完成**公安联网备案**。
+  - **验收**：工信部备案查询可查到 `gamepouch.cn`；后台 `/admin/ui/config` 的 `filing_number` 已更新；此时才满足 I1 切 DNS 的前置条件。
+
+#### Phase C — 上线前代码修复（助手，购买前后均可先做）
+
+- [x] **C1 修 P0-1 / P0-2（服务启动三件套）** ✅ 2026-11-04
+  - `requirements.txt` 补 `gunicorn==22.0.0`；`Dockerfile.prod` CMD `--workers 2` → `1`；`docker-compose.prod.yml:42` 与 `.env.production.example:8` 的 `APP_ENV` 统一为 `prod`（`config.is_prod` 不变）。
+  - **验收**：YAML 解析已通过；`/healthz` 返回 `"env":"prod"`、`prod mode: skipping create_all`、`/api/billing/verify` 返回 503 这三项待 ECS 首次启动确认（本机无 Docker）。
+- [x] **C2 修 P0-3 / P1-2（Caddy 与域名）** ✅ 2026-11-04
+  - `Caddyfile.prod` 删除 nginx 风格 `client_max_body_size`、日志改 `output stdout`、去掉重复 CORS 头、`reverse_proxy` 改为 Caddy v2 标准写法；`deploy.ps1 -Domain` 同时替换 Caddyfile 与 `.env.production` 的 CORS，并拒绝传入 `api.*` 前缀。
+  - **验收**：`caddy validate` 与无重复 CORS 头待 ECS 首次启动确认。
+- [x] **C3 修 P0-4 ~ P0-8（secrets 与部署脚本）** ✅ 2026-11-04
+  - `.gitignore` 忽略 `.env.production` 但保留模板；模板补 `ADMIN_WEB_PASSWORD`；`deploy.ps1` 改容器内 seed、`scripts/db-init` 正确落盘、`exec -T`、`setup → deploy → seed` 顺序、host key `accept-new`、`chmod 600`、`CHANGE_ME` 拦截；`setup-ecs.sh` 改阿里云 Docker 镜像源并删掉 PEP 668 下必然失败的 pip 兜底。
+  - **验收**：`git check-ignore` ✅、44 项自测 ✅、compileall ✅、PS 5.1 语法与加载 ✅、`bash -n` ✅。
+- [ ] **C4 三容器演练（移至 ECS 首次部署执行）**
+  - 本机未安装 Docker，改为在 D1/F2 阶段用 `docker compose -f docker-compose.prod.yml up -d --build` 于 ECS 上验证 `/healthz`、`/privacy`、`/terms`、`/api/cms/config`、`/admin/ui/login`，并跑 `caddy validate`。
+  - **验收**：三容器 healthy、`/healthz` 返回 `"env":"prod"`、Caddy 配置校验通过、无 OOM。
+
+#### Phase D — ECS 初始化（共同）
+
+- [x] **D1 上传并执行初始化脚本**｜前置：A3、A4、C3 ✅ 2026-11-04
+  - 用 `.\scripts\deploy.ps1 -Action setup`（在 `tools\account_backend` 下执行；从仓库根目录则用 `.\tools\account_backend\scripts\deploy.ps1 -Action setup`），脚本会自动上传 `scripts/setup-ecs.sh` 到 ECS 并执行。
+  - **实测坑（2026-11-04，已修）**：首跑报 `curl: (35) Recv failure: Connection reset by peer` → `Failed to enable unit: Unit file docker.service does not exist`。根因是 **`get.docker.com` 在大陆 ECS 被连接重置**；`--mirror Aliyun` 只改安装脚本内部的 apt 源，脚本本身仍要从 `get.docker.com` 下载，因此无效；且 `curl | sh` 管道退出码取 `sh`（空输入返回 0），`set -e` 没拦住，直到 `systemctl` 才失败。已把 `setup-ecs.sh` 改为**直接配置阿里云 Docker CE 镜像站**（`mirrors.aliyun.com/docker-ce/linux/ubuntu` 的 GPG + `sources.list.d/docker.list`，当前 codename 无 Release 时回退 `jammy`），再 `apt-get install docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin` → `systemctl enable --now docker`。`bash -n` 校验通过；首次失败时未执行到 apt 安装，无残留半装状态，**直接重跑同一条命令即可**。若镜像站仍不可达，ECS 可换内网域名 `mirrors.cloud.aliyuncs.com`。
+  - **D1 实测通过（2026-11-04）**：ECS 上只读核对 `Docker version 29.9.3`、`Docker Compose version v5.7.0`（v2 插件）、`systemctl is-active docker = active`、`docker.list` 使用 `noble` 仓库（阿里云镜像已同步，未触发 jammy 回退）。`free -h` 显示总内存仅 **1.7Gi、可用 1.2Gi、无 swap**，印证 D2 的 2G swap 与单 gunicorn worker 必须做。另修掉初始化脚本输出里的提示 bug：原 `echo '$env:ECS_HOST="' + $PUBLIC_IP + '"'` 把 bash 拼接写进单引号导致打印出字面量，且提示的下一步路径写成 `./deploy.ps1` 并误导「立刻 deploy」；已改为 `printf` 正确插值、补全三个环境变量、明确「先 D2/E 阶段再部署」。
+  - **镜像拉取坑（2026-11-05，已修）**：`get.docker.com` 装好了 Docker，但 `docker compose up --build` 拉 `postgres:16-alpine` / `caddy:2-alpine` / `python:3.12-slim` 时 `registry-1.docker.io` 仍 i/o timeout。`setup-ecs.sh` 现会幂等写入 `/etc/docker/daemon.json` 的 `registry-mirrors`（`docker.m.daocloud.io` / `docker.1ms.run` / `hub.rat.dev`）并 `systemctl restart docker`；重跑 `-Action setup` 即可应用。`/v2/` 探测返回 401 属正常（可达、未带鉴权）。
+  - **验收**：`docker --version`、`docker compose version` 均有输出（**必须是 Compose v2 插件 `docker compose`，不是旧 `docker-compose` v1 命令**）；`systemctl is-active docker` = active；`docker compose -f docker-compose.prod.yml config` 无报错。
+- [ ] **D2 加 swap + 基础设置**｜前置：D1
+  - `fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile`，写进 `/etc/fstab`；设置 `vm.swappiness=10`；时区 `timedatectl set-timezone Asia/Shanghai`。
+  - **验收**：`free -h` 显示 Swap 2.0Gi；`date` 为北京时间。
+- [x] **D3 创建部署目录并收紧权限**｜前置：D1 ✅ 2026-11-05
+  - `mkdir -p /opt/retroemupouch-account/scripts /opt/backups`，`chmod 700 /opt/retroemupouch-account`；`.env.production` 上传后 `chmod 600`。
+  - **已实现**：`deploy.ps1 -Action setup` 的第二段会自动 `install` 备份脚本、建 `/opt/backups` 并 `chmod 700` 两个目录；实测 `ls -ld` 两个目录均为 `drwx------ root root`。
+- [ ] **D4 确认端口与安全组一致**｜前置：A4、D1
+  - **验收**：ECS 内 `ss -lntp` 只看到 80/443（staging 站点复用 80，无 8080），`docker ps` 中 db 无端口映射。
+
+#### Phase E — 生产 secrets 与配置（用户 + 助手）
+
+- [x] **E1 生成全部随机值**｜前置：C3 ✅ 2026-11-05
+  - `python -c "import secrets; print(secrets.token_urlsafe(48))"` 生成 5 个独立值：`DB_PASSWORD`、`JWT_SECRET`、`ADMIN_TOKEN_SECRET`、`CLOUD_SAVE_KEY_SALT`、`DEVICE_ID_SALT`；另设 `ADMIN_WEB_PASSWORD` 强口令。
+  - **已完成**：6 个值已用 `RandomNumberGenerator`（base64url）生成并写入本地 `.env.production`（gitignored；`DB_PASSWORD` 与 `DATABASE_URL` 一致）。生成过程中旧值曾被部署日志打印，已整体轮换一次；`app/database.py` 也已改为 `hide_password=True`，不会再明文输出。
+  - **注意**：`JWT_SECRET` / `ADMIN_TOKEN_SECRET` / 两个 salt **一旦更换会导致已签发 JWT 失效、云存档密钥推导变化**，因此「本地 → ECS」切换时客户端最多需要重新登录，云存档密文不受影响（客户端加密，服务端只存 blob）。
+- [x] **E2 填写 `.env.production`**｜前置：E1、C3 ✅ 2026-11-05
+  - 从 `.env.production.example` 复制；逐项替换 `CHANGE_ME`；`APP_ENV=prod`；`APP_CORS_ORIGINS=https://api.gamepouch.cn`；`DATABASE_URL` 的 `DB_PASSWORD` 与 compose 中 `${DB_PASSWORD}` **必须完全一致**；`ALLOW_DEV_MOCK=false`；`ADMIN_WEB_PASSWORD` 必填。
+  - **验收**：`grep -c CHANGE_ME .env.production` = 0；`git status --short` 不出现该文件。
+  - **Compose 插值坑（已修）**：`docker-compose.prod.yml` 里的 `${DB_PASSWORD:?...}` 从 shell 环境 / `./.env` 取值，**不会读 `env_file: .env.production`**。直接 `up -d` 会报 `required variable DB_PASSWORD is missing a value`。`deploy.ps1` 上传后会在远端执行 `grep '^DB_PASSWORD=' .env.production > .env && chmod 600 .env` 供 Compose 插值（`deploy` / `update` 均已覆盖）；`DATABASE_URL` 里的密码必须与 `DB_PASSWORD` 完全一致。
+- [ ] **E3 域名与 Caddyfile**｜前置：B1、C2
+  - 备案前无需改 `Caddyfile.prod`：`deploy.ps1 -Staging` 会用 `Caddyfile.staging`（`:80` 纯 HTTP、无域名站点）覆盖远程同名文件，并跳过域名 `sed`；`api.gamepouch.cn` 保持指向 Cloudflare Tunnel。备案通过后带 `-Domain gamepouch.cn` 且去掉 `-Staging` 重新 deploy，脚本自动把 `yourdomain.com` 替换为主域并启用自动 HTTPS（**只传主域**）。
+  - **验收**：`caddy validate` 通过（deploy 脚本已内置校验，失败会中止并打印 caddy 日志）；`api.gamepouch.cn` 在 Cloudflare 仍指向 Tunnel（**此时不切 DNS**）。
+- [ ] **E4 secrets 备份**｜前置：E2
+  - 加密保存到本地密码管理器/离线位置，不进 Git、不发聊天工具。
+  - **验收**：本地有一份可恢复的 secrets 副本。
+
+#### Phase F — 部署与数据库初始化（助手 + 用户）
+
+- [ ] **F1 设置部署环境变量**｜前置：A3、E2
+  ```powershell
+  cd tools\account_backend   # 若不 cd，则在仓库根目录用完整路径 .\tools\account_backend\scripts\deploy.ps1
+  $env:ECS_HOST="<ECS公网IP>"
+  $env:ECS_USER="root"
+  $env:ECS_SSH_KEY="C:\Users\<你>\.ssh\id_ecs99"
+  # 备案前保持 ECS_DOMAIN 为空；deploy.ps1 -Staging 会跳过域名 sed，不会生成域名站点
+  # 备案通过、切 DNS 阶段再设 $env:ECS_DOMAIN="gamepouch.cn" 并去掉 -Staging
+  ```
+- [ ] **F2 执行部署**｜前置：D1~D4、F1
+  ```powershell
+  # 以下命令默认已 cd tools\account_backend；从仓库根目录调用请把 .\scripts\ 换成 .\tools\account_backend\scripts\
+  .\scripts\deploy.ps1 -Action setup             # 必须执行：本机无 Docker，Docker/Compose 在 ECS 上装
+  .\scripts\deploy.ps1 -Action deploy -Staging  # 备案前：Caddyfile.staging，纯 HTTP :80
+  .\scripts\deploy.ps1 -Action seed             # 初始化 CMS 文档 + 10 条 AppConfig
+  .\scripts\deploy.ps1 -Action logs -Service app
+  ```
+  - ⚠️ **`cd` 与脚本调用必须分成两行**（或用 `& <脚本完整路径> -Action setup`）。把 `cd d:\...\account_backend.\scripts\deploy.ps1 -Action setup` 粘成一行时，PowerShell 会把 `.\scripts\deploy.ps1` 和 `-Action` 当成 `Set-Location` 的参数，报 `A parameter cannot be found that matches parameter name 'Action'`。
+  - 顺序不可颠倒：`alembic upgrade head` 前 db 必须 healthcheck 通过；`ensure_runtime_schema` 会补 `users.is_active` / `admin_audit_logs`，但仍以 Alembic 为主。
+  - **备案前部署**：`-Staging` 会把 `Caddyfile.staging` 上传为远程 `Caddyfile.prod`、跳过域名 sed、校验 Caddyfile、重启 caddy、跑 Alembic 并做一次 `curl http://127.0.0.1/healthz` 自检；`api.gamepouch.cn` 继续指向 Cloudflare Tunnel。备案通过后带 `-Domain` 去掉 `-Staging` 重新部署一次即切回自动 HTTPS。
+  - **验收**：`docker compose -f docker-compose.prod.yml ps` 三个服务 healthy；日志出现 `prod mode: skipping create_all`；seed 返回 `app_configs_seeded: 10, cms_docs_seeded: 4`。
+  - **seed 改为 CLI**：`deploy.ps1 -Action seed` 现在执行 `python -m app.cli_seed`（直接调 `seed.run_seed()`），不再用 `python -c "import httpx; ..."`——后者经 PowerShell → ssh → bash 时内层双引号会被吞，远程必报 `syntax error near unexpected token ('`。宿主机不映射 8000，CLI 也不需要 HTTP。
+  - **实测坑（2026-11-05，均已修）**：① Compose 的 `${DB_PASSWORD}` 不读 `env_file`，需远端 `./.env`（deploy/update 已自动生成）；② 大陆 ECS 直连 `registry-1.docker.io` 超时，`setup-ecs.sh` 已配置 `daemon.json` 的 `registry-mirrors`（daocloud / 1ms / rat.dev）；③ `Dockerfile.prod` 原本的 `apt-get update`（deb.debian.org）卡十几分钟，因依赖全有 manylinux wheel 已去掉并改用阿里云 PyPI；④ `scripts/db-init/01-extensions.sql` 曾写成 shell heredoc，postgres 把 `*.sql` 交给 psql 导致 `syntax error at or near "#"`、db unhealthy，已改成纯 SQL；⑤ `app/database.py` 打印 Engine URL 会泄露明文 DB 密码，已改为 `render_as_string(hide_password=True)`。
+  - **实测结果（2026-11-05）**：ECS 上 `deploy -Staging` + `seed` 全绿；`alembic current` = `0002_admin_management (head)`；`/healthz`、`/api/cms/config`、`/privacy`、`/terms`、`/docs`、`/admin/ui/login` 均 200。Caddy 日志明确 `server is listening only on the HTTP port, so no automatic HTTPS will be applied`（符合预期，无 ACME 失败刷屏）。**公网 80 仍不通**：ECS 内 `ss -lntp` 已监听 80、ufw inactive、本机 curl 正常，但外部 `Test-NetConnection :80` 失败而 :22 成功 → 只剩阿里云安全组入方向未放通 `80/tcp`，需控制台手动加规则。
+- [ ] **F3 校验 schema 与 seed**｜前置：F2
+  - 容器内执行 `alembic current` = `0002_admin_management`；核对 `app_configs` = 10 条、`cms_documents` 有 privacy_policy/eula 等草稿或已发布版本、`users.is_active` 列存在、`admin_audit_logs` 表存在。
+  - **验收**：`GET /api/cms/config` 返回 10 项；`GET /privacy` 与 `/terms` 正常渲染。
+
+#### Phase G — 本地 SQLite 数据迁移（助手 + 用户确认）
+
+- [x] **G1 全量备份本地库**｜前置：F3 ✅ 2026-11-05
+  - 复制 `D:\RetroEmuPouch\backend\sqlite\dev.db`（163840 B / 9 用户 / 9 表 65 行）到 `D:\RetroEmuPouch\backend\backups\dev-20261105-0944.db`，SHA256 `88F3D43F…B470D43`。
+  - **验收**：备份可读，`sqlite3` 以只读模式打开成功。
+- [x] **G2 编写并试跑一次性迁移脚本**｜前置：G1 ✅ 2026-11-05
+  - **实现（改为纯 SQL 导出，不直连生产库）**：
+    - `scripts/migrate_sqlite.py`（标准库 sqlite3，只导出）：`inspect` 打印源表/列/行数；`dump --out x.sql` 按外键顺序生成 `insert … on conflict (pk) do nothing`，布尔转 `TRUE/FALSE`，BLOB 转 `decode('hex','hex')`，bytea/时间戳原样保留；默认**跳过** `app_configs` / `cms_documents`（seed 已写）；`users.is_admin` 一律不带入生产（管理员只经 seed/后台授予）。
+    - `scripts/migrate-db.sh`（在 ECS 上执行）：`<dump.sql>` 默认进**临时库** `gp_migrate_test` 试跑（自动 `create database` + `alembic upgrade head` + 导入 + 逐表行数），`--apply` 才动生产（先 `pg_dump` 快照到 `/opt/backups/pre-migrate-<ts>.sql.gz`），`--cleanup` 删临时库。
+  - **试跑结果（临时库）**：users 9 / entitlements 9 / billing_transactions 4 / cloud_save_blobs 1 / pc_pairings 2 / consent_records 26 / admin_audit_logs 0，与源库逐表一致；`created_at` 保留为 UTC（`…+00`）、blob 9 字节且 sha256 一致、`password_hash` 全部 `$2b$12$` len=60、pairings 外键都能匹配到 users。
+- [x] **G3 正式导入并冻结写入**｜前置：G2、切流前 ✅ 2026-11-05（导入完成；登录抽验待用户）
+  - 生产快照：`/opt/backups/pre-migrate-20261105-0947.sql.gz`（9.9K）。
+  - 导入结果：`users=9 / entitlements=9 / billing_transactions=4 / cloud_save_blobs=1 / pc_pairings=2 / consent_records=30`（26 条新导入 + 4 条 H4 真机匿名同意）、`app_configs=10 / cms_documents=4` 未被覆盖。
+  - **密码兼容验证**：`POST /api/auth/login` 用迁移账号 + 错误密码 → `401 {"detail":"bad_credentials"}`（说明 bcrypt hash 可被 passlib 正确解析，若 hash 坏会 500）。
+  - **仍待人工**：① 用 3 个真实账号的原密码登录（只有你掌握明文），并核对 `/api/billing/entitlement` 档位；② 本地后端若还在写 `dev.db`，正式切流前需再导一次（本次基线 sha256 见 G1）。
+
+#### Phase H — 全量验证（共同，切 DNS 之前必须全绿）
+
+- [x] **H1 公网可达性（HTTP 部分）**｜前置：F2、B3 ✅ 2026-11-05
+  - 备案前：`curl http://<ECS_IP>/healthz`（80 端口）。
+  - **实测**：安全组放行 `80/tcp` 后，外部 `Test-NetConnection :80 = True`；`/healthz`、`/api/cms/config`、`/privacy`、`/terms`、`/docs`、`/admin/ui/login` 均 200，`healthz` 返回 `{"ok":true,"env":"prod",...}`。
+  - **仍待备案后**：`curl -I https://api.gamepouch.cn/healthz` 验证证书链、HSTS、无重复 CORS 头（需切 DNS + `-Domain` 重新部署）。
+- [x] **H2 端点回归（对齐 30/30 冒烟）**｜前置：F3 ✅ 2026-11-05
+  - `/healthz`、公开 CMS、`/api/cms/config`、`/api/cms/docs/*`、`/privacy`、`/terms`、注册/登录/me/refresh/改密/logout、试用/权益、配对、云存档闸门、`/api/consent/status|accept`。
+  - **已实现**：`scripts/smoke.sh [base_url]`（`deploy.ps1 -Action setup` 会装到远端 `scripts/smoke.sh`）。在 ECS 上跑 `scripts/smoke.sh http://127.0.0.1` → **PASS=38 FAIL=0**（含 200/404/303/403 期望码断言）。脚本会注册 `smoke_<ts>@example.com` 临时账号、用唯一 device_id 走同意流程，结束时 `DELETE /api/auth/me` 并按 `sha256(device+DEVICE_ID_SALT)` 精确删除本次 `consent_records`，**不留测试数据**（实测 users/pc_pairings/consent_records 均回到 0）。
+  - **验收**：生产下 `POST /api/billing/verify` 返回 `200 + ok=false`（dev mock 关闭）；free 档 `GET /api/cloud/saves/list` 返回 `403 cloud_save_requires_premium`（云存档闸门生效）。
+- [x] **H3 运营后台回归（44 项自测的线上版）**｜前置：F3 ✅ 2026-11-05（页面层）
+  - `/admin/ui/login` 用 `ADMIN_WEB_PASSWORD` 登录；逐页打开 dashboard / users / entitlements / cloud-saves / pairings / consents / billing / audit / cms / config。
+  - **实测**：未登录访问 `/admin/ui/users` → 303 跳登录页；`POST /admin/ui/login`（口令经 `--data-urlencode password@file` 传入，不出现在 ps/history）→ 303 + `admin_token` cookie；**11 个页面全部 200**。注意 `.env.production` 若为 CRLF，`cut -f2-` 会带上 `\r` 导致口令 401（脚本已 `tr -d '\r'`，文件本身也已统一为 LF）。
+  - 仍待人工：禁用账号后旧 JWT 立即 403、权益 7 档调整、审计日志落库（需真实账号，适合 H4 一起做）。
+- [x] **H4 App 端到端（临时指向 ECS）**｜前置：H2、H3 ✅ 2026-11-05（真机 OXF-AN10 / Android 12）
+  - **关键约束**：`SecurityPolicy.assertSafe()` 只允许 `https` 或 `127.0.0.1 / localhost / ::1 / RFC1918` 的明文，**公网 IP + HTTP 会被 App 自己拒掉**（`SecurityException: 拒绝不安全的明文连接`），因此不能直接把 `http://<ECS_IP>` 填进调试入口。联调走 **SSH 隧道 + adb reverse**：
+    `ssh -N -L 8080:127.0.0.1:80 root@<ECS>` + `adb reverse tcp:8080 tcp:8080`，App 里填 `http://127.0.0.1:8080`（loopback 合法 → 经 PC 隧道打到 ECS 的 Caddy）。
+  - **产物**：`scripts/build-apk.ps1 -Flavor community -DebugBuild`（必须 debug：只有 `kDebugMode` 才显示「调试：账号后端」卡片；必须 community：`main`/store 的 `network_security_config.xml` 全局禁明文）。
+  - **实测通过**：ConsentGate（v2）→ 注册 `e2e1105@example.com`（Caddy 日志 `POST /api/auth/register 201`）→ `/api/auth/me 200` → 会员页 `当前状态：试用中 · 剩余 7 天` → 修改密码（`change-password 200`）→ 账户注销（`DELETE /api/auth/me 200`，DB `users=0 / entitlements=0` 级联干净）。云存档按设计仍是付费档专属（free/试用只看得到闸门文案）。
+  - **本轮回测暴露并修复的 3 个客户端缺陷**：
+    1. **试用不生效**：后端试用期 `tier` 保持 `free`、只写 `trial_start`，客户端 `Entitlement` 却只看 `tier` → 真机显示"免费用户"且广告不去。修：新增 `trialActive`，`free + 未过期 trial_start` 归一成 `MembershipTier.trial`（`isAdFree`/`effectiveTier` 走它），并修正设置页"试用解锁云存档"的错误文案（付费档才有）。
+    2. **试用剩余天数差 1**：`inDays` 向下取整导致刚开启显示"剩余 6 天"。修：按分钟向上取整。
+    3. **access token 15 分钟过期后全 401**：客户端只存 `access_token`、丢弃 `refresh_token`，用着用着改密/注销就 `请求失败（401）`。修：新增 `kAccountRefreshToken` 持久化；`_json()` 遇 401 先 `POST /api/auth/refresh` 换新 token 再重试一次（`retried` 防死循环），登出/注销一并清除。
+  - 验证刷新链路的方法：临时把 `.env.production` 的 `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` 改成 1 并 `up -d --force-recreate app`，登录等 80s 再改密 → Caddy 日志出现 `change-password 401 → refresh 200 → change-password 200`；测完改回 15 重建。
+- [x] **H5 性能与稳定性（首轮基线）**｜前置：H2 ✅ 2026-11-05
+  - 连续 20 次请求 `/healthz` 记录延迟/失败率；`docker stats` 观察内存；3M 带宽下上传 1MB `.sav` 计时（云存档需付费档，留待有真实权益的账号）。
+  - **实测基线（工作时段，PC → 深圳 ECS）**：20 次 `/healthz` 全成功，min 22ms / avg 27.8ms / max 68ms；`docker stats`：app 141.8MiB、db 34.85MiB、caddy 10.64MiB，主机 available 1.0Gi、swap 已用 84MiB、`dmesg` 无 OOM 记录。
+  - **仍待做**：晚高峰复测、`swap` 长期是否持续增长、1MB `.sav` 上传计时（与 H4 一起做）。
+
+#### Phase I — 切换与回滚（用户 + 助手）
+
+- [ ] **I1 切 DNS**｜前置：B4、H1~H5 全绿
+  - Cloudflare DNS：删除 `api.gamepouch.cn` 的 CNAME → `<tunnel-id>.cfargotunnel.com`，新增 **A 记录 → `<ECS 公网 IP>`**，代理状态改为 **「仅 DNS / 灰云」**（关键！橙云会继续绕 Cloudflare 边缘）；TTL 调低到 1~5 分钟便于回滚。
+  - 保留 Tunnel 进程运行 ≥7 天。
+  - **验收**：多地 `nslookup api.gamepouch.cn` 返回 ECS IP；`curl -v https://api.gamepouch.cn/healthz` 直连 ECS、无 `cf-ray` 头。
+- [ ] **I2 客户端验证无需发版**｜前置：I1
+  - 用**未改任何配置**的正式包跑账号/云存档/CMS 全流程，确认 `kDefaultBackendUrl` 直接命中 ECS。
+  - **验收**：App 端 0 改动、0 报错。
+- [ ] **I3 回滚预案（随时可执行）**｜前置：I1
+  - 异常时把 Cloudflare 记录改回 CNAME Tunnel（本地 PC 保持 boot.bat 运行）→ 5 分钟内恢复线上；`deploy.ps1 -Action stop` 停 ECS；`pg_dump` 快照可回灌。
+  - **验收**：演练一次回滚（可在低峰期改记录再改回），确认 RTO < 10 分钟。
+- [ ] **I4 观察期收尾**｜前置：I1 后 7 天
+  - 无故障 → 停 `boot.bat` / `stop.bat`，下线 cloudflared（staging 复用 80，无 8080 临时规则需要删）；更新 `docs/skills.md` 与本文「部署架构」图（去掉 Cloudflare Tunnel 主链路描述）。
+  - **验收**：文档架构图与真实链路一致。
+
+#### Phase J — 日常运维（长期）
+
+- [x] **J1 数据库备份** ✅ 2026-11-05：`scripts/backup-db.sh`（`deploy.ps1 -Action setup` 会上传并安装 `15 3 * * *` 的 root crontab，日志 `/var/log/gp-backup.log`），产物 `/opt/backups/db-YYYY-MM-DD.sql.gz` 保留 7 天。已实测执行一次：12K dump、`gunzip -t` 通过。每月仍建议拉一份回本地。
+- [ ] **J2 证书与更新**：Caddy 自动续期（`/data` 卷已持久化）；代码更新走 `deploy.ps1 -Action update`（会重建 app 并 `alembic upgrade head`），更新前先 `pg_dump`。
+- [x] **J3 监控告警（基础版）** ✅ 2026-11-05
+  - `scripts/healthcheck.sh`：cron `*/10 * * * *` 探测 `http://127.0.0.1/healthz`，成功只在整点记一条 `ok`，失败记 `FAIL code=xxx` 到 `/var/log/gp-health.log`（不自动重启，交回 `restart: always`）。已实测两条路径（成功不落日志、坏 URL → `FAIL code=000`）。
+  - 容器日志轮转：`docker-compose.prod.yml` 加 `x-logging` 锚点（`json-file` + `max-size 10m` + `max-file 3`），三个服务都挂上，避免 Caddy 每请求一条 JSON 把盘写满；已 `docker inspect` 确认生效。
+  - 每周日 04:30 `docker system prune -af --filter until=168h`（清 7 天前的悬空镜像/构建缓存），日志 `/var/log/gp-docker-prune.log`。
+  - 仍建议：阿里云云监控配 CPU / 内存 / 带宽 / 磁盘阈值告警（控制台操作）；`deploy.ps1 -Action logs app` 排障；关注 `ADMIN_WEB_PASSWORD` 登录失败与 `admin_audit_logs`。
+- [x] **J2b 备份恢复演练** ✅ 2026-11-05：`migrate-db.sh --restore-drill /opt/backups/db-YYYY-MM-DD.sql.gz` 把快照恢复进临时库 `gp_migrate_test` 并逐表比行数——实测 9 张表与生产完全一致（users 9 / entitlements 9 / billing 4 / blob 1 / pairings 2 / consent 30 / configs 10 / cms 4 / audit 0），演练后 `--cleanup` 删库。**结论：备份确实可恢复，不只是"有文件"。**
+- [x] **J5 云存档产品化（上传 / 恢复 / 冲突决策）** ✅ 2026-11-05：`cloud_save_sync.dart` 接管真实存档（`<CRC>.sav` / `.state` / `.slotN.state` / 缩略图 `.thumb.dat`），稳定 `client_key` 覆盖同一 blob；恢复走 `.part` → 校验 → `.bak-<ts>` → `rename` 原子替换，失败不毁本地；`diff` 五态 + 30s 容差 + 恢复后 mtime 对齐消除假冲突；账号页支持批量/单条上传与恢复。测试：Dart 20 项 + 真实后端端到端。
+- [ ] **J4 到期与合规**：日历提醒 ECS 与域名续费（**到期前 30 天核实 99 元续费条款是否仍有效**）；备案信息变更及时更新；`docs/release-plan.md` 的 `filing_number` 由后台 AppConfig 回填。
+
+### 3. 执行顺序速查
+
+```
+A1 → A2 → A3 → A4 → A5
+              ├─→ B1 → B2 →（初审 1~2 天 + 管局 ≤20 工作日）→ B4 ─────┐
+              ├─→ C1 → C2 → C3 → C4（本地 Docker 全链路演练）        │
+              ├─→ D1 → D2 → D3 → D4                                  │
+              ├─→ E1 → E2 → E3 → E4 → F1 → F2 → F3                   │
+              └─→ G1 → G2 → G3 → H1 → H2 → H3 → H4 → H5 ─────────────┴→ I1 → I2 → I3 → I4 → J1~J4
+```
+
+### 4. 最终验收清单（全部打勾才算上线完成）
+
+- [ ] ECS 99 已购买、Ubuntu 24.04 LTS、备案通过、`gamepouch.cn` 备案号回填后台
+- [ ] 第 1 节 P0-1 ~ P0-8 全部修复并本地演练通过
+- [ ] `.env.production` 无 `CHANGE_ME`，`.gitignore` 生效，强口令已设置
+- [ ] 三容器 healthy，`/healthz` 返回 `"env":"prod"`，生产 mock 防线返回 503
+- [ ] Alembic `0002_admin_management` 已应用，schema 自愈校验通过
+- [ ] 本地 9 个用户 + 权益 + 云存档 + 审计数据迁移完成，抽样登录成功
+- [ ] 公开 API / 账号 / 会员 / 配对 / 云存档 / ConsentGate / Admin 11 页全绿
+- [ ] `api.gamepouch.cn` A 记录指向 ECS 且灰云直连，App **零改动**
+- [ ] Cloudflare Tunnel 保留 7 天，回滚演练通过
+- [ ] 每日 `pg_dump`、云监控告警、续费提醒已配置
+
+### 5. 记录表（执行时填写）
+
+| 项 | 值 | 填写日期 |
+|---|---|---|
+| ECS 公网 IP | **留空**，只存本地密码管理器 | — |
+| 实例 ID / 地域 | | |
+| 到期日 / 续费价核实 | 2027-11-04 23:59:59 / 续费价待核实 | 2026-11-04 |
+| 备案服务码 / 备案号 | | |
+| DNS 切换时间 | | |
+| 回滚演练时间 | | |
+| 首次 `pg_dump` 备份路径 | | |
 | ~~真机联调修复：公开内容解耦 / ConsentGate 导航 / 账号页首帧红屏 / 关于页动态化~~ | 真机验证 | ~~P0~~ | ✅ **已完成（2026-11-04，见文末「端到端验证记录」）** |
 | ~~完整运营后台：用户 / 权益 / 资源 / 统计 / 审计~~ | 运维可用 | ~~P0~~ | ✅ **已完成（2026-11-04，Phase 7；`docs/skills.md` §24.2.2）** |
 

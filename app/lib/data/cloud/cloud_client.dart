@@ -3,15 +3,20 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:cryptography/cryptography.dart' show Sha256;
 import 'package:flutter/foundation.dart' show kDebugMode;
 
 import '../../features/account/account_backend.dart'
     show AccountStore, effectiveBaseUrl, kAccountToken;
 import '../../features/cloud/cloud_crypto.dart';
+import 'cloud_save_models.dart';
 import 'security_policy.dart';
 
+// 兼容既有导入：`import 'cloud_client.dart' show CloudSaveSummary` 仍然可用。
+export 'cloud_save_models.dart' show CloudSaveSummary, CloudSaveTransport;
+
 // ============================================================================
-// 异常 + 云存档数据模型
+// 异常
 // ============================================================================
 
 class CloudException implements Exception {
@@ -22,38 +27,6 @@ class CloudException implements Exception {
   @override
   String toString() =>
       statusCode == null ? message : 'HTTP $statusCode: $message';
-}
-
-/// 云端存档摘要（来自 `GET /api/cloud/saves/list`）。
-class CloudSaveSummary {
-  CloudSaveSummary({
-    required this.id,
-    required this.saveName,
-    required this.sizeBytes,
-    required this.sha256,
-    required this.createdAt,
-    required this.updatedAt,
-  });
-
-  final String id;
-  final String saveName;
-  final int sizeBytes;
-  final String sha256;
-  final DateTime createdAt;
-  final DateTime updatedAt;
-
-  factory CloudSaveSummary.fromJson(Map<String, dynamic> j) {
-    return CloudSaveSummary(
-      id: j['id'] as String? ?? '',
-      saveName: j['save_name'] as String? ?? '',
-      sizeBytes: (j['size_bytes'] as num?)?.toInt() ?? 0,
-      sha256: j['sha256'] as String? ?? '',
-      createdAt: DateTime.tryParse(j['created_at'] as String? ?? '') ??
-          DateTime.now(),
-      updatedAt: DateTime.tryParse(j['updated_at'] as String? ?? '') ??
-          DateTime.now(),
-    );
-  }
 }
 
 // ============================================================================
@@ -69,7 +42,7 @@ class CloudSaveSummary {
 /// 鉴权 token 和 base URL 都从 [AccountStore] 读取（与 [HttpAccountService] /
 /// [HttpReceiptVerifier] 共享同一份登录态），避免 CloudConfig / 安全存储那套
 /// 过时的平行状态。
-class CloudClient {
+class CloudClient implements CloudSaveTransport {
   CloudClient(this._store);
   final AccountStore _store;
 
@@ -95,6 +68,64 @@ class CloudClient {
     return a == 10 || (a == 192 && b == 168) || (a == 172 && b >= 16 && b <= 31);
   }
 
+  // ------------------------------------------------------- 后端错误信息解析
+  /// 后端（FastAPI）错误体是 `{"detail": ...}`，历史实现还带 `error` 键；
+  /// 两者都认，并把已知错误码翻成中文（原始码保留在括号里便于排障）。
+  static String? errorOf(Object? decoded) {
+    if (decoded is! Map) return null;
+    final err = decoded['error'];
+    if (err is String && err.trim().isNotEmpty) {
+      return _friendlyError(err.trim());
+    }
+    final detail = decoded['detail'];
+    if (detail is String && detail.trim().isNotEmpty) {
+      return _friendlyError(detail.trim());
+    }
+    if (detail is List && detail.isNotEmpty) {
+      final first = detail.first;
+      if (first is Map && first['msg'] is String) return first['msg'] as String;
+    }
+    return null;
+  }
+
+  static String _friendlyError(String raw) {
+    switch (raw) {
+      case 'cloud_save_requires_premium':
+        return '云存档需要会员';
+      case 'too_large':
+        return '存档超过 10MB 上限';
+      case 'forbidden_keyword':
+        return '文件名含受限关键词，ROM/BIOS 不允许上传';
+      case 'bad_save_name':
+        return '存档文件名不合法';
+      case 'blob_not_found':
+        return '云端存档不存在或已被删除';
+    }
+    if (raw.startsWith('extension_not_allowed')) {
+      final m = RegExp(r'got\s+(\S+)\)').firstMatch(raw);
+      return '存档扩展名不允许${m == null ? '' : '（${m.group(1)}）'}';
+    }
+    return raw;
+  }
+
+  /// 把网络层异常统一转成 [CloudException]，避免 UI 层只 catch
+  /// [CloudException] 时漏出未处理的 SocketException / TimeoutException。
+  static Future<T> _guard<T>(Future<T> Function() body) async {
+    try {
+      return await body();
+    } on CloudException {
+      rethrow;
+    } on SocketException catch (e) {
+      throw CloudException('无法连接服务器：${e.osError?.message ?? e.message}');
+    } on TimeoutException {
+      throw CloudException('服务器响应超时');
+    } on HttpException catch (e) {
+      throw CloudException(e.message);
+    } on HandshakeException catch (e) {
+      throw CloudException('TLS 握手失败：${e.message}');
+    }
+  }
+
   // ---------------------------------------------------------------- JSON
   Future<Map<String, dynamic>> _json(
     String method,
@@ -114,42 +145,36 @@ class CloudClient {
     SecurityPolicy.assertSafe(uri);
     final client = _http();
     try {
-      final req = await client.openUrl(method, uri);
-      req.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      if (auth) {
-        final t = _token;
-        if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
-        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
-      }
-      if (body != null) {
-        req.headers.contentType = ContentType.json;
-        req.write(jsonEncode(body));
-      }
-      final res = await req.close().timeout(const Duration(seconds: 15));
-      final text =
-          await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 15));
-      Map<String, dynamic> j = const {};
-      if (text.trim().isNotEmpty) {
-        final decoded = jsonDecode(text);
-        if (decoded is Map<String, dynamic>) j = decoded;
-      }
-      if (res.statusCode >= 400) {
-        throw CloudException(
-          (j['error'] as String?)?.trim().isNotEmpty == true
-              ? j['error'] as String
-              : '请求失败（${res.statusCode}）',
-          statusCode: res.statusCode,
-        );
-      }
-      return j;
-    } on SocketException catch (e) {
-      throw CloudException('无法连接服务器：${e.osError?.message ?? e.message}');
-    } on TimeoutException {
-      throw CloudException('服务器响应超时');
-    } on CloudException {
-      rethrow;
-    } on HttpException catch (e) {
-      throw CloudException(e.message);
+      return await _guard(() async {
+        final req = await client.openUrl(method, uri);
+        req.headers.set(HttpHeaders.acceptHeader, 'application/json');
+        if (auth) {
+          final t = _token;
+          if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
+          req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
+        }
+        if (body != null) {
+          req.headers.contentType = ContentType.json;
+          req.write(jsonEncode(body));
+        }
+        final res = await req.close().timeout(const Duration(seconds: 15));
+        final text = await res
+            .transform(utf8.decoder)
+            .join()
+            .timeout(const Duration(seconds: 15));
+        Map<String, dynamic> j = const {};
+        if (text.trim().isNotEmpty) {
+          final decoded = jsonDecode(text);
+          if (decoded is Map<String, dynamic>) j = decoded;
+        }
+        if (res.statusCode >= 400) {
+          throw CloudException(
+            errorOf(j) ?? '请求失败（${res.statusCode}）',
+            statusCode: res.statusCode,
+          );
+        }
+        return j;
+      });
     } finally {
       client.close(force: true);
     }
@@ -162,11 +187,14 @@ class CloudClient {
   /// 上传云存档（multipart/form-data）。
   ///
   /// [saveName] 存档文件名（例如 `FF7_SAVE_001.sav`）。
-  /// [clientKey] 客户端侧唯一标识（例如 `gameId_slot_0`，后端用于去重判定）。
+  /// [clientKey] 客户端侧唯一标识（例如 `gameId_slot_0`）。后端按
+  /// `sha256(clientKey + salt)` 落库；同一用户同一 clientKey 再次上传会**覆盖**
+  /// 原 blob（id 不变），因此备份类操作应传稳定 key，避免无限堆积。
   /// [file] 存档文件（**明文**）；本方法先以 [passphrase] 做 AES-256-GCM 加密，
   /// 再上传密文，服务端不解密。
   /// [passphrase] 云存档密码（用于派生密钥；见 [CloudCrypto]）。
   /// 返回新存档的 server-assigned id。
+  @override
   Future<String> uploadSave({
     required String saveName,
     required String clientKey,
@@ -181,62 +209,67 @@ class CloudClient {
     SecurityPolicy.assertSafe(uri);
     final client = _http();
     try {
-      final req = await client.postUrl(uri);
-      final t = _token;
-      if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
-      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
+      return await _guard(() async {
+        final req = await client.postUrl(uri);
+        final t = _token;
+        if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
+        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
 
-      // 手写 multipart/form-data（dart:io 无现成 Form 类）
-      final boundary =
-          '--retroemupouch-${DateTime.now().millisecondsSinceEpoch}-${file.hashCode}';
-      final LF = '\r\n';
-      req.headers.contentType = ContentType('multipart', 'form-data',
-          parameters: {'boundary': boundary});
+        // 手写 multipart/form-data（dart:io 无现成 Form 类）
+        // boundary 值本身不要带前导 `--`（分隔符由下面显式拼 `--$boundary`）。
+        final boundary = 'retroemupouch-${DateTime.now().microsecondsSinceEpoch}'
+            '-${file.path.hashCode.abs()}';
+        const crlf = '\r\n';
+        req.headers.contentType = ContentType('multipart', 'form-data',
+            parameters: {'boundary': boundary});
 
-      // 客户端加密后再上传（合规红线：服务端只存密文）。
-      final plain = await file.readAsBytes();
-      final fileBytes = await CloudCrypto.encrypt(plain, passphrase);
+        // 客户端加密后再上传（合规红线：服务端只存密文）。
+        final plain = await file.readAsBytes();
+        final fileBytes = await CloudCrypto.encrypt(plain, passphrase);
 
-      // save_name
-      req.write('$LF--$boundary$LF');
-      req.write(
-          'Content-Disposition: form-data; name="save_name"$LF$LF');
-      req.write('$saveName$LF');
+        // 首段必须是 `--boundary`：它前面不允许有前导 CRLF（否则被当成 preamble）。
+        // save_name
+        req.write('--$boundary$crlf');
+        req.write('Content-Disposition: form-data; name="save_name"$crlf$crlf');
+        req.write('$saveName$crlf');
 
-      // client_key
-      req.write('--$boundary$LF');
-      req.write('Content-Disposition: form-data; name="client_key"$LF$LF');
-      req.write('$clientKey$LF');
+        // client_key
+        req.write('--$boundary$crlf');
+        req.write('Content-Disposition: form-data; name="client_key"$crlf$crlf');
+        req.write('$clientKey$crlf');
 
-      // file
-      req.write('--$boundary$LF');
-      req.write(
-          'Content-Disposition: form-data; name="file"; filename="${Uri.encodeComponent(saveName)}"$LF');
-      req.write('Content-Type: application/octet-stream$LF$LF');
-      req.add(fileBytes);
-      req.write('$LF--$boundary--$LF');
+        // file
+        req.write('--$boundary$crlf');
+        req.write(
+            'Content-Disposition: form-data; name="file"; filename="$saveName"$crlf');
+        req.write('Content-Type: application/octet-stream$crlf$crlf');
+        req.add(fileBytes);
+        req.write('$crlf--$boundary--$crlf');
 
-      final res = await req.close().timeout(const Duration(seconds: 30));
-      final text =
-          await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 15));
+        final res = await req.close().timeout(const Duration(seconds: 60));
+        final text = await res
+            .transform(utf8.decoder)
+            .join()
+            .timeout(const Duration(seconds: 15));
 
-      if (res.statusCode == 403) {
-        throw CloudException('云存档需要会员', statusCode: 403);
-      }
-      if (res.statusCode >= 400) {
-        String msg = '上传失败（${res.statusCode}）';
-        try {
-          final j = jsonDecode(text);
-          if (j is Map && j['error'] is String) msg = j['error'] as String;
-        } catch (_) {}
-        throw CloudException(msg, statusCode: res.statusCode);
-      }
-      final j = jsonDecode(text) as Map<String, dynamic>;
-      final saveId = j['save_id'] as String?;
-      if (saveId == null || saveId.isEmpty) {
-        throw CloudException('上传成功但未返回 save_id');
-      }
-      return saveId;
+        if (res.statusCode >= 400) {
+          Map<String, dynamic> j = const {};
+          try {
+            final d = jsonDecode(text);
+            if (d is Map<String, dynamic>) j = d;
+          } catch (_) {}
+          throw CloudException(
+            errorOf(j) ?? '上传失败（${res.statusCode}）',
+            statusCode: res.statusCode,
+          );
+        }
+        final j = jsonDecode(text);
+        final saveId = (j is Map ? j['save_id'] : null) as String?;
+        if (saveId == null || saveId.isEmpty) {
+          throw CloudException('上传成功但未返回 save_id');
+        }
+        return saveId;
+      });
     } finally {
       client.close(force: true);
     }
@@ -244,6 +277,7 @@ class CloudClient {
 
   /// 列出当前用户的全部云端存档（后端按 updated_at DESC 排序）。
   /// 后端 `GET /api/cloud/saves/list` 直接返回 JSON 数组，不走 `_json`。
+  @override
   Future<List<CloudSaveSummary>> listSaves() async {
     final base = await _base;
     if (base.isEmpty) throw CloudException('未配置后端地址');
@@ -251,27 +285,34 @@ class CloudClient {
     SecurityPolicy.assertSafe(uri);
     final client = _http();
     try {
-      final req = await client.getUrl(uri);
-      final t = _token;
-      if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
-      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
-      final res = await req.close().timeout(const Duration(seconds: 15));
-      final text =
-          await res.transform(utf8.decoder).join().timeout(const Duration(seconds: 15));
-      if (res.statusCode >= 400) {
-        String msg = '列表获取失败（${res.statusCode}）';
-        try {
-          final j = jsonDecode(text);
-          if (j is Map && j['error'] is String) msg = j['error'] as String;
-        } catch (_) {}
-        throw CloudException(msg, statusCode: res.statusCode);
-      }
-      final decoded = jsonDecode(text);
-      final List list = decoded is List ? decoded : const [];
-      return list
-          .whereType<Map>()
-          .map((m) => CloudSaveSummary.fromJson(m.cast<String, dynamic>()))
-          .toList();
+      return await _guard(() async {
+        final req = await client.getUrl(uri);
+        final t = _token;
+        if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
+        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
+        final res = await req.close().timeout(const Duration(seconds: 15));
+        final text = await res
+            .transform(utf8.decoder)
+            .join()
+            .timeout(const Duration(seconds: 15));
+        if (res.statusCode >= 400) {
+          Map<String, dynamic> j = const {};
+          try {
+            final d = jsonDecode(text);
+            if (d is Map<String, dynamic>) j = d;
+          } catch (_) {}
+          throw CloudException(
+            errorOf(j) ?? '列表获取失败（${res.statusCode}）',
+            statusCode: res.statusCode,
+          );
+        }
+        final decoded = jsonDecode(text);
+        final List list = decoded is List ? decoded : const [];
+        return list
+            .whereType<Map>()
+            .map((m) => CloudSaveSummary.fromJson(m.cast<String, dynamic>()))
+            .toList();
+      });
     } finally {
       client.close(force: true);
     }
@@ -279,6 +320,7 @@ class CloudClient {
 
   /// 下载指定存档到 [dest]。返回写入字节数（明文）。
   /// 后端只存密文，本方法下载后即时以 [passphrase] 解密再落盘。
+  @override
   Future<int> downloadSave(
     String saveId, {
     required File dest,
@@ -290,43 +332,63 @@ class CloudClient {
     SecurityPolicy.assertSafe(uri);
     final client = _http();
     try {
-      final req = await client.getUrl(uri);
-      final t = _token;
-      if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
-      req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
-      final res = await req.close().timeout(const Duration(seconds: 30));
-      if (res.statusCode >= 400) {
-        String msg = '下载失败（${res.statusCode}）';
+      return await _guard(() async {
+        final req = await client.getUrl(uri);
+        final t = _token;
+        if (t.isEmpty) throw CloudException('尚未登录', statusCode: 401);
+        req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
+        final res = await req.close().timeout(const Duration(seconds: 60));
+        if (res.statusCode >= 400) {
+          Map<String, dynamic> j = const {};
+          try {
+            final text = await res.transform(utf8.decoder).join();
+            final d = jsonDecode(text);
+            if (d is Map<String, dynamic>) j = d;
+          } catch (_) {}
+          throw CloudException(
+            errorOf(j) ?? '下载失败（${res.statusCode}）',
+            statusCode: res.statusCode,
+          );
+        }
+        // 收集密文 → 校验 sha256 → 客户端解密 → 落盘明文。
+        final cipher = <int>[];
+        await for (final chunk in res) {
+          cipher.addAll(chunk);
+        }
+        final cipherBytes = Uint8List.fromList(cipher);
+        final want = res.headers.value('x-save-sha256');
+        if (want != null && want.isNotEmpty) {
+          final got = (await Sha256().hash(cipherBytes)).bytes;
+          final gotHex =
+              got.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
+          if (gotHex != want.toLowerCase()) {
+            throw CloudException('下载校验失败：密文校验和与服务器不一致，请重试');
+          }
+        }
+        late final Uint8List plain;
         try {
-          final text = await res.transform(utf8.decoder).join();
-          final j = jsonDecode(text);
-          if (j is Map && j['error'] is String) msg = j['error'] as String;
-        } catch (_) {}
-        throw CloudException(msg, statusCode: res.statusCode);
-      }
-      // 收集密文 → 客户端解密 → 落盘明文。
-      final cipher = <int>[];
-      await for (final chunk in res) {
-        cipher.addAll(chunk);
-      }
-      final plain = await CloudCrypto.decrypt(Uint8List.fromList(cipher), passphrase);
-      await dest.parent.create(recursive: true);
-      final sink = dest.openWrite(mode: FileMode.write);
-      try {
-        sink.add(plain);
-        await sink.flush();
-      } finally {
-        await sink.close();
-      }
-      return plain.length;
-    } on SocketException catch (e) {
-      throw CloudException('下载中断：${e.osError?.message ?? e.message}');
+          plain = await CloudCrypto.decrypt(cipherBytes, passphrase);
+        } catch (_) {
+          // GCM tag 校验失败几乎只有两种原因：密码错 / 密文损坏。
+          throw CloudException('解密失败：云存档密码不正确，或文件已损坏');
+        }
+        await dest.parent.create(recursive: true);
+        final sink = dest.openWrite(mode: FileMode.write);
+        try {
+          sink.add(plain);
+          await sink.flush();
+        } finally {
+          await sink.close();
+        }
+        return plain.length;
+      });
     } finally {
       client.close(force: true);
     }
   }
 
   /// 删除指定云端存档。
+  @override
   Future<void> deleteSave(String saveId) async {
     await _json('DELETE', '/api/cloud/saves/$saveId');
   }

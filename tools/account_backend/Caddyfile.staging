@@ -1,0 +1,22 @@
+# =================================================================
+# RetroEmuPouch Account Backend — 备案前临时配置（staging）
+# 纯 HTTP、不含任何域名站点 → 不触发 Caddy 自动 HTTPS / ACME
+#
+# 用法：deploy.ps1 -Action deploy -Staging
+#       该动作会把本文件上传为远程的 Caddyfile.prod，
+#       compose 的挂载路径 ./Caddyfile.prod:/etc/caddy/Caddyfile 不变
+#
+# 访问：http://<ECS公网IP>/healthz（IP 直连，不涉及未备案域名解析）
+# 备案通过、DNS 切到 ECS 后去掉 -Staging 重新 deploy，即切回 Caddyfile.prod
+# =================================================================
+
+# 只写 ":80"（不含主机名）→ Caddy 不启用 Automatic HTTPS，也不会去申请证书
+:80 {
+	reverse_proxy app:8000
+
+	# 日志输出 stdout，用 docker compose logs caddy 查看
+	log {
+		output stdout
+		format json
+	}
+}

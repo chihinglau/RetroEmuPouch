@@ -38,6 +38,24 @@ void main() {
       expect(e.effectiveTier, MembershipTier.free);
     });
 
+    test('server-style free + trial_start counts as trial (ad-free)', () {
+      // 后端试用期间 tier 仍是 "free"，靠 trial_start 判定试用窗。
+      final e = make(tier: MembershipTier.free, trialStart: DateTime.now());
+      expect(e.trialActive, isTrue);
+      expect(e.isAdFree, isTrue);
+      expect(e.effectiveTier, MembershipTier.trial);
+      // 试用不解除云存档（付费档才解锁）。
+      expect(e.cloudSaveEnabled, isFalse);
+    });
+
+    test('lapsed server-style trial degrades to free', () {
+      final start = DateTime.now().subtract(const Duration(days: 8));
+      final e = make(tier: MembershipTier.free, trialStart: start);
+      expect(e.trialActive, isFalse);
+      expect(e.isAdFree, isFalse);
+      expect(e.effectiveTier, MembershipTier.free);
+    });
+
     test('active monthly/yearly subscription is ad-free', () {
       final future = DateTime.now().add(const Duration(days: 10));
       expect(make(tier: MembershipTier.monthly, expireAt: future).isAdFree,

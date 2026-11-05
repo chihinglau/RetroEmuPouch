@@ -4,6 +4,10 @@ __pycache__/
 *.egg-info/
 .venv/
 .env
+# 生产 secrets —— 必须忽略，.env.production.example 是模板需保留
+.env.production
+.env.production.*
+!.env.production.example
 
 # Alembic
 alembic/versions/*.pyc

@@ -4,16 +4,25 @@
 # 前提：已在 ECS 上跑过 scripts/setup-ecs.sh
 # 用法：docker compose -f docker-compose.prod.yml up -d
 # =================================================================
-version: "3.9"
+# 说明：不再写 version 字段（Compose v2 已废弃，会打 warning）
+#
+# 日志轮转：默认 json-file 无上限，Caddy 每条请求一行 JSON，长期跑会把盘写满。
+# 统一限成 10MB × 3 个文件（每服务最多 30MB）。
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   # ── PostgreSQL ──
   db:
     image: postgres:16-alpine
     restart: always
+    logging: *default-logging
     environment:
       POSTGRES_USER: retroemupouch
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}"
       POSTGRES_DB: retroemupouch
       PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
@@ -35,11 +44,12 @@ services:
       dockerfile: Dockerfile.prod
     image: retroemupouch-account:latest
     restart: always
+    logging: *default-logging
     env_file:
       - .env.production
     environment:
-      DATABASE_URL: postgresql+psycopg://retroemupouch:${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}@db:5432/retroemupouch
-      APP_ENV: production
+      DATABASE_URL: "postgresql+psycopg://retroemupouch:${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}@db:5432/retroemupouch"
+      APP_ENV: prod   # 必须与 config.is_prod / main.lifespan 的判断一致；environment 会覆盖 env_file
     depends_on:
       db:
         condition: service_healthy
@@ -57,6 +67,7 @@ services:
   caddy:
     image: caddy:2-alpine
     restart: always
+    logging: *default-logging
     ports:
       - "80:80"
       - "443:443"

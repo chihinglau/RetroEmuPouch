@@ -113,6 +113,9 @@
 - 路径：先完成各应用商店开发者实名 → 在商店侧发起 App 备案（由分发平台代送审）
 - 变更：包名 / 签名 / 主体 / 应用名称变更需做**变更备案**
 
+**当前进度（2026-11-05）**：已用阿里云 **ICP 备案（网站/域名侧）** 先行，订单 `2036873543813`（首次备案），当前状态**「4 工信部短信核验」**——需在 24h 内用手机流量打开 12381 短信链接完成核验，之后进入管局审核；下号后回填 `filing_number` 并切 HTTPS（`deploy.ps1 -Action deploy -Domain`）。
+> ⚠️ **ICP 备案 ≠ APP 备案**：ICP 备案解决域名与服务器合规，应用商店上架仍需按本文路径单独做 **App 备案**（包名 `com.retroemupouch.app` + release 签名 MD5）。
+
 **行动**：
 - [ ] 从 release keystore 导出签名 MD5（见附录 A）
 - [x] 确认隐私政策公网 URL 可访问（缺口 4）—— `https://api.gamepouch.cn/privacy`（用户协议 `/terms`），后端 `legal_public.py` 渲染 CMS 已发布文档，PC 与真机均验证可达

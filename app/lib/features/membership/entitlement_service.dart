@@ -68,11 +68,23 @@ class Entitlement {
   final DateTime? expireAt;
   final bool isLifetime;
 
+  /// 服务端约定：试用期间 `tier` 保持 `free`，试用窗口只由 `trial_start` 判定
+  /// （见后端 `Entitlement.is_trial_active`）。所以"free + 未过期 trial_start"
+  /// 必须等价于 [MembershipTier.trial]，否则真机上试用用户会被显示成"免费用户"、
+  /// 广告也不会被去掉。
+  bool get trialActive =>
+      tier == MembershipTier.free &&
+      trialStart != null &&
+      trialStart!
+          .add(const Duration(days: EntitlementService.trialDays))
+          .isAfter(DateTime.now());
+
   /// 去横幅广告？——**仅超级VIP（终身/月/年/试用）才去横幅**；普通VIP 任何档
   /// （含普通VIP终身）一律保留横幅。故本判定严格按 [tier] 驱动，**绝不读 `isLifetime`
   /// 布尔**——服务端对"终身时长"权益（含普通VIP终身）都会回 `is_lifetime:true`，
   /// 若拿来去横幅会让普通VIP终身误删横幅。开屏/插屏的去除走 [blocksInterstitialAds]。
   bool get isAdFree {
+    if (trialActive) return true;
     final now = DateTime.now();
     switch (tier) {
       case MembershipTier.lifetime: // 超级VIP 买断
@@ -94,8 +106,10 @@ class Entitlement {
   }
 
   /// Tier to display: a lapsed trial/subscription degrades to [free].
-  MembershipTier get effectiveTier =>
-      isAdFree || isVipActive ? tier : MembershipTier.free;
+  MembershipTier get effectiveTier {
+    if (trialActive) return MembershipTier.trial;
+    return isAdFree || isVipActive ? tier : MembershipTier.free;
+  }
 
   /// 普通VIP level active (non-expired): removes interstitial/splash ads but
   /// keeps the banner. Lifetime (买断) never expires.
@@ -353,7 +367,10 @@ class EntitlementService {
   int get trialRemainingDays {
     if (_current.trialStart == null) return trialDays;
     final end = _current.trialStart!.add(const Duration(days: trialDays));
-    return end.difference(DateTime.now()).inDays.clamp(0, trialDays);
+    final left = end.difference(DateTime.now());
+    if (left.isNegative) return 0;
+    // 向上取整：刚开启时应显示"剩余 7 天"，而不是 floor 出来的 6 天。
+    return (left.inMinutes / Duration.minutesPerDay).ceil().clamp(0, trialDays);
   }
 
   bool get isAdFree => _current.isAdFree;

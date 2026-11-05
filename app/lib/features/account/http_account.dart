@@ -52,6 +52,26 @@ class HttpAccountService implements AccountBackend {
     return v != null && v.trim().isNotEmpty ? v.trim() : kDefaultBackendUrl;
   }
   String? get _token => _store.getString(kAccountToken);
+  String? get _refreshToken => _store.getString(kAccountRefreshToken);
+
+  /// 用 refresh_token 换新的 access_token（服务端 TTL 只有 15 分钟）。
+  /// 返回是否成功；失败返回 false，由调用方按原 401 处理。
+  Future<bool> _tryRefresh() async {
+    final rt = _refreshToken;
+    if (rt == null || rt.isEmpty) return false;
+    try {
+      final j = await _json('POST', '/api/auth/refresh',
+          auth: false, body: {'refresh_token': rt});
+      final at = (j['access_token'] as String?)?.trim() ?? '';
+      if (at.isEmpty) return false;
+      await _store.setString(kAccountToken, at);
+      final nrt = (j['refresh_token'] as String?)?.trim() ?? '';
+      if (nrt.isNotEmpty) await _store.setString(kAccountRefreshToken, nrt);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
 
   @override
   Future<AccountUser?> load() async {
@@ -92,6 +112,8 @@ class HttpAccountService implements AccountBackend {
     final tok = j['access_token'] as String?;
     if (tok == null || tok.isEmpty) throw Exception('注册失败：未返回 token');
     await _store.setString(kAccountToken, tok);
+    final rt = (j['refresh_token'] as String?)?.trim() ?? '';
+    if (rt.isNotEmpty) await _store.setString(kAccountRefreshToken, rt);
     final me = await _json('GET', '/api/auth/me');
     final u = _toUser(me);
     _persistUser(me);
@@ -115,6 +137,8 @@ class HttpAccountService implements AccountBackend {
     final tok = j['access_token'] as String?;
     if (tok == null || tok.isEmpty) throw Exception('登录失败：未返回 token');
     await _store.setString(kAccountToken, tok);
+    final rt = (j['refresh_token'] as String?)?.trim() ?? '';
+    if (rt.isNotEmpty) await _store.setString(kAccountRefreshToken, rt);
     final me = await _json('GET', '/api/auth/me');
     final u = _toUser(me);
     _persistUser(me);
@@ -132,6 +156,7 @@ class HttpAccountService implements AccountBackend {
       // 客户端清本地 token 即可，服务端无黑名单。
     }
     await _store.remove(kAccountToken);
+    await _store.remove(kAccountRefreshToken);
     await _store.remove(kAccountUserId);
     await _store.remove(kAccountUserName);
     _setSession(null);
@@ -147,6 +172,7 @@ class HttpAccountService implements AccountBackend {
   Future<void> deregister() async {
     await _json('DELETE', '/api/auth/me');
     await _store.remove(kAccountToken);
+    await _store.remove(kAccountRefreshToken);
     await _store.remove(kAccountUserId);
     await _store.remove(kAccountUserName);
     _setSession(null);
@@ -180,11 +206,15 @@ class HttpAccountService implements AccountBackend {
   }
 
   /// 统一 JSON 请求；复用 [SecurityPolicy] 作为唯一明文闸门（store 包只放行 HTTPS）。
+  ///
+  /// access_token 只有 15 分钟 TTL：带鉴权请求收到 401 时先用 refresh_token 换新
+  /// 再重试一次（[retried] 防止死循环）。刷新失败按原 401 抛出。
   Future<Map<String, dynamic>> _json(
     String method,
     String path, {
     Object? body,
     bool auth = true,
+    bool retried = false,
   }) async {
     final base = _baseUrl.trim();
     if (base.isEmpty) throw Exception('未配置后端地址（调试入口填写 https://...）');
@@ -219,6 +249,11 @@ class HttpAccountService implements AccountBackend {
       if (text.trim().isNotEmpty) {
         final decoded = jsonDecode(text);
         if (decoded is Map<String, dynamic>) j = decoded;
+      }
+      if (res.statusCode == 401 && auth && !retried) {
+        if (await _tryRefresh()) {
+          return _json(method, path, body: body, auth: auth, retried: true);
+        }
       }
       if (res.statusCode >= 400) {
         throw Exception(

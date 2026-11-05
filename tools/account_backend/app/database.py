@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from .config import settings
@@ -49,7 +50,9 @@ def _build_engine_url(raw_url: str) -> str:
 
 
 engine_url = _build_engine_url(settings.DATABASE_URL)
-print(f"[database] Engine URL: {engine_url}", file=sys.stderr)
+# 绝不能把明文数据库密码打进日志（部署脚本的 stdout、docker logs 都会留存）
+_safe_url = make_url(engine_url).render_as_string(hide_password=True)
+print(f"[database] Engine URL: {_safe_url}", file=sys.stderr)
 
 engine = create_engine(
     engine_url,

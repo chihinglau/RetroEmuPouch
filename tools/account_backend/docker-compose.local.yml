@@ -15,13 +15,17 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: retroemupouch
-      POSTGRES_PASSWORD: ${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}
+      POSTGRES_PASSWORD: "${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}"
       POSTGRES_DB: retroemupouch
       PGDATA: /var/lib/postgresql/data/pgdata
     # ⭐ 数据存 D 盘（绝对路径，Windows Docker 兼容）
     volumes:
       - D:/RetroEmuPouch/backend/postgres-data:/var/lib/postgresql/data
       - ./scripts/db-init:/docker-entrypoint-initdb.d
+    # 只绑 loopback：宿主机上的 uvicorn / alembic / 测试脚本要连它（与云端同构开发），
+    # 但绝不对局域网/公网暴露数据库端口。
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U retroemupouch"]
       interval: 10s
@@ -40,7 +44,7 @@ services:
     env_file:
       - .env.local
     environment:
-      DATABASE_URL: postgresql+psycopg://retroemupouch:${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}@db:5432/retroemupouch
+      DATABASE_URL: "postgresql+psycopg://retroemupouch:${DB_PASSWORD:?ERROR: DB_PASSWORD must be set}@db:5432/retroemupouch"
       APP_ENV: local
       # 日志存 D 盘
       LOG_DIR: /data/logs

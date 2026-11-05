@@ -64,6 +64,8 @@ abstract interface class AccountBackend {
 const String kUseHttpBackend = 'account_use_http';
 const String kAccountBaseUrl = 'account_base_url';
 const String kAccountToken = 'account_token';
+/// 刷新令牌：access_token（15 分钟）过期后用它换新，避免"用着用着全 401"。
+const String kAccountRefreshToken = 'account_refresh_token';
 const String kAccountUserId = 'account_user_id';
 const String kAccountUserName = 'account_user_name';
 

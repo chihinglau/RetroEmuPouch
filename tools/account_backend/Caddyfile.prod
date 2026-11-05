@@ -6,38 +6,27 @@
 
 # ── 主域名（自动 HTTPS）──
 api.yourdomain.com {
-    # 反向代理到后端 FastAPI
-    reverse_proxy app:8000 {
-        # 超时设置（收据校验可能调 Google/Huawei API）
-        timeout 120s
-        keepalive 30s
-    }
+    # 反向代理到后端 FastAPI（Caddy v2 标准写法；超时用默认值，
+    # 后续接入真实验真时如需延长，在 transport http { response_header_timeout 120s } 配置）
+    reverse_proxy app:8000
 
-    # 健康检查端点直接透传，不走额外逻辑
+    # 健康检查端点直接透传
     handle /healthz {
         reverse_proxy app:8000
     }
 
-    # 安全头
+    # 安全头；CORS 由后端 CORSMiddleware 统一处理，这里不再重复设置
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
-        X-XSS-Protection "1; mode=block"
         Referrer-Policy "strict-origin-when-cross-origin"
-        # CORS（Android/iOS App 都要）
-        Access-Control-Allow-Origin "*"
-        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-        Access-Control-Allow-Headers "Authorization, Content-Type, X-Device-Id, X-Dev-Mock"
-        Access-Control-Max-Age "86400"
     }
 
-    # 请求体大小限制（云存档加密 blob 上限 5MB）
-    client_max_body_size 10M
-
-    # 访问日志
+    # 请求体大小由后端限制；Caddy v2 无 client_max_body_size 指令
+    # 日志输出 stdout，用 docker compose logs caddy 查看（避免 /data/logs 目录不存在）
     log {
-        output file /data/logs/access.log
+        output stdout
         format json
     }
 }
