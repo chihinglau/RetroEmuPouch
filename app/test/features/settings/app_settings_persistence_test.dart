@@ -20,6 +20,8 @@ void main() {
         padScale: 1.7,
         padOffsetX: -0.2,
         padOffsetY: 0.35,
+        autoCheckSavesOnLaunch: true,
+        autoUploadSavesOnExit: true,
       );
       final restored = AppSettings();
       restored.applyMap(s.toMap());
@@ -34,6 +36,12 @@ void main() {
       expect(restored.padScale, closeTo(s.padScale, 1e-9));
       expect(restored.padOffsetX, closeTo(s.padOffsetX, 1e-9));
       expect(restored.padOffsetY, closeTo(s.padOffsetY, 1e-9));
+      expect(restored.autoCheckSavesOnLaunch, isTrue);
+      expect(restored.autoUploadSavesOnExit, isTrue);
+      // 默认关闭：自动同步属于 opt-in，老版本快照（无这两个 key）必须保持关闭。
+      final defaults = AppSettings();
+      expect(defaults.autoCheckSavesOnLaunch, isFalse);
+      expect(defaults.autoUploadSavesOnExit, isFalse);
     });
 
     test('applyMap tolerates missing / malformed keys (older snapshots)', () {

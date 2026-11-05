@@ -396,6 +396,25 @@ class _SettingsSheetState extends State<SettingsSheet> {
           ),
         ),
         const SizedBox(height: 12),
+        const _SectionTitle('云存档'),
+        _live((_) => Column(children: [
+              _SettingTile(
+                icon: Icons.cloud_sync_outlined,
+                title: '启动时检查云端存档',
+                subtitle: '进入 App 时对比本机与云端；有可恢复的存档会在游戏库顶部提示'
+                    '（需已登录会员并设置云存档密码）',
+                value: _settings.autoCheckSavesOnLaunch,
+                onChanged: (v) => _patch((s) => s.autoCheckSavesOnLaunch = v),
+              ),
+              _SettingTile(
+                icon: Icons.cloud_upload_outlined,
+                title: '退出游戏后自动上传存档',
+                subtitle: '从模拟器返回游戏库时，自动上传未同步的存档（失败静默，不打断游戏）',
+                value: _settings.autoUploadSavesOnExit,
+                onChanged: (v) => _patch((s) => s.autoUploadSavesOnExit = v),
+              ),
+            ])),
+        const SizedBox(height: 12),
         const _SectionTitle('系统文件（BIOS）'),
         _BiosManagerCard(pal: widget.pal),
         const SizedBox(height: 12),

@@ -21,6 +21,8 @@ class AppSettings {
     this.padScale = 1.0,
     this.padOffsetX = 0.0,
     this.padOffsetY = 0.0,
+    this.autoCheckSavesOnLaunch = false,
+    this.autoUploadSavesOnExit = false,
   });
 
   /// Returns an independent copy of this settings record — used by the
@@ -39,6 +41,8 @@ class AppSettings {
         padScale: padScale,
         padOffsetX: padOffsetX,
         padOffsetY: padOffsetY,
+        autoCheckSavesOnLaunch: autoCheckSavesOnLaunch,
+        autoUploadSavesOnExit: autoUploadSavesOnExit,
       );
 
   /// Show the FPS / xruns overlay in the corner of the picture.
@@ -90,6 +94,13 @@ class AppSettings {
   /// 虚拟手柄整体垂直平移(相对屏幕高度的比例, 负=上, 正=下)。
   double padOffsetY;
 
+  /// 启动时对比本机与云端存档；有「云端较新 / 本机没有」的存档时，
+  /// 在游戏库顶部显示可恢复提示（默认关闭，需要已登录会员 + 已设云存档密码）。
+  bool autoCheckSavesOnLaunch;
+
+  /// 从模拟器返回游戏库时自动上传「未上传 / 本地较新」的存档（默认关闭）。
+  bool autoUploadSavesOnExit;
+
   static final AppSettings _cached = AppSettings();
 
   /// Reads the current settings from disk. Falls back to defaults if no
@@ -110,6 +121,10 @@ class AppSettings {
       s.padScale = _decodeFloat(p.getString(_kPadScale)) ?? s.padScale;
       s.padOffsetX = _decodeFloat(p.getString(_kPadOffsetX)) ?? s.padOffsetX;
       s.padOffsetY = _decodeFloat(p.getString(_kPadOffsetY)) ?? s.padOffsetY;
+      s.autoCheckSavesOnLaunch =
+          p.getBool(_kAutoCheckSavesOnLaunch) ?? s.autoCheckSavesOnLaunch;
+      s.autoUploadSavesOnExit =
+          p.getBool(_kAutoUploadSavesOnExit) ?? s.autoUploadSavesOnExit;
       return s;
     } catch (_) {
       // Native shared_preferences handler is absent (e.g. OHOS). Fall back to
@@ -140,6 +155,8 @@ class AppSettings {
       await p.setString(_kPadScale, padScale.toString());
       await p.setString(_kPadOffsetX, padOffsetX.toString());
       await p.setString(_kPadOffsetY, padOffsetY.toString());
+      await p.setBool(_kAutoCheckSavesOnLaunch, autoCheckSavesOnLaunch);
+      await p.setBool(_kAutoUploadSavesOnExit, autoUploadSavesOnExit);
       return;
     } catch (_) {
       // shared_preferences unavailable (e.g. OHOS): persist via the PAL store.
@@ -205,6 +222,8 @@ class AppSettings {
         _kPadScale: padScale.toString(),
         _kPadOffsetX: padOffsetX.toString(),
         _kPadOffsetY: padOffsetY.toString(),
+        _kAutoCheckSavesOnLaunch: autoCheckSavesOnLaunch,
+        _kAutoUploadSavesOnExit: autoUploadSavesOnExit,
       };
 
   /// Applies a persisted map (see [toMap]); unknown/malformed keys are ignored
@@ -222,6 +241,8 @@ class AppSettings {
     final ps = m[_kPadScale]; if (ps is String) padScale = _decodeFloat(ps) ?? padScale;
     final px = m[_kPadOffsetX]; if (px is String) padOffsetX = _decodeFloat(px) ?? padOffsetX;
     final py = m[_kPadOffsetY]; if (py is String) padOffsetY = _decodeFloat(py) ?? padOffsetY;
+    final ac = m[_kAutoCheckSavesOnLaunch]; if (ac is bool) autoCheckSavesOnLaunch = ac;
+    final au = m[_kAutoUploadSavesOnExit]; if (au is bool) autoUploadSavesOnExit = au;
   }
 
   /// Decode the stickDeadzone preference, tolerating both the current
@@ -272,7 +293,9 @@ class AppSettings {
       ..useDpadUi = s.useDpadUi
       ..padScale = s.padScale
       ..padOffsetX = s.padOffsetX
-      ..padOffsetY = s.padOffsetY;
+      ..padOffsetY = s.padOffsetY
+      ..autoCheckSavesOnLaunch = s.autoCheckSavesOnLaunch
+      ..autoUploadSavesOnExit = s.autoUploadSavesOnExit;
   }
 
   /// Decode a float preference stored as plain text (mirrors [_decodeDeadzone]
@@ -294,6 +317,8 @@ class AppSettings {
   static const _kPadScale = 'padScale';
   static const _kPadOffsetX = 'padOffsetX';
   static const _kPadOffsetY = 'padOffsetY';
+  static const _kAutoCheckSavesOnLaunch = 'autoCheckSavesOnLaunch';
+  static const _kAutoUploadSavesOnExit = 'autoUploadSavesOnExit';
 
   /// Written by the native emulator (Android `EmulatorActivity`) with the
   /// `flutter.` prefix shared_preferences applies; lives in the same store as

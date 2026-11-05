@@ -12,7 +12,10 @@ import '../../data/package/game_package.dart';
 import '../../domain/rom_entry.dart';
 import '../../pal/platform_pal.dart';
 import '../../system_files.dart';
+import '../../data/cloud/cloud_save_service.dart';
+import '../../data/cloud/cloud_save_sync.dart' show SaveDiff;
 import '../account/account_page.dart';
+import '../settings/app_settings.dart';
 import '../settings/settings_sheet.dart';
 import '../membership/membership.dart';
 import '../../pal/ad_pal.dart';
@@ -64,6 +67,9 @@ class _LibraryPageState extends State<LibraryPage>
   bool _gameActive = false;
   /// Membership singleton (holds [AdService] + entitlement), loaded once.
   Membership? _membership;
+
+  /// 「启动时检查云端存档」的结果（null = 未检查 / 前置条件不满足）。
+  SaveDiff? _cloudDiff;
 
   /// Library display order for platform sections (playable platforms first).
   static const _platformOrder = <PlatformKind>[
@@ -118,6 +124,43 @@ class _LibraryPageState extends State<LibraryPage>
     Membership.instance.then((m) {
       if (mounted) setState(() => _membership = m);
     });
+    // 首帧之后再做云端比对，避免和首屏加载抢带宽/卡顿。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkCloudSaves());
+  }
+
+  /// 启动时云存档检查（opt-in，见设置页「云存档」分组）。
+  ///
+  /// 前置条件不满足（未登录 / 非会员 / 未设密码）时 [CloudSaveService.refresh]
+  /// 返回 null，这里静默跳过，不打扰用户。
+  Future<void> _checkCloudSaves() async {
+    if (!AppSettings.current.autoCheckSavesOnLaunch) return;
+    try {
+      final svc = await CloudSaveService.of(widget.pal);
+      final diff = await svc.refresh();
+      if (!mounted || diff == null) return;
+      setState(() => _cloudDiff = diff);
+    } catch (e) {
+      debugPrint('cloud save check failed: $e');
+    }
+  }
+
+  /// 退出模拟器后自动上传未同步存档（opt-in）。
+  Future<void> _autoUploadSaves() async {
+    if (!AppSettings.current.autoUploadSavesOnExit) return;
+    try {
+      final svc = await CloudSaveService.of(widget.pal);
+      final report = await svc.uploadPending();
+      if (!mounted || report == null || report.ok == 0) return;
+      final msg = report.hasError
+          ? '已自动上传 ${report.ok} 个存档，${report.failed.length} 个失败'
+          : '已自动上传 ${report.ok} 个存档';
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 3)));
+      setState(() => _cloudDiff = CloudSaveService.cachedDiff);
+    } catch (e) {
+      // 自动同步失败不能影响从游戏返回主界面。
+      debugPrint('cloud save auto upload failed: $e');
+    }
   }
 
   @override
@@ -647,6 +690,8 @@ class _LibraryPageState extends State<LibraryPage>
       // is exactly why the 「继续游戏」 banner stayed stuck on the previous game.
       if (_gameActive) {
         await _markPlayed(entry.relativePath);
+        // 从模拟器返回 → 按需把这次游玩的存档传到云端（失败静默）。
+        await _autoUploadSaves();
       }
     }
   }
@@ -869,6 +914,7 @@ class _LibraryPageState extends State<LibraryPage>
     final landscape = MediaQuery.of(context).orientation == Orientation.landscape;
     final banner = _biosBanner();
     final pgmBanner = _pgmBanner();
+    final cloudBanner = _cloudSaveBanner();
     Widget? clearButton;
     if (_searchCtl.text.isNotEmpty) {
       clearButton = IconButton(
@@ -892,6 +938,7 @@ class _LibraryPageState extends State<LibraryPage>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        if (cloudBanner != null) cloudBanner,
         if (pgmBanner != null) pgmBanner,
         if (banner != null) banner,
         if (landscape)
@@ -1045,6 +1092,25 @@ class _LibraryPageState extends State<LibraryPage>
   /// First-screen banner shown when one or more arcade BIOS blobs are missing
   /// from `<filesDir>/system` (e.g. `neogeo.zip`). Lists the missing files and
   /// offers a one-tap import so the user isn't surprised by a core error later.
+  /// 云端有「本机没有 / 云端较新」的存档时，在顶部提示可恢复（点进账号页）。
+  Widget? _cloudSaveBanner() {
+    final diff = _cloudDiff;
+    if (diff == null || diff.pendingDownload == 0) return null;
+    final n = diff.pendingDownload;
+    return Card(
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      color: Theme.of(context).colorScheme.secondaryContainer,
+      child: ListTile(
+        dense: true,
+        leading: const Icon(Icons.cloud_download_outlined),
+        title: Text('云端有 $n 份存档可恢复'),
+        subtitle: const Text('点此查看并恢复到本机（覆盖前自动备份）'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _openAccount,
+      ),
+    );
+  }
+
   Widget? _biosBanner() {
     final missing = _missingBios;
     if (missing == null || _entries.isEmpty) return null;

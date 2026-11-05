@@ -6,6 +6,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../data/cloud/cloud_client.dart'
     show CloudClient, CloudSaveSummary, CloudException;
+import '../../data/cloud/cloud_save_service.dart';
 import '../../data/cloud/cloud_save_sync.dart';
 import '../../data/rom_library.dart';
 import '../../features/account/account_backend.dart' show openAccountStore;
@@ -33,8 +34,6 @@ class CloudSaveSection extends StatefulWidget {
 }
 
 class _CloudSaveSectionState extends State<CloudSaveSection> {
-  static const _sec = FlutterSecureStorage();
-
   CloudClient? _client;
   List<CloudSaveSummary> _saves = const [];
   bool _busy = false;
@@ -42,9 +41,12 @@ class _CloudSaveSectionState extends State<CloudSaveSection> {
   String? _passphrase;
   String? _error;
 
+  /// 云存档服务（密码读取/写入与启动检查、退出自动上传共用同一套兜底逻辑）。
+  CloudSaveService? _svc;
+
   /// 系统安全存储不可用（鸿蒙等无 flutter_secure_storage 插件实现的平台）
   /// 时置 true：密码回退到账号 KV 存储（与应用私有文件同一沙盒）。
-  bool _passViaFallback = false;
+  bool get _passViaFallback => _svc?.passViaFallback ?? false;
 
   // ── 真实游戏存档（saves/<CRC>.sav|.state|.slotN.state）──
   CloudSaveSync? _sync;
@@ -57,26 +59,15 @@ class _CloudSaveSectionState extends State<CloudSaveSection> {
   bool _restoring = false;
   String? _restoreProgress;
 
-  String get _passKey => 'cloud_save_pwd_${widget.userId}';
+  /// 密码读写统一走 [CloudSaveService]：与启动检查、退出自动上传共用同一份
+  /// 「安全存储 → 账号 KV 文件」兜底逻辑，避免两处实现漂移。
+  Future<CloudSaveService> _service() async =>
+      _svc ??= await CloudSaveService.of(widget.pal);
 
-  Future<String?> _readPass() async {
-    try {
-      return await _sec.read(key: _passKey);
-    } catch (_) {
-      _passViaFallback = true;
-      return (await openAccountStore()).getString(_passKey);
-    }
-  }
+  Future<String?> _readPass() async => (await _service()).passphrase();
 
-  Future<void> _writePass(String pwd) async {
-    try {
-      await _sec.write(key: _passKey, value: pwd);
-      _passViaFallback = false;
-    } catch (_) {
-      _passViaFallback = true;
-      await (await openAccountStore()).setString(_passKey, pwd);
-    }
-  }
+  Future<void> _writePass(String pwd) async =>
+      (await _service()).setPassphrase(pwd);
 
   @override
   void initState() {
