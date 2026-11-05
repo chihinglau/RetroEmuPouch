@@ -194,7 +194,29 @@ Future<void> main() async {
         // 4) Launching the emulator must stamp the pad + prefs config into
         //    `<filesDir>/settings.json` (what EmulatorSpike.loadSettings reads).
         log('settings.current=${AppSettings.current.toMap()}');
-        final romRel = kProbeRom;
+        // `GP_PROBE_ROM=@<dir>` picks the first ROM of the probe core's
+        // extension inside that directory. Needed because the real library only
+        // ships CJK filenames (painful to pass through --dart-define on Windows)
+        // and the `hdc shell -b <pkg>` sandbox cannot create files in <filesDir>
+        // (write is denied), so an ASCII-named copy cannot be staged from the host.
+        String romRel = kProbeRom;
+        if (romRel.startsWith('@')) {
+          final scanDir = Directory('$dir/${romRel.substring(1)}');
+          final ext = (kProbeCore == 'gambatte' || kProbeCore == 'mgba')
+              ? '.gba'
+              : (kProbeCore == 'mame' ? '.zip' : '.nes');
+          final hits = scanDir.existsSync()
+              ? (scanDir
+                  .listSync()
+                  .whereType<File>()
+                  .where((f) => f.path.toLowerCase().endsWith(ext))
+                  .toList()
+                ..sort((a, b) => a.path.compareTo(b.path)))
+              : <File>[];
+          if (hits.isNotEmpty) {
+            romRel = hits.first.path.substring(dir.length + 1);
+          }
+        }
         log('probe.rom=$romRel core=$kProbeCore platform=$kProbePlatform');
         log('rom.exists=${File('$dir/$romRel').existsSync()} '
             'size=${File('$dir/$romRel').existsSync() ? File('$dir/$romRel').lengthSync() : 0}');

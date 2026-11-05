@@ -215,6 +215,9 @@ hdc shell hilog > hilog.txt                  # 落盘
 hdc shell hilog -r                           # 清屏
 ```
 > ⚠️ 启动期 Dart 异常（如白屏根因）在 hilog 里**几乎没有 Dart 栈**，靠「启动依赖全部 try/catch 容错」兜底（见下白屏排查）。
+> ⚠️ **原生崩溃（SIGSEGV）不要指望 hilog/faultlog**：设备未 root 时 `/data/log/faultlog/faultlogger` 是
+> `Permission denied`，hilog 里的 GPRETRO INFO 还会被分域流控丢掉。固定做法见 §15.1.2——看
+> `<filesDir>/emu_trace.txt`（生命周期现场）、`emu_trace.prev.txt`（上一次会话）和 `crash_native.txt`（符号化栈）。
 
 **5. 截图 / UI 自动化（uitest）**
 ```powershell
@@ -1318,8 +1321,66 @@ release 包也能用；配对记录存 `tools/library/.peer_devices.json`（已 
   （RetroArch 等前端同做法）；对所有核心（含 NES/GBA）**无回归**。
 - **配套防御**：`stopEmulator()` NAPI（idempotent：`g_running=false` → `join` 渲染线程
   → egl 拆除 → `g_coreReady=false`）+ `OnSurfaceDestroyed` 复用；`desc[]` 新增导出
-  `"stopEmulator"`（数量 28→29）；`EmulatorSpike.ets` 在 ✕ `onClick`（`stopEmulator();
-  router.back()`）与 `aboutToDisappear` 首行调用，确保 XComponent surface 销毁前线程已停。
+  `"stopEmulator"`，注册数量**必须**用 `sizeof(desc)/sizeof(desc[0])` 自动推导（手写字面量
+  曾落后数组一格，导致最后一个绑定——先是 `netplayLoadSram`、后是 `isCoreReady`——静默未注册，
+  ArkTS 取到 `undefined` 调用即抛）。当前 `desc[]` 共 33 项。
+- **调用时机（注意：不是「✕ onClick 里裸调 stopEmulator」）**：`EmulatorSpike.ets` 的 ✕
+  `onClick` 与硬件返回 `onBackPress` 都走 `exitToLibrary()`，其顺序是
+  **`netplay.stop()` → `stopEmulator()` → `router.back()`**；`aboutToDisappear()` 同理
+  （先 netplay，再 `stopEmulator()`）。**绝不能先 `stopEmulator()`**：它要 `join` 渲染线程，
+  而联机时渲染线程可能阻塞在 `beginFrame()` 等已掉线对端 → UI 线程死锁、页面卡死（详见联网章节）。
+  单机时 `netplay` 为 `undefined`，等价于「先停模拟器再退页」，仍满足 surface 销毁前线程已停。
+
+#### 15.1.1 NES / GBA 退出崩溃（第二次 `StopEmulator` 调到已 deinit 的核心，2026-11-06）
+
+- **现象**：进 NES(fceumm) / GBA(mgba) 游戏点 ✕ 回文件库的瞬间 **整个 app 直接退出**（进程消失回到桌面），
+  `appspawn: [appspawn_service.c:144] com.retroemupouch.app with pid N exit with code:139`；街机反而正常。
+- **取证**：hilog 里 `[EmulatorSpike] aboutToDisappear — netplay? no` 与
+  `DfxSignalHandler :: signo(11) ... tid(=main)` 出现在**同一毫秒**；`emu_trace.txt` 显示同一次退出里
+  `StopEmulator` 被调用 **3 次**：① `exitToLibrary()` 的 `stopEmulator()`（SAVE_RAM 落盘 → join → EGL 拆除 → done，正常）；
+  ② `aboutToDisappear()` 的 `stopEmulator()`（**崩在这里**）；③ `OnSurfaceDestroyed()` 的 `StopEmulator()`。
+- **根因**：第二次调用仍满足旧前置条件（`g_soloSaveKey` 非空 + `retro_get_memory_data/size` 指针非空），于是**又调了
+  `retro_get_memory_data(0)`**；但此时渲染线程已在 `EmuLoop` 尾部跑完 `retro_unload_game → retro_deinit`，
+  mgba/fceumm 在 `retro_deinit()` 里释放了 ROM/SAVE_RAM 缓冲 → **use-after-free → 主线程 SIGSEGV**。
+  **教训：`dlsym` 出来的函数指针永远非空（本工程刻意不 `dlclose`），所以「指针非空」根本不是「核心可用」的判据。**
+  MAME 不崩只是因为它 deinit 后那块内存还侥幸有效，不是它能豁免该 bug 的理由。
+- **修复（`app/ohos/entry/src/main/cpp/gpretro.cpp`）**：
+  - 新增 `static std::atomic<bool> g_coreLive`：`LoadCore()` 成功后置 `true`，`retro_deinit()` 之后置 `false`；
+  - `EmuLoop` 的 `retro_unload_game / retro_deinit / StopAudio` 整段包进 `std::lock_guard<std::mutex> lk(g_coreMtx)`，
+    与 `StopEmulator` 的 SAVE_RAM 采样互斥（同一把锁里把 `g_coreLive` 置 false）；
+  - `StopEmulator()` 落盘分支先在锁内 re-check `g_coreLive`，为 false 就只 `g_running=false` 并跳过**所有**核心调用
+    （第二/三次调用退化为纯 join/EGL 清理，trace 打印 `core already torn down, SAVE_RAM flush skipped`）；
+  - 同样给 `netplayFlushSram` / `netplayLoadSram` 这两个直接摸 SAVE_RAM 的 NAPI 加了 `g_coreLive` 门。
+- **验证（Pura70 2MN0224730027764）**：GBA(mgba) 与 NES(fceumm) 各 ✕ 退出一次 → 三段 stop 全部走完、
+  `crash_native.txt` 未生成、进程存活；存档照常落盘（GBA `saves/DE09DCA2.sav` 131072 B）。NES 该 hack ROM
+  的 SAVE_RAM 为 0 字节，落盘被 `sz > 0` 正常跳过。
+
+#### 15.1.2 免 root 拿崩溃栈 / 生命周期现场（本工程固定做法）
+
+设备未 root：`/data/log/faultlog/faultlogger` **读不了**（`Permission denied`），hilog 又被系统服务刷屏 + 分域流控
+（本域 INFO 基本被丢），所以**主证据靠 App 自己落盘**，hilog 只作辅助：
+
+| `<filesDir>/` 下文件 | 写入方 | 内容 |
+|---|---|---|
+| `emu_trace.txt` | `gpretro.cpp` 的 `EmuTrace()` | 每次启动重置；surface / EGL / 渲染线程 / `StopEmulator` 每步，带 tid 与单调时钟；崩溃前最后一行就是命门 |
+| `emu_trace.prev.txt` | 同上 | 上一次会话的 trace（下次启动时轮转），避免「重启一次把现场覆盖掉」 |
+| `crash_native.txt` | `gpcatch.cpp` | 致命信号处理器写的符号化 backtrace（`libgs_xxx.so+0x…`，用 `llvm-symbolizer` 本地还原） |
+
+```powershell
+# filesDir 用绝对路径；-b 沙盒上下文 cat 单文件可读（写是禁止的）
+hdc shell -b com.retroemupouch.app "cat /data/app/el2/100/base/com.retroemupouch.app/files/emu_trace.txt"
+hdc shell -b com.retroemupouch.app "cat /data/app/el2/100/base/com.retroemupouch.app/files/emu_trace.prev.txt"
+hdc shell -b com.retroemupouch.app "cat /data/app/el2/100/base/com.retroemupouch.app/files/crash_native.txt"
+```
+
+- `crash_native.txt` 必须用 `0666` 创建：主机侧 uid 与沙盒 uid 不同，`0600` 会 `Permission denied`（已踩）。
+- 沙盒内**不能**从主机写入（`hdc file send`、`cat >` 都 `Permission denied`）。要造测试 ROM 只能借 App 自己的路径：
+  `GP_OHOS_SELFTEST=true` + `GP_PROBE_ROM=@roms/peer`（`@<dir>` 让探针自己挑该核心扩展名的第一个文件，
+  见 `app/lib/main.dart`），`GP_PROBE_CORE=mgba|fceumm|mame` 决定扩展名 `.gba/.nes/.zip`。
+- ArkTS 侧看 `hilog | findstr JSAPP`；`appspawn: ... exit with code:139` = 原生 SIGSEGV 的铁证。
+- ✕ 按钮实测 bounds `[2163,336][2205,411]`（2844×1260 横屏）→ 点 `(2184, 373)`。定位请用
+  `uitest dumpLayout -p /data/local/tmp/l.json` 后按 `"text":"✕"` 取 bounds；**`snapshot_display` 出的是
+  1084×531 缩略图，别把图里的像素直接当设备坐标**（会点空）。
 
 ### 15.2 OHOS 图标同步安卓设计
 

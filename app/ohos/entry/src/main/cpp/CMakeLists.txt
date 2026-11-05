@@ -9,6 +9,7 @@ set(NATIVERENDER_ROOT_PATH ${CMAKE_CURRENT_SOURCE_DIR})
 set(NETPLAY_SRC_ROOT "D:/ai/prj/trae/HuaWei/RetroEmuPouch/app/android/app/src/main/cpp/netplay")
 add_library(gpretro SHARED
     gpretro.cpp
+    gpcatch.cpp
     ${NETPLAY_SRC_ROOT}/gs_netplay.cpp
     ${NETPLAY_SRC_ROOT}/gs_np_ring.cpp
     ${NETPLAY_SRC_ROOT}/gs_np_replay.cpp
@@ -42,6 +43,7 @@ target_link_libraries(gpretro PUBLIC
     ohaudio
     hilog_ndk.z
     native_window
+    dl   # dladdr() used by the crash dumper (gpcatch.cpp)
 )
 
 # Package the cross-compiled libretro cores (libgs_<id>.so) into the native lib

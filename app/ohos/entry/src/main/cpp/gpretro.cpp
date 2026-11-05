@@ -37,6 +37,7 @@
 #include <filesystem>
 #include <system_error>
 #include <sys/stat.h>
+#include <sys/syscall.h>   // syscall(SYS_gettid) for the emulator trace
 #include <dirent.h>
 #include <hilog/log.h>
 #include <cstdlib>   // setenv / unsetenv for the per-entry netplay dump
@@ -94,6 +95,40 @@ static std::string g_filesDir;
 // directory is derived from it.
 static std::string g_appDir;
 
+// gpcatch.cpp: installs fatal-signal handlers that dump a symbolized backtrace
+// to <filesDir>/crash_native.txt (the device is not rooted, so the platform
+// faultlog is unreadable and hilog rolls over before it can be pulled).
+extern "C" void GPCatchInstall(const char* appDir);
+
+// Emulator lifecycle trace -> <appDir>/emu_trace.txt.
+//
+// Why a file and not hilog: this domain's INFO lines are dropped on device by
+// hilog flow control (per-frame logs exhaust the quota within seconds), and the
+// interesting window (teardown) is exactly where the process may die -- a
+// SIGSEGV also loses whatever was still buffered. A plain append-only file with
+// the monotonic + thread id survives the crash and is readable from the host:
+//   hdc shell -b com.retroemupouch.app cat <filesDir>/emu_trace.txt
+static std::mutex g_traceMtx;
+
+static void EmuTrace(const char* fmt, ...) {
+  if (g_appDir.empty()) return;
+  std::lock_guard<std::mutex> lk(g_traceMtx);
+  std::string p = g_appDir + "/emu_trace.txt";
+  FILE* f = fopen(p.c_str(), "a");
+  if (f == nullptr) return;
+  (void)chmod(p.c_str(), 0666);  // host side reads it as a different uid
+  struct timespec ts {};
+  clock_gettime(CLOCK_MONOTONIC, &ts);
+  fprintf(f, "%ld.%03ld t%ld ", (long)ts.tv_sec, (long)(ts.tv_nsec / 1000000),
+          (long)syscall(SYS_gettid));
+  va_list ap;
+  va_start(ap, fmt);
+  vfprintf(f, fmt, ap);
+  va_end(ap);
+  fputc('\n', f);
+  fclose(f);
+}
+
 // ---- core-load diagnostics ------------------------------------------------
 // MAME reports arcade failures ("<file> NOT FOUND (tried in <set>)", "Required
 // files are missing, the machine cannot be run") through the libretro log
@@ -150,6 +185,11 @@ static struct {
 
 static enum retro_pixel_format g_pixFmt = RETRO_PIXEL_FORMAT_XRGB8888;
 static bool g_coreReady = false;
+// True between retro_load_game() and retro_deinit(): the ONLY safe window for
+// calling into the core. The dlsym'd function pointers stay valid forever
+// (we never dlclose), so `ptr != nullptr` is NOT a liveness check — calling
+// retro_get_memory_data() after retro_deinit() dereferences freed core state.
+static std::atomic<bool> g_coreLive{false};
 
 // Frame texture
 static std::vector<uint8_t> g_rgba;
@@ -1298,8 +1338,10 @@ static void EmuLoop() {
   // The EGL context must be current on this thread before any GL calls
   // (shader compile, texture upload, draw). Make it current up-front.
   eglMakeCurrent(g_eglDisplay, g_eglSurface, g_eglSurface, g_eglContext);
+  EmuTrace("render thread: EGL current, core load begins");
   if (!InitGLForCore()) {
     GPRETRO_ERROR("GPRETRO: GL init failed");
+    EmuTrace("render thread: GL init FAILED, bailing out");
     return;
   }
   if (!LoadCore()) {
@@ -1315,6 +1357,7 @@ static void EmuLoop() {
     return;
   }
   g_coreReady = true;
+  g_coreLive.store(true);
 
   double fps = 60.0;
   // fps unknown until av info; LoadCore already started audio. Re-query fps.
@@ -1456,9 +1499,21 @@ static void EmuLoop() {
   }
 
   GPRETRO_INFO("GPRETRO: emu loop exit; unloading core");
-  g_core.retro_unload_game();
-  g_core.retro_deinit();
-  StopAudio();
+  EmuTrace("render thread: loop exit -> retro_unload_game");
+  {
+    // Hold g_coreMtx across the teardown so StopEmulator's SAVE_RAM snapshot can
+    // never interleave with it: the latch below is what tells StopEmulator the
+    // dlsym'd entry points are no longer safe to call (retro_deinit frees the
+    // core's own buffers; mgba/fceumm null/free their SAVE_RAM there).
+    std::lock_guard<std::mutex> lk(g_coreMtx);
+    g_core.retro_unload_game();
+    EmuTrace("render thread: retro_unload_game done -> retro_deinit");
+    g_core.retro_deinit();
+    g_coreLive.store(false);
+    EmuTrace("render thread: retro_deinit done (core dead) -> StopAudio");
+    StopAudio();
+    EmuTrace("render thread: StopAudio done");
+  }
   // NOTE: deliberately NOT calling dlclose() here. libgs_mame.so is large and its
   // static destructors can crash the render thread (and therefore the whole
   // process) when unloaded at emu-exit time -- this is exactly the arcade-only
@@ -1474,10 +1529,13 @@ static void EmuLoop() {
 // ---------------------------------------------------------------------------
 static void OnSurfaceCreated(OH_NativeXComponent* component, void* window) {
   GPRETRO_INFO("GPRETRO: OnSurfaceCreated fired component=%{public}p window=%{public}p", (void*)component, window);
+  EmuTrace("surface: created window=%p", window);
   if (!SetupEgl(window)) {
+    EmuTrace("surface: SetupEgl FAILED");
     return;
   }
   g_running.store(true);
+  EmuTrace("surface: EGL ready, starting render thread (rom=%s)", g_romPath.c_str());
   if (!g_romPath.empty()) {
     g_renderThread = std::thread(EmuLoop);
     GPRETRO_INFO("GPRETRO: emu thread started for %{public}s", g_romPath.c_str());
@@ -1518,38 +1576,63 @@ static void OnSurfaceChanged(OH_NativeXComponent* component, void* window) {
 // parked before the surface goes away.
 static void StopEmulator() {
   GPRETRO_INFO("GPRETRO: StopEmulator");
+  EmuTrace("stop: enter (thread=%s soloKey=%s netSram=%s coreReady=%d)",
+           g_renderThread.joinable() ? "live" : "none", g_soloSaveKey.c_str(),
+           g_netSramPath.c_str(), (int)g_coreReady);
   // Flush solo battery RAM to the CRC-keyed <appDir>/saves/<crc>.sav — the same
   // location the partner importer (and Android) read/write. Must run while the
   // render thread is alive and frozen: take g_coreMtx (released between frames),
   // stop the loop, snapshot SAVE_RAM, then release. Netplay flushes its own path.
-  if (g_netSramPath.empty() && !g_soloSaveKey.empty() && !g_appDir.empty() &&
-      g_core.retro_get_memory_data != nullptr && g_core.retro_get_memory_size != nullptr) {
+  //
+  // g_coreLive is the load/unload latch and MUST gate the core calls: this
+  // function is called twice per session (once from the ArkTS exit button via
+  // stopEmulator(), once from OnSurfaceDestroyed when the page pops). The second
+  // call used to satisfy the same precondition (g_soloSaveKey is still set and
+  // the dlsym'd pointers are still non-null because we deliberately never
+  // dlclose) and called retro_get_memory_data() into a core that EmuLoop had
+  // already retro_deinit()'ed -> use-after-free -> SIGSEGV on the UI thread ->
+  // the whole app died right after "exiting to the library". mgba/fceumm free
+  // their SAVE_RAM buffers during deinit so they crash; MAME happens to keep
+  // them alive, which is why this looked like an NES/GBA-only bug.
+  if (g_netSramPath.empty() && !g_soloSaveKey.empty() && !g_appDir.empty()) {
     std::lock_guard<std::mutex> lk(g_coreMtx);
     g_running.store(false, std::memory_order_relaxed);
-    void* p = g_core.retro_get_memory_data(0);
-    size_t sz = g_core.retro_get_memory_size(0);
-    if (p != nullptr && sz > 0) {
-      std::string sp = g_appDir + "/saves/" + g_soloSaveKey + ".sav";
-      MkDirs(g_appDir + "/saves");
-      std::string tmp = sp + ".np-tmp";
-      FILE* f = fopen(tmp.c_str(), "wb");
-      if (f != nullptr) {
-        if (fwrite(p, 1, sz, f) == sz) {
-          fclose(f);
-          rename(tmp.c_str(), sp.c_str());
-        } else {
-          fclose(f);
-          remove(tmp.c_str());
+    // Re-check under the lock: EmuLoop tears the core down while holding it.
+    if (g_coreLive.load() && g_core.retro_get_memory_data != nullptr &&
+        g_core.retro_get_memory_size != nullptr) {
+      EmuTrace("stop: coreMtx held, sampling SAVE_RAM");
+      void* p = g_core.retro_get_memory_data(0);
+      size_t sz = g_core.retro_get_memory_size(0);
+      EmuTrace("stop: SAVE_RAM ptr=%p size=%zu", p, sz);
+      if (p != nullptr && sz > 0) {
+        std::string sp = g_appDir + "/saves/" + g_soloSaveKey + ".sav";
+        MkDirs(g_appDir + "/saves");
+        std::string tmp = sp + ".np-tmp";
+        FILE* f = fopen(tmp.c_str(), "wb");
+        if (f != nullptr) {
+          if (fwrite(p, 1, sz, f) == sz) {
+            fclose(f);
+            rename(tmp.c_str(), sp.c_str());
+            EmuTrace("stop: SAVE_RAM flushed to %s", sp.c_str());
+          } else {
+            fclose(f);
+            remove(tmp.c_str());
+          }
         }
       }
+    } else {
+      EmuTrace("stop: core already torn down, SAVE_RAM flush skipped");
     }
   } else {
     g_running.store(false, std::memory_order_relaxed);
   }
+  EmuTrace("stop: g_running=false, joining render thread");
   if (g_renderThread.joinable()) {
     g_renderThread.join();
   }
+  EmuTrace("stop: render thread joined");
   if (g_eglDisplay != EGL_NO_DISPLAY) {
+    EmuTrace("stop: tearing down EGL");
     eglMakeCurrent(g_eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     if (g_eglSurface != EGL_NO_SURFACE) {
       eglDestroySurface(g_eglDisplay, g_eglSurface);
@@ -1561,8 +1644,10 @@ static void StopEmulator() {
     }
     eglTerminate(g_eglDisplay);
     g_eglDisplay = EGL_NO_DISPLAY;
+    EmuTrace("stop: EGL torn down");
   }
   g_coreReady = false;
+  EmuTrace("stop: done");
 }
 
 // NAPI wrapper: ArkTS calls stopEmulator() to tear the emulation down before the
@@ -1577,6 +1662,7 @@ static void OnSurfaceDestroyed(OH_NativeXComponent* component, void* window) {
   GPRETRO_INFO("GPRETRO: OnSurfaceDestroyed");
   (void)component;
   (void)window;
+  EmuTrace("surface: destroyed -> StopEmulator");
   StopEmulator();
 }
 
@@ -1700,6 +1786,19 @@ static napi_value SetEmulatorTarget(napi_env env, napi_callback_info info) {
     if (sep != std::string::npos) rootDir = g_filesDir.substr(0, sep);
   }
   g_appDir = rootDir;
+  // Arm the native crash dumper now that the sandbox path is known.
+  GPCatchInstall(g_appDir.c_str());
+  // Fresh lifecycle trace per launch, with the previous session rotated to
+  // emu_trace.prev.txt: a crash leaves the tail of the session in the rotated
+  // file (a new launch would otherwise erase the evidence).
+  {
+    std::string tp = g_appDir + "/emu_trace.txt";
+    std::string prev = g_appDir + "/emu_trace.prev.txt";
+    (void)remove(prev.c_str());
+    if (rename(tp.c_str(), prev.c_str()) != 0) (void)remove(tp.c_str());
+    EmuTrace("== launch rom=%s core=%s netplay=%d ==", g_romPath.c_str(), g_coreName.c_str(),
+             (int)g_netColdBoot);
+  }
   // Per the field comment, g_filesDir is "app files dir / roms" (save states,
   // thumbnails, cheats live here); keep it stable regardless of ROM nesting so
   // the BIOS lookup below resolves against the true <appRoot>/system.
@@ -2175,7 +2274,10 @@ static void OhosNetCheckpoint() {
 // Args: none. Flushes battery RAM to <appDir>/saves/<saveKey>.sav (atomic).
 static napi_value NativeNetplayFlushSram(napi_env env, napi_callback_info) {
   bool ok = false;
-  if (!g_netSramPath.empty() && g_core.retro_get_memory_data && g_core.retro_get_memory_size) {
+  // g_coreLive: never touch the core after retro_deinit (the netplay teardown
+  // calls this while StopEmulator may already have unloaded the core).
+  if (!g_netSramPath.empty() && g_coreLive.load() && g_core.retro_get_memory_data &&
+      g_core.retro_get_memory_size) {
     void *p = g_core.retro_get_memory_data(0 /*RETRO_MEMORY_SAVE_RAM*/);
     size_t sz = g_core.retro_get_memory_size(0);
     if (p && sz > 0) {
@@ -2228,7 +2330,7 @@ static napi_value NativeNetplayLoadSram(napi_env env, napi_callback_info info) {
     void *ptr = nullptr; size_t len = 0;
     if (napi_get_arraybuffer_info(env, args[0], &ptr, &len) == napi_ok && ptr && len > 0) {
       std::lock_guard<std::mutex> lk(g_coreMtx);
-      if (g_core.retro_get_memory_data && g_core.retro_get_memory_size) {
+      if (g_coreLive.load() && g_core.retro_get_memory_data && g_core.retro_get_memory_size) {
         void *d = g_core.retro_get_memory_data(0 /*SAVE_RAM*/);
         size_t cap = g_core.retro_get_memory_size(0);
         if (d && cap >= len) { memcpy(d, ptr, len); ok = true; }
