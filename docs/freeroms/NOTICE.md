@@ -73,11 +73,29 @@
 4. 上游实测 164 个 MAME 集合中 162 个可运行（基于 MAME 画面，非真机验证）；本项目另做真机验证，结论见 `docs/freeroms/VALIDATION.md`。
 5. 该 BIOS 仅用于**本地兼容性验证**，不随产品分发。
 
-### 2.5 CPS1 QSound 的合规结论
+### 2.5 CPS1 QSound 的合规结论（2026-11-06 真机验证修正）
 
-MAME 源码自带 **CPS1 QSound 的 HLE 实现**（GPL-2.0+），运行时**不需要** `dl-1425.bin` 这份受版权保护的音频 ROM。
-因此 `qsound.zip` / `qsound_hle.zip`（内含同一份 Capcom `dl-1425.bin`，MD5 `108b113a596e800a02fece73f784eeb0`）
-对本项目没有授权基础，应从商用链路彻底移除；移除后 CPS1 仍应可运行，验证结论见 `docs/freeroms/VALIDATION.md`。
+原先「MAME 自带 QSound HLE，运行时不需要 `dl-1425.bin`」的推断**不成立**，已按 Pura70 真机 A/B 结果修正：
+
+- 本项目集成的 libretro MAME（`libgs_mame.so`）仍把 `dl-1425.bin` 声明为 QSound DSP 内部 ROM：
+  `qsoundhle.cpp` 的 `ROM_START(qsound_hle)` 中 `ROM_LOAD16_WORD("dl-1425.bin", …)` 未标 `OPTIONAL`，
+  `qsound_hle` 的 `parent_rom_device_type()` 回退到父设备 `qsound`；`cps1.cpp` 的 QSound 机型使用 `QSOUND` 设备。
+- 把 `qsound.zip` / `qsound_hle.zip` 从设备全部 rompath 移除后，CPS1 QSound 机型 `dino` 与 CPS2 `1944`
+  都报 `dl-1425.bin NOT FOUND (tried in qsound_hle qsound <game>)`、`retro_load_game` 失败（FPS=0）；
+  同一条件下**不含 QSound 硬件**的 CPS1 `ffight` 仍以约 60 FPS 正常运行。
+- 只移除 `qsound_hle.zip`（与 `qsound.zip` 字节完全相同、仅文件名不同的重复包）则 `dino` 正常启动（约 60 FPS）：
+  MAME 会经父 ROM 集 `qsound` 找到 `dl-1425.bin`。
+
+**因此采用的合规做法**：
+
+1. 产品清单里**删除重复的 `qsound_hle.zip`**（`SystemFiles.supportedBios` / `requiredBios`、
+   `LockedRom.ARCADE_BIOS_NAMES`、`gpretro.cpp kBios[]`、两端错误提示同步）；
+2. `qsound.zip` **仅保留为「用户自行导入的 BIOS 文件名」**。受版权保护的 `dl-1425.bin` 二进制从未进入仓库
+   或安装包（`scripts/check-apk-content.ps1` / `check-hap-content.ps1` 对包内容做硬校验）；
+   原先放在 `/.tools/`（gitignored）本地测试区的两份 zip 也已于 2026-11-06 从工作区清除；
+3. 不再宣称「移除后 CPS1 全部可运行」。QSound 机型必须由用户从合法备份自行提供 `qsound.zip`，否则 App 明确报错。
+
+完整证据与命令见 `docs/freeroms/VALIDATION.md`。
 
 ## 3. 使用与署名清单（对外交付时随附）
 
@@ -93,7 +111,9 @@ MAME 源码自带 **CPS1 QSound 的 HLE 实现**（GPL-2.0+），运行时**不�
 - **UniBIOS 15 个文件**（`uni-bios_1_0` ~ `uni-bios_4_0`）：免费软件但**授权文本未取得**，仅来源项目本地测试，本项目不引入、不分发。
 - **`minicraft-gba_2.0.zip`**：`license=unknown`，授权无法核验，不引入。
 - **全部商业 / 街机 ROM dump**（来源项目 `.tools/gstest/roms/**`，NES 106 + GBA 309 + NeoGeo 154 + CPS1 29 + CPS2 36 等）：著作权归各权利人，不可商用、不可再分发。
-- **`qsound.zip` / `qsound_hle.zip`**：内含 Capcom `dl-1425.bin`，受版权保护；MAME HLE 无需该 ROM。
+- **`qsound.zip` / `qsound_hle.zip`**：内含 Capcom `dl-1425.bin`（MD5 `108b113a596e800a02fece73f784eeb0`），
+  受版权保护，**不引入本项目、不随包分发**；重复的 `qsound_hle.zip` 已彻底移除，`qsound.zip` 仅保留为
+  「用户自行导入」的 BIOS 名称（本 MAME 核心的 QSound 机型确实需要该 ROM，见 §2.5）。
 - **`pgm.zip`**（IGS PGM）、**`neogeo.zip` 中的 SNK 官方 BIOS**（`sp-s2.sp1` / `sp1-u4` / `sm1.sp1` / `sfix.sfix` 等）：受版权保护，不可整包分发。
 - **MAME 官网「ROMs for Free Download」**（Gridlee / Alien Arena / Exidy 系列等）：官方明文「仅获准在 MAME 官网分发」，不得再分发，故不收录。
 - **Micro Mages**（官网下线，条款取不到）、**Alter Ego / Shiru**（站点不可访问，第三方仓库与商业 ROM 混放）：授权无法核验，不收录。
@@ -103,6 +123,7 @@ MAME 源码自带 **CPS1 QSound 的 HLE 实现**（GPL-2.0+），运行时**不�
 
 - `manifest.json`：17 项的路径、作者、许可证、上游仓库、字节数、SHA256、获取日期，以及排除项说明。
 - `SHA256SUMS.txt`：可直接用 `sha256sum -c` 或 PowerShell `Get-FileHash` 核验。
+- `VALIDATION.md` + `evidence/`：QSound BIOS 与 PrivaBIOS 的真机验证结论、复现命令与 8 份原始设备报告。
 - 复现命令：
 
 ```powershell

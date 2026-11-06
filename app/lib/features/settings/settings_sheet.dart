@@ -1361,7 +1361,7 @@ class _BiosManagerCardState extends State<_BiosManagerCard> {
             const SizedBox(height: 4),
             Text(
               '本应用不内置任何 BIOS。请从你的合法备份中导入；'
-              'MAME 街机需要 neogeo.zip（NeoGeo）、qsound.zip / qsound_hle.zip'
+              'MAME 街机需要 neogeo.zip（NeoGeo）、qsound.zip'
               '（Capcom CPS-1/2 Q-Sound）、pgm.zip（IGS PGM）等 BIOS。',
               style: theme.textTheme.bodySmall?.copyWith(color: theme.hintColor),
             ),

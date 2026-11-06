@@ -1,0 +1,13 @@
+device=66B0219C18003002 rom=roms/peer/kof97.zip benchSeconds=3
+testZip=40079C976ACE506F9470ACCE207EC8D3A2BDE68FCA92275F661B25348F33922F
+backup files/system/neogeo.zip
+backup files/system/mame/roms/neogeo.zip
+backup files/rom_cache/mame/neogeo.zip
+deploy files/system/neogeo.zip
+deploy files/system/mame/roms/neogeo.zip
+deploy files/rom_cache/mame/neogeo.zip
+deployed=-rw------- 1 u0_a338 u0_a338 1876963 2026-11-06 13:03 /data/data/com.retroemupouch.app/files/system/neogeo.zip
+status=PASS reason=I/GS-runner( 4103): [pace] 250f 4.419s (56.57 fps) prodF=204370 (46248.5/s, 251 batches avg814.2) underrun+0 overflow+0 ring=3140 | sleeps=247 yields=0 resyncs=2 emuAvg=9.10ms emuMax=125.82ms sleepOverMax=0.88ms yieldMax=0.00ms
+coreLogHints=I/GS-core ( 4103): [core] System not found: mame | W/GS-core ( 4103): [core] sp-s2.sp1 WRONG CHECKSUMS: | I/GS-core ( 4103): [core] Optional device ':cslot6' not found | I/GS-core ( 4103): [core] Optional device ':cslot5' not found | I/GS-core ( 4103): [core] Optional device ':cslot4' not found | I/GS-core ( 4103): [core] Optional device ':cslot3' not found | I/GS-core ( 4103): [core] Optional device ':cslot2' not found | I/GS-core ( 4103): [core] Optional memory region ':audiocpu' not found
+restore.done=true
+report=D:\ai\prj\trae\HuaWei\RetroEmuPouch\build\bios_probe\results\priva-android.txt

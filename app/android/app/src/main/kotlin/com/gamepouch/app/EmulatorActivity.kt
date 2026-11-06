@@ -2068,7 +2068,7 @@ class EmulatorActivity : Activity() {
          *  - "Failed to find archive: neogeo" / missing sm1.sm1 · sfix.sfx …
          *    → the NeoGeo system BIOS is absent or an incomplete old subset;
          *  - "qsound.zip NOT FOUND" / "dl-1425.bin" … → the Q-Sound BIOS
-         *    (qsound.zip / qsound_hle.zip) is absent or a stale truncated copy;
+         *    (qsound.zip) is absent or a stale truncated copy;
          *  - "pgm.zip NOT FOUND" … → the IGS PGM base BIOS (pgm.zip) is missing;
          *  - "Cannot find driver" / "Cannot load this game" / "is required" /
          *    "not found" / "missing" / "could not load" / "required files" …
@@ -2098,9 +2098,9 @@ class EmulatorActivity : Activity() {
                 tail.contains("sp-s2") || tail.contains("000-lo") ||
                 tail.contains("asia-s3")
             // Q-Sound BIOS (CPS-1/2): MAME logs "qsound.zip NOT FOUND" /
-            // "dl-1425.bin ... not found" when qsound.zip / qsound_hle.zip is
-            // absent, or a stale truncated copy was staged instead of the real
-            // one. Mirror the OHOS EmulatorSpike diagnosis for these BIOSes.
+            // "dl-1425.bin ... not found" when qsound.zip is absent, or a
+            // stale truncated copy was staged instead of the real one.
+            // Mirror the OHOS EmulatorSpike diagnosis for these BIOSes.
             val missingQsound = tail.contains("qsound") || tail.contains("dl-1425")
             // IGS PolyGame Master: MAME logs "pgm.zip NOT FOUND" (or a pgm
             // member) when the PGM base BIOS is missing.
@@ -2135,7 +2135,7 @@ class EmulatorActivity : Activity() {
                 .take(400)
             return when {
                 isArcade && missingQsound ->
-                    "缺少或不完整的 Q-Sound 系统 BIOS（qsound.zip / qsound_hle.zip），\n" +
+                    "缺少或不完整的 Q-Sound 系统 BIOS（qsound.zip），\n" +
                     (if (detail.isNotBlank()) "核心日志：$detail\n" else "") +
                     "游戏因此无法启动，请从合法备份导入完整的 Q-Sound BIOS 后重试。"
                 isArcade && missingPgm ->

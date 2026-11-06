@@ -14,7 +14,7 @@ import bundleManager from '@ohos.bundle.bundleManager';
 import statfs from '@ohos.file.statvfs';
 import zlib from '@ohos.zlib';
 import router from '@ohos.router';
-import { setEmulatorTarget, getRomCrc } from 'libgpretro.so';
+import { setEmulatorTarget, getRomCrc, getLoadError, getFps, isCoreReady } from 'libgpretro.so';
 import type { NetplaySession } from '../netplay_session';
 
 /// Return shapes mirrored from the Dart side (`ImportedRom`, `ImportedPackage`,
@@ -529,6 +529,35 @@ export class GamePouchPlugin implements FlutterPlugin {
     if (method === 'stop') {
       this.stopNetplaySession();
       result.success(true);
+      return;
+    }
+    // Headless arcade BIOS compatibility probe (built with
+    // --dart-define=GP_BIOS_PROBE=true, see docs/freeroms/VALIDATION.md):
+    // expose the native core's own boot diagnostics to Dart so an A/B run
+    // (with/without qsound.zip, or with a PrivaBIOS neogeo.zip) can be fully
+    // scripted from the host. All three are read-only NAPI getters.
+    if (method === 'getLoadError') {
+      try {
+        result.success(getLoadError());
+      } catch (e) {
+        result.success('');
+      }
+      return;
+    }
+    if (method === 'isCoreReady') {
+      try {
+        result.success(isCoreReady());
+      } catch (e) {
+        result.success(false);
+      }
+      return;
+    }
+    if (method === 'getFps') {
+      try {
+        result.success(getFps());
+      } catch (e) {
+        result.success(0);
+      }
       return;
     }
     result.notImplemented();

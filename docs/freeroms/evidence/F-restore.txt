@@ -1,0 +1,16 @@
+filesDir=/data/storage/el2/base/files
+started=2026-11-06T13:05:15.840620
+cmd=tag=F-restore;rom=roms/peer/dino.zip;core=mame;platform=mame;settleMs=0;restore=1
+tmp.exists=false entries=-1
+tmp.json.error=PathNotFoundException: Cannot open file, path = '/data/local/tmp/gp_bios_probe.json' (OS Error: No such file or directory, errno = 2)
+control={"tag":"F-restore","rom":"roms/peer/dino.zip","core":"mame","platform":"mame","settleMs":0,"backup":["system/qsound.zip","system/qsound_hle.zip","system/neogeo.zip"],"restore":true,"drop":[],"copy":[]}
+tag=F-restore
+backup system/qsound.zip skipped (src=true bak=true)
+backup system/qsound_hle.zip skipped (src=false bak=true)
+backup system/neogeo.zip skipped (src=true bak=true)
+removed /data/storage/el2/base/files/system/mame/roms/qsound_hle.zip.gpoff
+restored /data/storage/el2/base/files/system/qsound.zip
+restored /data/storage/el2/base/files/system/qsound_hle.zip
+restored /data/storage/el2/base/files/system/neogeo.zip
+removed /data/storage/el2/base/files/system/qsound_hle.zip.gpoff
+restore.done=true

@@ -973,6 +973,30 @@ flutter test
   安装时遇 USB 半开（见铁律 3），**待重插后 `hdc install -r app\ohos\entry\build\default\outputs\default\entry-default-signed.hap` + `aa start` 重跑**。
 - **BIOS 门控前提已满足**：`files/system/` 有 neogeo/qsound/qsound_hle/pgm 全集（2026-10-22 部署）。
 
+### 2026-11-06 QSound BIOS 真机 A/B 与 PrivaBIOS 验证（修正上面的「4 个 BIOS」口径）
+
+> 完整证据、命令与报告路径见 `docs/freeroms/VALIDATION.md`。
+
+- **「MAME 走 QSound HLE 就不需要 `dl-1425.bin`」不成立**。Pura70 上把 `qsound.zip` /
+  `qsound_hle.zip` 从全部 6 个 rompath 移除后，CPS1 QSound 机型 `dino` 与 CPS2 `1944`
+  均报 `dl-1425.bin NOT FOUND (tried in qsound_hle qsound <game>)`、
+  `isCoreReady=false` / `getFps=0`；不带 QSound 硬件的 CPS1 `ffight` 仍 ~60 FPS。
+  `qsoundhle.cpp` 的 `ROM_START(qsound_hle)` 仍 `ROM_LOAD16_WORD("dl-1425.bin", …)` 且无 `OPTIONAL`。
+- **`qsound_hle.zip` 是 `qsound.zip` 的字节级重复副本**（同为 2676 字节 / 同一 `dl-1425.bin`），
+  只删它、`dino` 仍 ~60 FPS。已在 `SystemFiles` / `LockedRom.ARCADE_BIOS_NAMES` /
+  `gpretro.cpp kBios[]` 与两端错误提示中 lockstep 删除。
+  **当前产品 BIOS 清单是 3 个：`neogeo.zip` / `qsound.zip` / `pgm.zip`**（均为用户自行导入，
+  二进制不入库、不进包；`.tools/gstest/bios/` 下的两份 qsound 本地测试副本也已从工作区删除，
+  `refresh-roms.ps1` 在无自备 `qsound.zip` 时跳过部署）。
+- **PrivaBIOS 通过**：Android OXF store-debug APK（必须含 `libgs_mame.so`，community 包没有）
+  + `run-as` 部署 PrivaBIOS 版 `neogeo.zip` 后，`kof97.zip` bench `250f / 56.57 fps`，
+  核心日志出现预期的 `sp-s2.sp1 WRONG CHECKSUMS`；原版 BIOS 基线 `250f / 58.35 fps`。
+- **鸿蒙探针范式**：`hdc file send` 不能写 App 沙盒，Flutter 进程也看不到 `/data/local/tmp`
+  （SELinux），所以 A/B 场景用 `--dart-define=GP_BIOS_CMD=...` 编进 HAP，由 App 在沙盒内做可还原变更；
+  `gs/emulator` 通道暴露 NAPI `getLoadError` / `isCoreReady` / `getFps`，
+  报告在 `<filesDir>/bios_probe.txt`。脚本：`scripts/ohos/{prepare-bios-probe.py,build-probe-hap.ps1,run-bios-probe.ps1}`、
+  `scripts/mame/verify-privabios.ps1`（`;` 分隔 dart-define 字段，`,` 被 build-hap 拆分、`|`/`&` 会被 cmd.exe 解释）。
+
 ### KOF97（NeoGeo）操作注意
 - 投币：约 1.2–1.3s 间隔重复点投币持续 ~40s 才够币；START 常被吞，用长按 `input swipe x y x y 500`；先截图确认坐标再 tap/swipe，勿盲操作。
 

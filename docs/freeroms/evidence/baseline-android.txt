@@ -1,0 +1,5 @@
+device=66B0219C18003002 rom=roms/peer/kof97.zip benchSeconds=3 mode=baseline-android
+testZip=40079C976ACE506F9470ACCE207EC8D3A2BDE68FCA92275F661B25348F33922F
+status=PASS reason=I/GS-runner( 4709): [pace] 250f 4.285s (58.35 fps) prodF=204370 (47698.3/s, 251 batches avg814.2) underrun+0 overflow+0 ring=11780 | sleeps=248 yields=0 resyncs=1 emuAvg=9.78ms emuMax=86.01ms sleepOverMax=0.77ms yieldMax=0.00ms
+coreLogHints=I/GS-core ( 4709): [core] System not found: mame | I/GS-core ( 4709): [core] Optional device ':cslot6' not found | I/GS-core ( 4709): [core] Optional device ':cslot5' not found | I/GS-core ( 4709): [core] Optional device ':cslot4' not found | I/GS-core ( 4709): [core] Optional device ':cslot3' not found | I/GS-core ( 4709): [core] Optional device ':cslot2' not found | I/GS-core ( 4709): [core] Optional memory region ':audiocpu' not found | I/GS-core ( 4709): [core] Optional memory region ':fixed' not found
+report=D:\ai\prj\trae\HuaWei\RetroEmuPouch\build\bios_probe\results\baseline-android.txt

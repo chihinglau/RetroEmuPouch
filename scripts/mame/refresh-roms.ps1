@@ -92,10 +92,27 @@ if (-not $NoRefreshRoms) {
 } else { Log '--- stage 2 skipped (NoRefreshRoms) ---' }
 
 # ---- 3) deploy BIOS to the MAME rompath ----
+# 2026-11-06: qsound.zip / qsound_hle.zip (Capcom dl-1425.bin) were removed
+# from the workspace for compliance; qsound_hle.zip was a byte-identical
+# duplicate and is gone from the product BIOS lists too. The product never
+# bundled either file, but QSound titles DO still need a USER-supplied
+# qsound.zip (Pura70 A/B proof: docs/freeroms/VALIDATION.md). Deploy it only
+# when the user has placed their own legitimate copy in $biosDir.
 Log '--- stage 3: deploy BIOS ---'
 & $adb -s $d push "$biosDir\neogeo.zip" /data/local/tmp/neogeo_bios.zip *>> $log 2>&1
-& $adb -s $d push "$biosDir\qsound.zip" /data/local/tmp/qsound.zip *>> $log 2>&1
-& $adb -s $d shell "run-as com.retroemupouch.app sh -c 'mkdir -p /data/data/com.retroemupouch.app/files/system/mame/roms && cp /data/local/tmp/neogeo_bios.zip /data/data/com.retroemupouch.app/files/system/mame/roms/neogeo.zip && cp /data/local/tmp/neogeo_bios.zip /data/data/com.retroemupouch.app/files/system/neogeo.zip && cp /data/local/tmp/qsound.zip /data/data/com.retroemupouch.app/files/system/mame/roms/qsound.zip && echo BIOS_OK'" *>> $log 2>&1
+$qsoundLocal = "$biosDir\qsound.zip"
+$hasQsound = Test-Path $qsoundLocal
+if ($hasQsound) {
+  & $adb -s $d push $qsoundLocal /data/local/tmp/qsound.zip *>> $log 2>&1
+} else {
+  Log 'qsound.zip not supplied locally - skipping (QSound titles need the user to import their own copy)'
+}
+$cpCmd = "mkdir -p /data/data/com.retroemupouch.app/files/system/mame/roms && cp /data/local/tmp/neogeo_bios.zip /data/data/com.retroemupouch.app/files/system/mame/roms/neogeo.zip && cp /data/local/tmp/neogeo_bios.zip /data/data/com.retroemupouch.app/files/system/neogeo.zip"
+if ($hasQsound) {
+  $cpCmd += " && cp /data/local/tmp/qsound.zip /data/data/com.retroemupouch.app/files/system/mame/roms/qsound.zip"
+}
+$cpCmd += " && echo BIOS_OK"
+& $adb -s $d shell "run-as com.retroemupouch.app sh -c '$cpCmd'" *>> $log 2>&1
 Log ("deploy bios exit=$LASTEXITCODE")
 
 # ---- 4) verify (optional) ----

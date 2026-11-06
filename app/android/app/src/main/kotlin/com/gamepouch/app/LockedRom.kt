@@ -374,7 +374,10 @@ object LockedRom {
      *   up the BIOS, so `stageOneArcadeBios` simply finds no source under
      *   `system/qsound.zip` for those cores and returns — no copy, no log.
      */
-    private val ARCADE_BIOS_NAMES = listOf("neogeo.zip", "qsound.zip", "qsound_hle.zip", "pgm.zip")
+    // qsound_hle.zip was a byte-identical duplicate of qsound.zip: MAME's
+    // qsound_hle device falls back to the parent `qsound` ROM set. Pura70
+    // A/B verified dino (CPS1 QSound) boots at ~60 FPS with only qsound.zip.
+    private val ARCADE_BIOS_NAMES = listOf("neogeo.zip", "qsound.zip", "pgm.zip")
 
     /**
      * For every arcade-core launch, walk [ARCADE_BIOS_NAMES] and make sure

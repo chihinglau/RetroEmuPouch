@@ -14,6 +14,7 @@ import 'features/legal/consent_gate.dart';
 import 'features/settings/app_settings.dart';
 import 'pal/platform_pal.dart';
 import 'pal/pal_factory.dart';
+import 'probe/arcade_bios_probe.dart';
 import 'features/account/account_backend.dart';
 import 'system_files.dart';
 
@@ -88,6 +89,15 @@ Future<void> main() async {
     // Asset unavailable: catalog stays empty (single-player).
   }
   runApp(ConsentGate(mainApp: (_) => GamePouchApp()));
+
+  // Arcade BIOS A/B compatibility probe (docs/freeroms/VALIDATION.md).
+  // Compile-time gated: production builds tree-shake this away entirely.
+  if (kArcadeBiosProbe) {
+    unawaited(Future<void>.delayed(
+      const Duration(seconds: 2),
+      () => runArcadeBiosProbe(pal),
+    ));
+  }
 
   // TEMP OHOS WIRING SELF-TEST: exercises every Settings-sheet backend path
   // headlessly (the OpenHarmony `uitest` driver cannot reach Flutter widgets),

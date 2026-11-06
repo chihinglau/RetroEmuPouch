@@ -25,25 +25,30 @@ class SystemFiles {
   /// by the libretro `coreId` that needs them. File names match what the cores
   /// look up in the system directory (compared case-insensitively).
   ///
-  /// `qsound.zip` is **MAME-only**: it holds `dl-1425.bin`, the Q-Sound BIOS
-  /// the libretro MAME core needs for every CPS-1 / CPS-2 game (1944, samsho,
-  /// sf2ce, msh, …). FBA-2012 / FBNeo ship their own QSound emulation and
-  /// never look up the BIOS blob, so listing it for those cores only spams
-  /// the "missing BIOS" guidance with a file the user can't actually fix
-  /// (the core won't read it). `LockedRom.ensureArcadeBiosInRomCache` walks
-  /// the union of this map so the on-launch mirror step covers qsound.zip
-  /// for MAME and silently skips it for the others.
+  /// `qsound.zip` is **MAME-only**: it holds `dl-1425.bin`, the Q-Sound DSP
+  /// ROM that this libretro MAME build still loads for CPS-1/2 Q-Sound titles
+  /// (`dino`, `punisher`, `1944`, …). Pura70 A/B verification: with both
+  /// qsound bundles removed, `dino` fails with
+  /// "dl-1425.bin NOT FOUND (tried in qsound_hle qsound dino)" while a
+  /// non-QSound CPS-1 title (`ffight`) boots fine
+  /// (docs/freeroms/VALIDATION.md). FBA-2012 / FBNeo ship their own QSound
+  /// emulation and never look up the BIOS blob, so listing it for those cores
+  /// only spams the "missing BIOS" guidance with a file the core won't read.
+  /// `qsound_hle.zip` was a byte-identical duplicate of `qsound.zip`; MAME's
+  /// `qsound_hle` device falls back to the parent `qsound` ROM set, so the
+  /// duplicate was removed from every list (verified: `dino` boots at ~60 FPS
+  /// with only `qsound.zip` present).
   /// Every BIOS / system blob the app **supports** — recognises on import,
   /// lists in the settings manager, validates in the peer `bios` API, and
   /// mirrors into each core's lookup dir when present. The user supplies these
-  /// from their own legitimate copies; the app never ships them. Per-driver
-  /// requirements (CPS-1/2 need `qsound.zip` / `qsound_hle.zip`; IGS PolyGame
-  /// Master needs `pgm.zip`; NeoGeo needs `neogeo.zip`) are resolved by the
-  /// core itself, so this is the superset across all arcade cores.
+  /// from their own legitimate copies; the app never ships them (enforced by
+  /// scripts/check-apk-content.ps1 / check-hap-content.ps1). Per-driver
+  /// requirements (Q-Sound titles need `qsound.zip`; IGS PolyGame Master
+  /// needs `pgm.zip`; NeoGeo needs `neogeo.zip`) are resolved by the core
+  /// itself, so this is the superset across all arcade cores.
   static const List<String> supportedBios = [
     'neogeo.zip',
     'qsound.zip',
-    'qsound_hle.zip',
     'pgm.zip',
   ];
 
@@ -51,16 +56,17 @@ class SystemFiles {
   /// This is the hard gate used by [missingForCore] / [checkMissing] to block a
   /// launch (and prompt for an import) up front, instead of letting the core
   /// fail late with an obscure missing-file screen. For `mame` we require the
-  /// full arcade BIOS set — NeoGeo (`neogeo.zip`), CPS-1/2 Q-Sound
-  /// (`qsound.zip` / `qsound_hle.zip`) and IGS PolyGame Master (`pgm.zip`) —
-  /// because the MAME core only resolves per-driver needs at boot, so requiring
-  /// them pre-launch gives one clean import prompt covering every arcade title.
+  /// arcade BIOS set — NeoGeo (`neogeo.zip`), Q-Sound (`qsound.zip`) and IGS
+  /// PolyGame Master (`pgm.zip`) — because the MAME core only resolves
+  /// per-driver needs at boot, so requiring them pre-launch gives one clean
+  /// import prompt covering every arcade title. `qsound_hle.zip` is NOT in
+  /// this list: it is a redundant duplicate and was proven unnecessary.
   /// [supportedBios] is the wider set used for recognition / staging / the peer
   /// `bios` API.
   static const Map<String, List<String>> requiredBios = {
     'fbalpha2012': ['neogeo.zip'],
     'fbneo': ['neogeo.zip'],
-    'mame': ['neogeo.zip', 'qsound.zip', 'qsound_hle.zip', 'pgm.zip'],
+    'mame': ['neogeo.zip', 'qsound.zip', 'pgm.zip'],
   };
 
   /// Where each core expects its BIOS files, relative to `<filesDir>/system/`.

@@ -1998,7 +1998,7 @@ struct EmulatorSpike {
         break
       }
       if (low.includes('qsound')) {
-        biosHint = '\n\n已安装的 qsound.zip / qsound_hle.zip 不完整或缺失（缺少 ' + m +
+        biosHint = '\n\n已安装的 qsound.zip 不完整或缺失（缺少 ' + m +
           '），请重新导入完整的 Q-Sound BIOS（设置 → 系统文件（BIOS））。'
         break
       }

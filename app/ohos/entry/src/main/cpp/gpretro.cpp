@@ -588,7 +588,10 @@ static void StageArcadeContent() {
   //    CRC-checked (useCrc=true) to match Android LockedRom.stageOneArcadeBios:
   //    a stale/truncated qsound.zip (e.g. 2.6 KB seed) is overwritten with the
   //    user's real BIOS instead of being skipped because a copy already exists.
-  static const char* kBios[] = {"neogeo.zip", "qsound.zip", "qsound_hle.zip", "pgm.zip"};
+  // qsound_hle.zip was a byte-identical duplicate of qsound.zip and is no
+  // longer staged: MAME's qsound_hle device falls back to the parent
+  // `qsound` ROM set (verified on Pura70 with dino, see VALIDATION.md).
+  static const char* kBios[] = {"neogeo.zip", "qsound.zip", "pgm.zip"};
   for (const char* name : kBios) {
     const std::string rootSrc = g_appDir + "/system/" + name;
     const std::string subSrc = mameRomDir + "/" + name;
