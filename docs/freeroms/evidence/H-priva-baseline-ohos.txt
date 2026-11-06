@@ -1,0 +1,38 @@
+filesDir=/data/storage/el2/base/files
+started=2026-11-06T13:49:46.972001
+cmd=tag=H-priva-baseline-ohos;rom=roms/peer/kof97.zip;core=mame;platform=mame;settleMs=12000
+tmp.exists=false entries=-1
+tmp.json.error=PathNotFoundException: Cannot open file, path = '/data/local/tmp/gp_bios_probe.json' (OS Error: No such file or directory, errno = 2)
+control={"tag":"H-priva-baseline-ohos","rom":"roms/peer/kof97.zip","core":"mame","platform":"mame","settleMs":12000,"backup":["system/qsound.zip","system/qsound_hle.zip","system/neogeo.zip"],"restore":false,"priva":false,"drop":[],"copy":[]}
+tag=H-priva-baseline-ohos
+backup system/qsound.zip skipped (src=true bak=true)
+backup system/qsound_hle.zip skipped (src=true bak=true)
+backup system/neogeo.zip skipped (src=true bak=true)
+pre system/qsound.zip exists=true size=2676
+pre system/qsound_hle.zip exists=true size=2676
+pre system/neogeo.zip exists=true size=1859335
+pre system/mame/roms/qsound.zip exists=true size=2676
+pre system/mame/roms/qsound_hle.zip exists=false size=0
+pre system/mame/roms/neogeo.zip exists=true size=1859335
+pre rom_cache/mame/qsound.zip exists=true size=2676
+pre rom_cache/mame/qsound_hle.zip exists=false size=0
+pre rom_cache/mame/neogeo.zip exists=true size=1859335
+target rom=roms/peer/kof97.zip core=mame platform=mame exists=true size=28745740
+launch.ok=true
+settled.afterMs=12000
+getLoadError=
+isCoreReady=true
+getFps=59.79377378555213
+getBiosWarnings=
+runningSaveKey=F373FB35
+post system/qsound.zip exists=true size=2676
+post system/qsound_hle.zip exists=true size=2676
+post system/neogeo.zip exists=true size=1859335
+post system/mame/roms/qsound.zip exists=true size=2676
+post system/mame/roms/qsound_hle.zip exists=false size=0
+post system/mame/roms/neogeo.zip exists=true size=1859335
+post rom_cache/mame/qsound.zip exists=true size=2676
+post rom_cache/mame/qsound_hle.zip exists=false size=0
+post rom_cache/mame/neogeo.zip exists=true size=1859335
+emu_trace.tail=99769.333 t37276 == launch rom=/data/storage/el2/base/files/roms/peer/kof97.zip core=mame netplay=0 == | 99769.509 t37276 surface: created window=0x5f233d3d80 | 99769.520 t37276 surface: EGL ready, starting render thread (rom=/data/storage/el2/base/files/rom_cache/mame/kof97.zip) | 99769.520 t37485 render thread: EGL current, core load begins | 
+result.booted=true

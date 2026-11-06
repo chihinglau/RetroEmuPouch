@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:flutter/services.dart';
 
 import '../pal/platform_pal.dart';
@@ -21,8 +22,13 @@ import '../pal/platform_pal.dart';
 ///
 /// Every mutation is reversible: `backup` keeps `<name>.gpbak`, `drop` renames
 /// to `<name>.gpoff` (the staging code only looks for exact `.zip` names), and
-/// `restore` puts everything back. No copyrighted BIOS/ROM bytes are compiled
-/// into the app or committed to this repository.
+/// `restore` puts everything back.
+///
+/// For the `priva=1` scenario the probe rebuilds `neogeo.zip` itself: the ONLY
+/// compiled-in bytes are the 128 KB GPL-3.0 PrivaBIOS asset, and every other
+/// ZIP member is read from the user's own on-device `neogeo.zip.gpbak`. No
+/// copyrighted BIOS/ROM bytes are compiled into the app or committed to this
+/// repository. Production HAPs carry just `.gitkeep` in `assets/probe/`.
 const bool kArcadeBiosProbe = bool.fromEnvironment('GP_BIOS_PROBE');
 const String kBiosProbeCmd =
     String.fromEnvironment('GP_BIOS_CMD', defaultValue: '');
@@ -34,6 +40,21 @@ const List<String> _backupPaths = <String>[
   'system/qsound.zip',
   'system/qsound_hle.zip',
   'system/neogeo.zip',
+];
+
+// The PrivaBIOS scenario overwrites all three neogeo.zip rompath copies, so all
+// three must be restorable by the F-restore scenario.
+const List<String> _privaBackupPaths = <String>[
+  ..._backupPaths,
+  'system/mame/roms/neogeo.zip',
+  'rom_cache/mame/neogeo.zip',
+];
+
+const String _privaAsset = 'assets/probe/privabios.rom';
+const List<String> _privaTargets = <String>[
+  'system/neogeo.zip',
+  'system/mame/roms/neogeo.zip',
+  'rom_cache/mame/neogeo.zip',
 ];
 
 // Every rompath gpretro.cpp StageArcadeContent can look in.
@@ -63,6 +84,7 @@ Map<String, dynamic> _cfgFromCmd() {
   }
   final copyFrom = c['copyFrom'];
   final copyTo = c['copyTo'];
+  final priva = c['priva'] == '1';
   final dropPaths = c['drop'] == '1'
       ? _qsoundPaths
       : (c['dropHle'] == '1' ? _qsoundHlePaths : const <String>[]);
@@ -72,8 +94,9 @@ Map<String, dynamic> _cfgFromCmd() {
     'core': c['core'] ?? 'mame',
     'platform': c['platform'] ?? 'mame',
     'settleMs': int.tryParse(c['settleMs'] ?? '') ?? 12000,
-    'backup': _backupPaths,
+    'backup': priva ? _privaBackupPaths : _backupPaths,
     'restore': c['restore'] == '1',
+    'priva': priva,
     'drop': dropPaths,
     'copy': (copyFrom != null && copyTo != null)
         ? <Map<String, String>>[
@@ -81,6 +104,56 @@ Map<String, dynamic> _cfgFromCmd() {
           ]
         : <Map<String, String>>[],
   };
+}
+
+/// Rebuilds the on-device `neogeo.zip` with PrivaBIOS as `sp-s2.sp1`.
+///
+/// Only the 128 KB GPL-3.0 asset is compiled into the probe HAP; every other
+/// member comes from the user's own backup of their local BIOS bundle. The
+/// rebuilt archive is written to all three rompaths the OHOS staging code
+/// consults, so a stale copy can never shadow the swapped BIOS.
+Future<void> _applyPrivaBios(String dir, void Function(String) log) async {
+  final asset = await rootBundle.load(_privaAsset);
+  final bios = Uint8List.view(
+      asset.buffer, asset.offsetInBytes, asset.lengthInBytes);
+  log('priva.asset.bytes=${bios.length}');
+  if (bios.length != 128 * 1024) {
+    throw StateError('unexpected PrivaBIOS size: ${bios.length}');
+  }
+
+  final backup = File('$dir/system/neogeo.zip.gpbak');
+  if (!await backup.exists()) {
+    throw StateError('missing original neogeo.zip backup');
+  }
+  final original = await backup.readAsBytes();
+  final decoded = ZipDecoder().decodeBytes(original);
+  // ZipDecoder().files is unmodifiable — build a fresh Archive instead.
+  final rebuilt = Archive();
+  var found = false;
+  var oldSize = 0;
+  for (final f in decoded.files) {
+    if (f.name.toLowerCase() == 'sp-s2.sp1') {
+      oldSize = f.size;
+      rebuilt.addFile(ArchiveFile(f.name, bios.length, bios));
+      found = true;
+    } else {
+      rebuilt.addFile(ArchiveFile(f.name, f.size, f.content));
+    }
+  }
+  if (!found) throw StateError('sp-s2.sp1 not found in neogeo.zip');
+  log('priva.sp-s2.sp1 oldBytes=$oldSize newBytes=${bios.length} '
+      'members=${decoded.files.length}');
+
+  final encoded = ZipEncoder().encode(rebuilt);
+  if (encoded == null) throw StateError('ZipEncoder returned no data');
+  final bytes = Uint8List.fromList(encoded);
+  log('priva.zip originalBytes=${original.length} rebuiltBytes=${bytes.length}');
+  for (final rel in _privaTargets) {
+    final dst = File('$dir/$rel');
+    await dst.parent.create(recursive: true);
+    await dst.writeAsBytes(bytes, flush: true);
+    log('priva.write $rel ${await dst.length()}');
+  }
 }
 
 Future<void> runArcadeBiosProbe(PlatformPal pal) async {
@@ -182,6 +255,11 @@ Future<void> runArcadeBiosProbe(PlatformPal pal) async {
       log('copy $from -> $to (${await dst.length()} bytes)');
     }
 
+    // OHOS PrivaBIOS scenario: rebuild neogeo.zip inside the app sandbox.
+    if (cfg['priva'] == true) {
+      await _applyPrivaBios(dir, log);
+    }
+
     Future<void> snapshot(String label) async {
       for (final rel in <String>[
         'system/qsound.zip',
@@ -235,6 +313,9 @@ Future<void> runArcadeBiosProbe(PlatformPal pal) async {
     log('getLoadError=${await diag('getLoadError')}');
     log('isCoreReady=${await diag('isCoreReady')}');
     log('getFps=${await diag('getFps')}');
+    // Native core's own ROM/BIOS checksum warnings: "sp-s2.sp1 WRONG
+    // CHECKSUMS" proves the PrivaBIOS replacement was actually loaded.
+    log('getBiosWarnings=${await diag('getBiosWarnings')}');
     log('runningSaveKey=${await pal.runningSaveKey()}');
     await snapshot('post');
 

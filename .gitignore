@@ -130,3 +130,8 @@ __pycache__/
 # ===== 开源 ROM 素材本体：独立目录集中存放，隔离管控，不入库、不进安装包 =====
 # 留痕与许可证见 docs/freeroms/（入库）；复现方式见 docs/freeroms/NOTICE.md
 /freeroms/
+
+# 本地调试探针专用：构建 probe HAP 时临时生成的 GPL-3.0 PrivaBIOS 字节。
+# 该目录只提交 .gitkeep，正式包不含任何 BIOS 字节；绝不入库。
+/app/assets/probe/*.rom
+/app/assets/probe/*.bin

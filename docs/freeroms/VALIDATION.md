@@ -9,7 +9,7 @@
 > 本文件只记录**本地兼容性验证**。所用商业街机 ROM 与官方 BIOS 仅存在于设备私有目录，
 > 按 `NOTICE.md` §4 明确排除，不进入仓库、安装包、演示或软著鉴别材料。
 > 所有生成的测试 zip、控制文件都在 `build/bios_probe/`（`**/build/` 被 `.gitignore` 排除）；
-> 8 份真机原始报告另已归档到 `docs/freeroms/evidence/` 随仓库留存，便于审计复现。
+> 10 份真机原始报告另已归档到 `docs/freeroms/evidence/` 随仓库留存，便于审计复现。
 
 ## 复现方式
 
@@ -25,11 +25,20 @@ python scripts\ohos\prepare-bios-probe.py
 .\scripts\ohos\run-bios-probe.ps1 -Scenario F-restore          # 还原设备 BIOS
 .\scripts\ohos\run-bios-probe.ps1 -Scenario G-no-qsound-hle
 .\scripts\ohos\run-bios-probe.ps1 -Scenario F-restore          # 再次还原
+.\scripts\ohos\run-bios-probe.ps1 -Scenario H-priva-baseline-ohos  # OHOS 原版 BIOS 基线
+.\scripts\ohos\run-bios-probe.ps1 -Scenario E-privabios-ohos        # OHOS PrivaBIOS
+.\scripts\ohos\run-bios-probe.ps1 -Scenario F-restore          # 还原
 
 # 3) Android OXF：原版 BIOS 基线 + PrivaBIOS 对照（自动备份/还原）
 .\scripts\mame\verify-privabios.ps1 -UseOriginalBios
 .\scripts\mame\verify-privabios.ps1
 ```
+
+> **真机坑**：`aa start` 在屏幕锁定时返回 `10106102 The device screen is locked …
+> unlock screen failed`（开发者模式不允许自动解锁），且输出被吞后会静默读到上一轮
+> `bios_probe.txt` 造成误判。`run-bios-probe.ps1` 已在每次冷启动前
+> `uitest uiInput swipe 600 2200 600 500 600` 解锁，并检查 `aa start` 输出与报告的
+> `cmd=` 是否与本场景一致，不一致直接报错。
 
 鸿蒙探针说明：`hdc file send` / `cat >` 无法写 App 沙盒，且 Flutter 进程看不到
 `/data/local/tmp`（`Directory('/data/local/tmp').existsSync() == false`，SELinux），
@@ -119,3 +128,52 @@ python scripts\ohos\prepare-bios-probe.py
 - 测试 zip 只在 `build/`（gitignored）和测试设备私有目录，**未进仓库、未进 APK/HAP、未用于软著材料**。
 - PrivaBIOS 本体（GPL-3.0）在 `freeroms/bios/`（不入库），授权原文在 `docs/freeroms/licenses/`。
 - 该 BIOS 只用于本地兼容性验证，不随产品分发；产品仍要求用户自行导入合法 BIOS。
+
+## 验证项 C：PrivaBIOS 在鸿蒙（OHOS / Pura70）版本是否可用
+
+**结论：可用。** 同一 libretro MAME 核心在鸿蒙侧与 Android 侧表现一致：
+`kof97.zip` 正常启动（约 60 fps），核心日志出现 `sp-s2.sp1 WRONG CHECKSUMS`。
+即用户问的「鸿蒙版本能不能用」答案是**能**，且不需要用户导入任何额外的 BIOS。
+
+### 为什么需要单独验证
+
+鸿蒙侧的 BIOS 分发链路与 Android 不同：`gpretro.cpp` 的 `StageArcadeContent()`
+以 `system/<name>.zip` 为源，按 **size + CRC32** 刷新到
+`system/mame/roms/` 和 `rom_cache/mame/` 两处 rompath。因此只要替换源头
+`system/neogeo.zip`，启动时另两处会自动同步；PrivaBIOS 与 QSound 去重后的
+`kBios[] = {neogeo.zip, qsound.zip, pgm.zip}` 也不冲突。
+
+难点在于把测试 BIOS 送进沙盒：`hdc file send` 与 `hdc shell -b … cat >` 对
+`/data/storage/el2/base/files/` 和物理路径 `/data/app/el2/100/base/…/files/`
+都报 `Permission denied`，而 Flutter/Dart 进程看不到 `/data/local/tmp`
+（`tmp.exists=false`，SELinux）。Android 的 `run-as` 在鸿蒙没有对应物。
+
+### 采用的做法（合规优先）
+
+`scripts/ohos/prepare-bios-probe.py` 只把 **128 KB 的 GPL-3.0 PrivaBIOS 本体**
+复制到 `app/assets/probe/privabios.rom`（gitignored，构建完立即删除）。
+`app/lib/probe/arcade_bios_probe.dart` 在 `priva=1` 场景里：
+
+1. 用 `package:archive` 解码设备上用户自己的 `system/neogeo.zip.gpbak`（34 个成员）；
+2. 仅把 `sp-s2.sp1`（131072 字节）替换成 asset 里的 PrivaBIOS，其余成员原样保留；
+3. 重新编码并写回三个 rompath（`system/`、`system/mame/roms/`、`rom_cache/mame/`）；
+4. 经正常 PAL 路径启动 `kof97.zip`，读取核心自己的诊断。
+
+**因此 probe HAP 里没有任何受版权保护的 SNK BIOS 字节**——只有开源 PrivaBIOS；
+正式 HAP 连这个 asset 也没有（`app/assets/probe/` 只提交 `.gitkeep`）。
+为取证新增了只读 NAPI `getBiosWarnings`（`gpretro.cpp` 单独累积
+`WRONG CHECKSUMS` / `WRONG LENGTH` / `NEEDS REDUMP`，避免被 24 行日志 tail 冲掉），
+经 `GamePouchPlugin` 的 `gs/emulator` 通道暴露给探针。
+
+### 结果（`docs/freeroms/evidence/*.txt`）
+
+| 场景 | `system/neogeo.zip` | `getLoadError` | `isCoreReady` | `getFps` | `getBiosWarnings` | 结果 |
+|---|---|---|---|---|---|---|
+| H-priva-baseline-ohos | 1,859,335 B（原版） | `""` | true | 59.79 | `""` | 通过 |
+| E-privabios-ohos | 1,991,765 B（重建） | `""` | true | 60.20 | `sp-s2.sp1 WRONG CHECKSUMS:` | **通过** |
+
+E 场景报告关键行：`priva.asset.bytes=131072`、
+`priva.sp-s2.sp1 oldBytes=131072 newBytes=131072 members=34`、
+`priva.write system/neogeo.zip 1991765` 等三处写入。
+`WRONG CHECKSUMS` 与 Android 侧 `priva-android` 完全一致，证明替换 BIOS 确实被加载，
+而非误用了残留的原版副本。F-restore 已把三处全部还原为 1,859,335 字节原版。

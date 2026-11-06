@@ -23,6 +23,10 @@ export const loadState: () => boolean;
 /// the failure: {"reason":"load_game","missing":["nffe.03"],"detail":"..."}.
 /// `reason` is one of rom_missing / dlopen / load_game.
 export const getLoadError: () => string;
+// MAME ROM/BIOS checksum warnings seen during this boot ("WRONG CHECKSUMS" /
+// "WRONG LENGTH" / "NEEDS REDUMP"), joined with " | ". Empty on a clean boot.
+// Read-only, used by the headless arcade BIOS compatibility probe.
+export const getBiosWarnings: () => string;
 export const getFps: () => number;
 export const getFilesDir: () => string;
 // Absolute path of the saves directory (== app files dir / saves); mirrors

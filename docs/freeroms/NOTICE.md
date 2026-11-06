@@ -70,8 +70,13 @@
 1. `privabios-0.1.0-beta.3.rom` 为 128 KiB、MAME 字节序的 Neo Geo MVS BIOS，对应 `neogeo.zip` 中 `sp-s2.sp1` 的位置。
 2. 放入 `neogeo.zip` **替换 `sp-s2.sp1`**；若使用非合并（non-merged）游戏包，**每个游戏 zip 内部的 `sp-s2.sp1` 也必须一并替换**，否则 MAME 仍优先读取原版 BIOS。
 3. MAME 报 `WRONG CHECKSUMS` 属正常，说明 PrivaBIOS 已被真正启用。
-4. 上游实测 164 个 MAME 集合中 162 个可运行（基于 MAME 画面，非真机验证）；本项目另做真机验证，结论见 `docs/freeroms/VALIDATION.md`。
-5. 该 BIOS 仅用于**本地兼容性验证**，不随产品分发。
+4. 上游实测 164 个 MAME 集合中 162 个可运行（基于 MAME 画面，非真机验证）；本项目已在
+   **Android OXF 与鸿蒙 Pura70 双真机**上用 `kof97.zip` 验证通过（均约 57–60 fps、均出现
+   `sp-s2.sp1 WRONG CHECKSUMS`），结论见 `docs/freeroms/VALIDATION.md` 验证项 B / C。
+   **鸿蒙版本同样可用**：其 `gpretro.cpp StageArcadeContent` 按 size+CRC 把
+   `system/neogeo.zip` 同步到另外两处 rompath，替换源头即可。
+5. 该 BIOS 仅用于**本地兼容性验证**，不随产品分发。鸿蒙探针 HAP 只临时编入这 128 KB
+   GPL-3.0 字节，其余 ZIP 成员取自设备自带副本；正式 HAP 不含任何 BIOS 字节。
 
 ### 2.5 CPS1 QSound 的合规结论（2026-11-06 真机验证修正）
 
@@ -123,7 +128,7 @@
 
 - `manifest.json`：17 项的路径、作者、许可证、上游仓库、字节数、SHA256、获取日期，以及排除项说明。
 - `SHA256SUMS.txt`：可直接用 `sha256sum -c` 或 PowerShell `Get-FileHash` 核验。
-- `VALIDATION.md` + `evidence/`：QSound BIOS 与 PrivaBIOS 的真机验证结论、复现命令与 8 份原始设备报告。
+- `VALIDATION.md` + `evidence/`：QSound BIOS、PrivaBIOS（Android / 鸿蒙双真机）的验证结论、复现命令与 10 份原始设备报告。
 - 复现命令：
 
 ```powershell

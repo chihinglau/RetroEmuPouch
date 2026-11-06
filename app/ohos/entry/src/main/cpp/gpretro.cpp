@@ -141,6 +141,12 @@ static std::string g_loadError;                  // JSON, empty == no error
 static std::string SoloSaveCrc();  // per-game save/cheat key = rom_index.json crc32 (mirrors Android CheatStore.crcKey)
 static std::deque<std::string> g_coreLogTail;    // last kCoreLogTailMax lines
 static const size_t kCoreLogTailMax = 24;
+// MAME prints ROM/BIOS checksum warnings early in retro_load_game(), then
+// floods INFO lines that push them out of the 24-line tail. Keep the warnings
+// separately so a headless compatibility probe can prove that a replacement
+// BIOS (e.g. PrivaBIOS sp-s2.sp1) was actually loaded. Cleared with the load
+// error at the start of every boot.
+static std::string g_biosWarnings;
 // MAME/arcade system (BIOS), content (ROM lookup) and save directories, derived
 // from the ROM's parent dir. Mirrors Android's systemDir_/contentDir_/saveDir_.
 static std::string g_systemDir;
@@ -314,6 +320,13 @@ static void RetroLogByLevel(enum retro_log_level level, const char* fmt, va_list
       if (!line.empty()) {
         if (g_coreLogTail.size() >= kCoreLogTailMax) g_coreLogTail.pop_front();
         g_coreLogTail.emplace_back(line);
+        if (g_biosWarnings.size() < 4096 &&
+            (line.find("WRONG CHECKSUMS") != std::string::npos ||
+             line.find("WRONG LENGTH") != std::string::npos ||
+             line.find("NEEDS REDUMP") != std::string::npos)) {
+          if (!g_biosWarnings.empty()) g_biosWarnings += " | ";
+          g_biosWarnings += line;
+        }
       }
       if (nl == nullptr) break;
       p = nl + 1;
@@ -378,6 +391,7 @@ static void ClearLoadError() {
   std::lock_guard<std::mutex> lk(g_errMutex);
   g_loadError.clear();
   g_coreLogTail.clear();
+  g_biosWarnings.clear();
 }
 
 // Pulls "<file> NOT FOUND (tried in <set>)" names out of the core log tail.
@@ -1859,6 +1873,21 @@ static napi_value GetLoadError(napi_env env, napi_callback_info info) {
   return out;
 }
 
+// Headless compatibility probe only: MAME's "sp-s2.sp1 WRONG CHECKSUMS" style
+// warnings prove that a replacement BIOS was actually read by the core even
+// when retro_load_game() succeeds (getLoadError() is empty in that case).
+static napi_value GetBiosWarnings(napi_env env, napi_callback_info info) {
+  (void)info;
+  std::string s;
+  {
+    std::lock_guard<std::mutex> lk(g_errMutex);
+    s = g_biosWarnings;
+  }
+  napi_value out = nullptr;
+  napi_create_string_utf8(env, s.c_str(), s.size(), &out);
+  return out;
+}
+
 // Args: (int32 mask). NES joypad bitmask (RETRO_DEVICE_ID_JOYPAD_* bits).
 static napi_value SetInput(napi_env env, napi_callback_info info) {
   size_t argc = 1;
@@ -2811,6 +2840,7 @@ static napi_value Init(napi_env env, napi_value exports) {
       { "setSpeed", nullptr, SetSpeed, nullptr, nullptr, nullptr, napi_default, nullptr },
       { "setAudioMuted", nullptr, SetAudioMuted, nullptr, nullptr, nullptr, napi_default, nullptr },
       { "getLoadError", nullptr, GetLoadError, nullptr, nullptr, nullptr, napi_default, nullptr },
+      { "getBiosWarnings", nullptr, GetBiosWarnings, nullptr, nullptr, nullptr, napi_default, nullptr },
       { "saveState", nullptr, SaveState, nullptr, nullptr, nullptr, napi_default, nullptr },
       { "loadState", nullptr, LoadState, nullptr, nullptr, nullptr, napi_default, nullptr },
       { "getFps", nullptr, GetFps, nullptr, nullptr, nullptr, napi_default, nullptr },

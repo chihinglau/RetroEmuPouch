@@ -14,7 +14,7 @@ import bundleManager from '@ohos.bundle.bundleManager';
 import statfs from '@ohos.file.statvfs';
 import zlib from '@ohos.zlib';
 import router from '@ohos.router';
-import { setEmulatorTarget, getRomCrc, getLoadError, getFps, isCoreReady } from 'libgpretro.so';
+import { setEmulatorTarget, getRomCrc, getLoadError, getBiosWarnings, getFps, isCoreReady } from 'libgpretro.so';
 import type { NetplaySession } from '../netplay_session';
 
 /// Return shapes mirrored from the Dart side (`ImportedRom`, `ImportedPackage`,
@@ -539,6 +539,14 @@ export class GamePouchPlugin implements FlutterPlugin {
     if (method === 'getLoadError') {
       try {
         result.success(getLoadError());
+      } catch (e) {
+        result.success('');
+      }
+      return;
+    }
+    if (method === 'getBiosWarnings') {
+      try {
+        result.success(getBiosWarnings());
       } catch (e) {
         result.success('');
       }

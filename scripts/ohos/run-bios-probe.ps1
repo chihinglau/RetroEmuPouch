@@ -42,6 +42,16 @@ $parts = @(
 if ($j.restore) { $parts += 'restore=1' }
 if ($j.dropHleOnly) { $parts += 'dropHle=1' }
 elseif (@($j.drop).Count -gt 0) { $parts += 'drop=1' }
+$probeAsset = Join-Path $root 'app\assets\probe\privabios.rom'
+if ($j.privaOhos) {
+  $parts += 'priva=1'
+  # Generates the gitignored 128 KB GPL-3.0 PrivaBIOS asset needed by this
+  # probe HAP. Deleted again right after the build (see below).
+  & python "$root\scripts\ohos\prepare-bios-probe.py" | Out-Null
+} elseif (Test-Path $probeAsset) {
+  # Only PrivaBIOS probe HAPs may carry the asset.
+  Remove-Item $probeAsset -Force
+}
 if (@($j.copy).Count -gt 0) {
   $parts += "copyFrom=$($j.copy[0].from)"
   $parts += "copyTo=$($j.copy[0].to)"
@@ -55,6 +65,9 @@ Write-Host "[bios-probe] scenario=$Scenario cmd=$cmd"
 
 if (-not $SkipBuild) {
   & "$root\scripts\ohos\build-probe-hap.ps1" -Cmd $cmd
+  # The probe HAP now contains the open-source asset; remove it from disk so a
+  # later normal `build-hap.ps1` can never pick it up by accident.
+  if (Test-Path $probeAsset) { Remove-Item $probeAsset -Force }
   & $hdc shell aa force-stop $pkg | Out-Null
   & $hdc install -r $hap
 }
@@ -62,14 +75,26 @@ if (-not $SkipBuild) {
 Write-Host "[bios-probe] cold start"
 & $hdc shell aa force-stop $pkg | Out-Null
 Start-Sleep -Milliseconds 800
-& $hdc shell aa start -a EntryAbility -b $pkg | Out-Null
+# aa start refuses to launch while the screen is locked (error 10106102), and
+# developer mode disables the automatic unlock. Swipe up to dismiss the lock
+# screen first; this is a no-op when the device is already unlocked.
+& $hdc shell uitest uiInput swipe 600 2200 600 500 600 2>&1 | Out-Null
+$startOut = (& $hdc shell aa start -a EntryAbility -b $pkg 2>&1) -join "`n"
+if ($startOut -match 'failed to start ability|error:') {
+  throw "[bios-probe] aa start failed: $startOut"
+}
 
 Write-Host "[bios-probe] waiting ${WaitMs}ms"
 Start-Sleep -Milliseconds $WaitMs
 
 $report = & $hdc shell -b $pkg cat "$files/bios_probe.txt"
+# A stale bios_probe.txt would look like a successful run. Assert that this
+# exact dart-define scenario actually executed before saving the report.
+if (($report -join "`n") -notmatch [regex]::Escape("cmd=$cmd")) {
+  throw "[bios-probe] stale report: probe did not run (screen locked?)"
+}
 $dest = Join-Path $out "results\$Scenario.txt"
 New-Item -ItemType Directory -Force -Path (Split-Path $dest) | Out-Null
 [System.IO.File]::WriteAllText($dest, ($report -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
 Write-Host "[bios-probe] report -> $dest"
-$report | Select-String -Pattern 'tag=|launch.ok|getLoadError|isCoreReady|getFps|result.booted|EXCEPTION|tmp.json|pre system/qsound.zip|post system/qsound.zip' | ForEach-Object { $_.Line }
+$report | Select-String -Pattern 'tag=|launch.ok|priva\.|getLoadError|isCoreReady|getFps|getBiosWarnings|result.booted|EXCEPTION|pre system/neogeo.zip|post system/neogeo.zip' | ForEach-Object { $_.Line }

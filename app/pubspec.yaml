@@ -102,6 +102,12 @@ flutter:
     - assets/data/multiplayer.json
     # R2: in-app open-source license notices (see OSS_LICENSES.md content).
     - assets/OSS_LICENSES.md
+    # Local-only debug probe asset. scripts/ohos/prepare-bios-probe.py drops the
+    # GPL-3.0 PrivaBIOS bytes here ONLY while building a GP_BIOS_PROBE HAP: the
+    # probe rebuilds neogeo.zip inside the app sandbox because hdc cannot write
+    # there. The committed directory contains just .gitkeep, so a normal
+    # production HAP ships no BIOS bytes at all (see check-hap-content.ps1).
+    - assets/probe/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

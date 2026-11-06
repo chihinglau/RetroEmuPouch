@@ -993,9 +993,20 @@ flutter test
   核心日志出现预期的 `sp-s2.sp1 WRONG CHECKSUMS`；原版 BIOS 基线 `250f / 58.35 fps`。
 - **鸿蒙探针范式**：`hdc file send` 不能写 App 沙盒，Flutter 进程也看不到 `/data/local/tmp`
   （SELinux），所以 A/B 场景用 `--dart-define=GP_BIOS_CMD=...` 编进 HAP，由 App 在沙盒内做可还原变更；
-  `gs/emulator` 通道暴露 NAPI `getLoadError` / `isCoreReady` / `getFps`，
+  `gs/emulator` 通道暴露 NAPI `getLoadError` / `isCoreReady` / `getFps` / `getBiosWarnings`，
   报告在 `<filesDir>/bios_probe.txt`。脚本：`scripts/ohos/{prepare-bios-probe.py,build-probe-hap.ps1,run-bios-probe.ps1}`、
   `scripts/mame/verify-privabios.ps1`（`;` 分隔 dart-define 字段，`,` 被 build-hap 拆分、`|`/`&` 会被 cmd.exe 解释）。
+- **PrivaBIOS 鸿蒙版可用**：Pura70 上 `kof97.zip` 用 PrivaBIOS 版 `neogeo.zip` 启动
+  `59.79 → 60.20 fps` 基线/替换对比，核心日志 `sp-s2.sp1 WRONG CHECKSUMS`（与 Android OXF 完全一致）。
+  沙盒写不进去时的合规做法：probe HAP 只临时编入 128 KB **GPL-3.0 PrivaBIOS** asset
+  （`app/assets/probe/privabios.rom`，gitignored，构建后立即删），App 用 `package:archive`
+  解码设备自带的 `neogeo.zip.gpbak`、仅替换 `sp-s2.sp1`、重建后写回 3 个 rompath。
+  **probe HAP 不含任何受版权保护的 SNK BIOS 字节，正式 HAP 连该 asset 都没有**（目录只提交 `.gitkeep`）。
+  原生侧新增只读 NAPI `getBiosWarnings`，单独累积 `WRONG CHECKSUMS` 以免被 24 行日志 tail 冲掉。
+- **坑：`aa start` 锁屏失败会静默读到旧报告**：`10106102 The device screen is locked …
+  unlock screen failed`（开发者模式禁止自动解锁）。`run-bios-probe.ps1` 现每次冷启动前
+  `hdc shell uitest uiInput swipe 600 2200 600 500 600` 解锁，并校验 `aa start` 输出与
+  报告 `cmd=` 是否等于本场景，否则直接报错，避免拿上一轮报告当本轮结论。
 
 ### KOF97（NeoGeo）操作注意
 - 投币：约 1.2–1.3s 间隔重复点投币持续 ~40s 才够币；START 常被吞，用长按 `input swipe x y x y 500`；先截图确认坐标再 tap/swipe，勿盲操作。

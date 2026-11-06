@@ -1,0 +1,46 @@
+filesDir=/data/storage/el2/base/files
+started=2026-11-06T13:52:41.285377
+cmd=tag=E-privabios-ohos;rom=roms/peer/kof97.zip;core=mame;platform=mame;settleMs=12000;priva=1
+tmp.exists=false entries=-1
+tmp.json.error=PathNotFoundException: Cannot open file, path = '/data/local/tmp/gp_bios_probe.json' (OS Error: No such file or directory, errno = 2)
+control={"tag":"E-privabios-ohos","rom":"roms/peer/kof97.zip","core":"mame","platform":"mame","settleMs":12000,"backup":["system/qsound.zip","system/qsound_hle.zip","system/neogeo.zip","system/mame/roms/neogeo.zip","rom_cache/mame/neogeo.zip"],"restore":false,"priva":true,"drop":[],"copy":[]}
+tag=E-privabios-ohos
+backup system/qsound.zip skipped (src=true bak=true)
+backup system/qsound_hle.zip skipped (src=true bak=true)
+backup system/neogeo.zip skipped (src=true bak=true)
+backup system/mame/roms/neogeo.zip skipped (src=true bak=true)
+backup rom_cache/mame/neogeo.zip skipped (src=true bak=true)
+priva.asset.bytes=131072
+priva.sp-s2.sp1 oldBytes=131072 newBytes=131072 members=34
+priva.zip originalBytes=1859335 rebuiltBytes=1991765
+priva.write system/neogeo.zip 1991765
+priva.write system/mame/roms/neogeo.zip 1991765
+priva.write rom_cache/mame/neogeo.zip 1991765
+pre system/qsound.zip exists=true size=2676
+pre system/qsound_hle.zip exists=true size=2676
+pre system/neogeo.zip exists=true size=1991765
+pre system/mame/roms/qsound.zip exists=true size=2676
+pre system/mame/roms/qsound_hle.zip exists=false size=0
+pre system/mame/roms/neogeo.zip exists=true size=1991765
+pre rom_cache/mame/qsound.zip exists=true size=2676
+pre rom_cache/mame/qsound_hle.zip exists=false size=0
+pre rom_cache/mame/neogeo.zip exists=true size=1991765
+target rom=roms/peer/kof97.zip core=mame platform=mame exists=true size=28745740
+launch.ok=true
+settled.afterMs=12000
+getLoadError=
+isCoreReady=true
+getFps=60.19709694645371
+getBiosWarnings=sp-s2.sp1 WRONG CHECKSUMS:
+runningSaveKey=F373FB35
+post system/qsound.zip exists=true size=2676
+post system/qsound_hle.zip exists=true size=2676
+post system/neogeo.zip exists=true size=1991765
+post system/mame/roms/qsound.zip exists=true size=2676
+post system/mame/roms/qsound_hle.zip exists=false size=0
+post system/mame/roms/neogeo.zip exists=true size=1991765
+post rom_cache/mame/qsound.zip exists=true size=2676
+post rom_cache/mame/qsound_hle.zip exists=false size=0
+post rom_cache/mame/neogeo.zip exists=true size=1991765
+emu_trace.tail=99944.241 t39403 == launch rom=/data/storage/el2/base/files/roms/peer/kof97.zip core=mame netplay=0 == | 99944.403 t39403 surface: created window=0x5f22bd9960 | 99944.412 t39403 surface: EGL ready, starting render thread (rom=/data/storage/el2/base/files/rom_cache/mame/kof97.zip) | 99944.413 t39644 render thread: EGL current, core load begins | 
+result.booted=true

@@ -3,8 +3,15 @@
 This script contains NO copyrighted data. It reads a locally supplied MAME
 ``neogeo.zip`` (the user's own copy, never committed) and the GPL-3.0
 PrivaBIOS from ``freeroms/bios/``, then writes test artifacts under
-``build/bios_probe/`` (gitignored). Nothing here is shipped in the HAP, in the
-repo, or in any soft-copyright / store deliverable.
+``build/bios_probe/`` (gitignored). Nothing here is committed or shipped in a
+production HAP / soft-copyright / store deliverable.
+
+For the OHOS PrivaBIOS run it additionally copies the *open-source* PrivaBIOS
+bytes (128 KB, GPL-3.0) to ``app/assets/probe/privabios.rom`` so a debug probe
+HAP can rebuild ``neogeo.zip`` inside the app sandbox: hdc cannot write into
+that sandbox and the Flutter process cannot read /data/local/tmp. That asset is
+gitignored, deleted again by run-bios-probe.ps1, and is NEVER present in a
+normal production build.
 
 Usage: python scripts/ohos/prepare-bios-probe.py
 """
@@ -22,6 +29,8 @@ PRIVABIOS = os.path.join(
     ROOT, "freeroms", "bios", "privabios-0.1.0-beta.3.rom"
 )
 TEST_ZIP = os.path.join(OUT, "neogeo_privabios.zip")
+ASSET_DIR = os.path.join(ROOT, "app", "assets", "probe")
+ASSET_BIOS = os.path.join(ASSET_DIR, "privabios.rom")
 TMP = "/data/local/tmp"
 
 # Every rompath the OHOS native staging code (gpretro.cpp StageArcadeContent)
@@ -72,10 +81,19 @@ def make_test_zip() -> None:
     print("bytes     :", os.path.getsize(TEST_ZIP))
     print("sha256    :", sha)
 
+    # OHOS probe asset: ONLY the GPL-3.0 PrivaBIOS bytes, never any SNK BIOS
+    # member. app/assets/probe/*.rom is gitignored; a production HAP has just
+    # .gitkeep in this directory.
+    os.makedirs(ASSET_DIR, exist_ok=True)
+    with open(ASSET_BIOS, "wb") as f:
+        f.write(bios)
+    print("probe asset:", ASSET_BIOS, len(bios), "bytes (GPL-3.0, gitignored)")
+
 
 def scenario(tag: str, rom: str, *, drop_qsound: bool = False,
              drop_hle_only: bool = False, privabios: bool = False,
-             restore: bool = False, settle_ms: int = 12000) -> dict:
+             priva_ohos: bool = False, restore: bool = False,
+             settle_ms: int = 12000) -> dict:
     drop = QSOUND_PATHS if drop_qsound else (
         QSOUND_HLE_PATHS if drop_hle_only else []
     )
@@ -89,6 +107,7 @@ def scenario(tag: str, rom: str, *, drop_qsound: bool = False,
         "restore": restore,
         "drop": drop,
         "dropHleOnly": drop_hle_only,
+        "privaOhos": priva_ohos,
         "copy": [],
     }
     if privabios:
@@ -125,11 +144,19 @@ def main() -> None:
         "G-no-qsound-hle": scenario(
             "G-no-qsound-hle", "roms/peer/dino.zip", drop_hle_only=True
         ),
-        # F: put every original BIOS back (no launch). The PrivaBIOS / NeoGeo
-        # compatibility run is done on the Android OXF test device instead
-        # (scripts/mame/verify-privabios.ps1), because OHOS Flutter cannot
-        # read /data/local/tmp and the test neogeo.zip must not be bundled
-        # into a HAP.
+        # H: OHOS baseline with the user's original neogeo.zip (no swap).
+        "H-priva-baseline-ohos": scenario(
+            "H-priva-baseline-ohos", "roms/peer/kof97.zip"
+        ),
+        # E: OHOS PrivaBIOS run. The probe reads the GPL-3.0 asset, replaces
+        # sp-s2.sp1 inside the on-device neogeo.zip using package:archive,
+        # writes it to all three rompaths, then boots kof97. Android OXF uses
+        # scripts/mame/verify-privabios.ps1 instead (adb run-as can write the
+        # sandbox directly).
+        "E-privabios-ohos": scenario(
+            "E-privabios-ohos", "roms/peer/kof97.zip", priva_ohos=True
+        ),
+        # F: put every original BIOS back (no launch).
         "F-restore": scenario(
             "F-restore", "roms/peer/dino.zip", restore=True, settle_ms=0
         ),
