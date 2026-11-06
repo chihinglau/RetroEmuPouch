@@ -12,6 +12,7 @@
 import os
 import re
 import html
+import base64
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC = os.path.join(ROOT, "docs", "soft-copyright", "02_用户操作手册.md")
@@ -93,6 +94,16 @@ def convert(md):
                 buf.append("<li>%s</li>" % inline(re.sub(r"^\s*\d+\.\s+", "", lines[i]))); i += 1
             blk = "<ol>%s</ol>" % "".join(buf)
             out.append((blk, weight_of("ol", blk))); continue
+        m = re.match(r"^!\[([^\]]*)\]\(([^)]+)\)$", ln.strip())
+        if m:
+            cap, rel = m.group(1), m.group(2)
+            img_path = os.path.join(os.path.dirname(SRC), rel)
+            with open(img_path, "rb") as f:
+                b64 = base64.b64encode(f.read()).decode("ascii")
+            blk = ('<figure class="fig"><img src="data:image/jpeg;base64,%s"/>'
+                   '<figcaption>%s</figcaption></figure>' % (b64, html.escape(cap)))
+            out.append((blk, 24))   # 58mm 宽竖屏截图约 131mm 高 ≈ 23 行 + 图注
+            i += 1; continue
         buf = [inline(ln.strip())]; i += 1
         while i < n and lines[i].strip() != "" and not lines[i].startswith(("#", ">", "-", "*")) \
                 and not re.match(r"^\s*\d+\.\s+", lines[i]) and lines[i].strip() != "---":
@@ -146,6 +157,9 @@ li { margin: 0.8mm 0; }
 blockquote { border-left: 3px solid #999; margin: 1.5mm 0; padding: 1mm 6px; color: #333; background: #f6f6f6; }
 code { background: #eee; padding: 0 3px; border-radius: 3px; font-family: Consolas, monospace; }
 hr { border: none; border-top: 1px solid #000; margin: 3mm 0; }
+.fig { text-align: center; margin: 2mm 0 3mm; page-break-inside: avoid; }
+.fig img { width: 58mm; border: 1px solid #999; }
+.fig figcaption { font-size: 9pt; margin-top: 1mm; }
 img { max-width: 100%%; }
 </style></head><body>""" % html.escape(SOFT_NAME))
 
