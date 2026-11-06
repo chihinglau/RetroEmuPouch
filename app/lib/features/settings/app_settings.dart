@@ -95,10 +95,10 @@ class AppSettings {
   double padOffsetY;
 
   /// 启动时对比本机与云端存档；有「云端较新 / 本机没有」的存档时，
-  /// 在游戏库顶部显示可恢复提示（默认关闭，需要已登录会员 + 已设云存档密码）。
+  /// 在文件库顶部显示可恢复提示（默认关闭，需要已登录会员 + 已设云存档密码）。
   bool autoCheckSavesOnLaunch;
 
-  /// 从模拟器返回游戏库时自动上传「未上传 / 本地较新」的存档（默认关闭）。
+  /// 从模拟器返回文件库时自动上传「未上传 / 本地较新」的存档（默认关闭）。
   bool autoUploadSavesOnExit;
 
   static final AppSettings _cached = AppSettings();

@@ -401,7 +401,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
               _SettingTile(
                 icon: Icons.cloud_sync_outlined,
                 title: '启动时检查云端存档',
-                subtitle: '进入 App 时对比本机与云端；有可恢复的存档会在游戏库顶部提示'
+                subtitle: '进入 App 时对比本机与云端；有可恢复的存档会在文件库顶部提示'
                     '（需已登录会员并设置云存档密码）',
                 value: _settings.autoCheckSavesOnLaunch,
                 onChanged: (v) => _patch((s) => s.autoCheckSavesOnLaunch = v),
@@ -409,7 +409,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
               _SettingTile(
                 icon: Icons.cloud_upload_outlined,
                 title: '退出游戏后自动上传存档',
-                subtitle: '从模拟器返回游戏库时，自动上传未同步的存档（失败静默，不打断游戏）',
+                subtitle: '从模拟器返回文件库时，自动上传未同步的存档（失败静默，不打断游戏）',
                 value: _settings.autoUploadSavesOnExit,
                 onChanged: (v) => _patch((s) => s.autoUploadSavesOnExit = v),
               ),
@@ -1114,11 +1114,11 @@ class _TutorialBody extends StatelessWidget {
 
   static const _steps = <_TutorialStep>[
     _TutorialStep(Icons.download_outlined, '导入游戏',
-        '在游戏库页点「导入」，选择 ROM 压缩包或单文件（支持 NES / GB / GBA / MD / 街机等），导入后自动识别平台。'),
+        '在文件库页点「导入」，选择 ROM 压缩包或单文件（支持 NES / GB / GBA / MD / 街机等），导入后自动识别平台。'),
     _TutorialStep(Icons.memory_outlined, '导入 BIOS',
         '部分平台（GBA / 街机等）需要系统 BIOS：设置 → BIOS 管理，导入对应文件（如 neogeo.zip、gba_bios）。'),
     _TutorialStep(Icons.play_circle_outline, '开始游戏',
-        '点击库中的游戏即可运行；横竖屏与手柄布局可随时在「控制与手柄」中调整。'),
+        '点击文件库中的游戏即可运行；横竖屏与手柄布局可随时在「控制与手柄」中调整。'),
     _TutorialStep(Icons.bolt_outlined, '一键招式',
         '格斗游戏可在「控制与手柄 → 招式按键」配置一键大招（如 236+P），支持按游戏加载不同方案。'),
     _TutorialStep(Icons.cloud_sync_outlined, '同步与备份',

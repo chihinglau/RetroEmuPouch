@@ -21,11 +21,11 @@ class CloudSaveService {
   static const FlutterSecureStorage _sec = FlutterSecureStorage();
   static CloudSaveService? _instance;
 
-  /// 最近一次「启动检查」的结果，供游戏库顶部横幅读取（null = 未检查/不可用）。
+  /// 最近一次「启动检查」的结果，供文件库顶部横幅读取（null = 未检查/不可用）。
   static SaveDiff? cachedDiff;
   static DateTime? cachedAt;
 
-  /// 进程内单例：main() 与游戏库共用同一个 store，避免重复打开。
+  /// 进程内单例：main() 与文件库共用同一个 store，避免重复打开。
   static Future<CloudSaveService> of(PlatformPal pal) async {
     final existing = _instance;
     if (existing != null) return existing;
