@@ -78,6 +78,33 @@
 5. 该 BIOS 仅用于**本地兼容性验证**，不随产品分发。鸿蒙探针 HAP 只临时编入这 128 KB
    GPL-3.0 字节，其余 ZIP 成员取自设备自带副本；正式 HAP 不含任何 BIOS 字节。
 
+### 2.4.1 PrivaBIOS ≠ 可以不要 `neogeo.zip`
+
+这是最容易误解的一点：**PrivaBIOS 只是 `neogeo.zip` 里一个成员的替代品，不是整个 BIOS 包的替代品。**
+
+MAME 的 `neogeo` BIOS set（`build/mame-src/src/mame/snk/neogeo.cpp:2375` 的
+`ROM_START( neogeo )`，配合 `NEOGEO_BIOS` 宏 2253 行）除 `mainbios` 的一个
+`ROM_SYSTEM_BIOS` 选项外，还硬要求 3 个公共 ROM，且这些 `ROM_LOAD` **都没有 `OPTIONAL`**：
+
+| 成员 | 用途 | 源码位置 |
+|---|---|---|
+| `sp-s2.sp1` | 默认 BIOS index 0（Europe MVS Ver.2） | 2256 行 — **PrivaBIOS 替换的就是这一项** |
+| `sm1.sm1` | Z80 音频 BIOS / 音频 CPU 程序 | 2381 / 2384 行 |
+| `000-lo.lo` | 精灵缩放表（`spritegen:zoomy`） | 2370 行 |
+| `sfix.sfix` | 固定层字符数据（`fixedbios`） | 2391 行 |
+
+本地 `neogeo.zip` 共 34 个成员，其余都是其它地区的 BIOS 版本与 15 份 UniBIOS，
+属于可选 `ROM_SYSTEM_BIOS` 分支，默认不会加载。理论上可以把它瘦身成只含上述 4 个成员的
+最小集合，但其中 `sm1.sm1` / `000-lo.lo` / `sfix.sfix` 仍是 SNK 数据，本项目**没有**开源替代。
+
+因此：
+
+- 产品仍必须要求用户导入 `neogeo.zip`（`SystemFiles.requiredBios` 对
+  `mame` / `fbalpha2012` / `fbneo` 都是硬门控，原生侧 `LockedRom` / `gpretro.cpp` 也按此文件名 staging）；
+- PrivaBIOS 只减少「官方系统 BIOS ROM」这一项的授权风险，**不能让 `neogeo.zip` 整个消失**；
+- 上架口径不变：App 不内置任何 BIOS，用户自备合法副本。真机验证里我们做的也是
+  「把 PrivaBIOS 打进测试用 `neogeo.zip`」，而不是删除它。
+
 ### 2.5 CPS1 QSound 的合规结论（2026-11-06 真机验证修正）
 
 原先「MAME 自带 QSound HLE，运行时不需要 `dl-1425.bin`」的推断**不成立**，已按 Pura70 真机 A/B 结果修正：

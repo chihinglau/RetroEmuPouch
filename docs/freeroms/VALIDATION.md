@@ -133,7 +133,12 @@ python scripts\ohos\prepare-bios-probe.py
 
 **结论：可用。** 同一 libretro MAME 核心在鸿蒙侧与 Android 侧表现一致：
 `kof97.zip` 正常启动（约 60 fps），核心日志出现 `sp-s2.sp1 WRONG CHECKSUMS`。
-即用户问的「鸿蒙版本能不能用」答案是**能**，且不需要用户导入任何额外的 BIOS。
+即「鸿蒙版本能不能用」答案是**能**，且不需要为 PrivaBIOS 额外导入别的 BIOS。
+
+⚠️ 但这里**不是**「有了 PrivaBIOS 就不需要 `neogeo.zip`」：PrivaBIOS 只替换
+`neogeo.zip` 里 `sp-s2.sp1` 一个成员，`sm1.sm1` / `000-lo.lo` / `sfix.sfix`
+仍是必需且无开源替代（详见 `NOTICE.md` §2.4.1）。两轮验证都是把 PrivaBIOS
+**打进** `neogeo.zip`，而不是删掉该包。
 
 ### 为什么需要单独验证
 
