@@ -1,4 +1,4 @@
-# ===== 本地工具链（.tools 为指向共享 SDK/Flutter/JDK 的 junction，体积数 GB）=====
+﻿# ===== 本地工具链（.tools 为指向共享 SDK/Flutter/JDK 的 junction，体积数 GB）=====
 /.tools/
 
 # ===== 构建产物 / IDE / 系统 =====
@@ -126,3 +126,7 @@ __pycache__/
 /app/ohos/oxf_*
 # 鸿蒙自动签名材料（与 *.jks / *.p12 同理，绝不入库）
 /app/ohos/signing/
+
+# ===== 开源 ROM 素材本体：独立目录集中存放，隔离管控，不入库、不进安装包 =====
+# 留痕与许可证见 docs/freeroms/（入库）；复现方式见 docs/freeroms/NOTICE.md
+/freeroms/
