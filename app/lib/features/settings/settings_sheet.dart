@@ -328,7 +328,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
   /// 「个性化设置」合并页：把原先分散的 游戏体验 / 控制与手柄 / BIOS / 通用
   /// 四个入口收进同一页，用分区标题区分，主菜单只留一个入口，更简洁。
   void _openPersonalization() => _push((_) => _page('个性化设置', [
-        const _SectionTitle('游戏体验'),
+        const _SectionTitle('游戏体验',
+            icon: Icons.speed_outlined, accent: Color(0xFFF5A623)),
         _live((_) => Column(children: [
               _SettingTile(
                 icon: Icons.speed_outlined,
@@ -353,7 +354,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
               ),
             ])),
         const SizedBox(height: 12),
-        const _SectionTitle('控制与手柄'),
+        const _SectionTitle('控制与手柄',
+            icon: Icons.gamepad_outlined, accent: Color(0xFFB45CF6)),
         _live((_) => Column(children: [
               _StickSettingsCard(
                 mode: _settings.stickMode,
@@ -372,8 +374,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
             ])),
         Card(
           margin: const EdgeInsets.symmetric(vertical: 4),
+          color: Color(0xFFF5A623).withAlpha(31),
           child: ListTile(
-            leading: const Icon(Icons.bolt_outlined),
+            leading: Icon(Icons.bolt_outlined,
+                color: const Color(0xFFF5A623)),
             title: const Text('招式按键（格斗游戏一键大招）'),
             subtitle: const Text(
                 '配置 6 个槽位的招式脚本，支持导入 / 导出，方便按游戏加载'),
@@ -396,7 +400,8 @@ class _SettingsSheetState extends State<SettingsSheet> {
           ),
         ),
         const SizedBox(height: 12),
-        const _SectionTitle('云存档'),
+        const _SectionTitle('云存档',
+            icon: Icons.cloud_outlined, accent: Color(0xFF22B8A6)),
         _live((_) => Column(children: [
               _SettingTile(
                 icon: Icons.cloud_sync_outlined,
@@ -415,10 +420,12 @@ class _SettingsSheetState extends State<SettingsSheet> {
               ),
             ])),
         const SizedBox(height: 12),
-        const _SectionTitle('系统文件（BIOS）'),
+        const _SectionTitle('系统文件（BIOS）',
+            icon: Icons.memory_outlined, accent: Color(0xFF5C6BC0)),
         _BiosManagerCard(pal: widget.pal),
         const SizedBox(height: 12),
-        const _SectionTitle('通用'),
+        const _SectionTitle('通用',
+            icon: Icons.tune_outlined, accent: Color(0xFF3E7BFA)),
         _live((_) => Column(children: [
               _SettingTile(
                 icon: Icons.history_outlined,
@@ -451,6 +458,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
           // ----- App info（原「关于」内容，从主菜单移入） -----
           Card(
             margin: EdgeInsets.zero,
+            color: Color(0xFF3E7BFA).withAlpha(31),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
               child: Column(
@@ -459,7 +467,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   Row(
                     children: [
                       Icon(Icons.videogame_asset_outlined,
-                          color: theme.colorScheme.primary),
+                          color: const Color(0xFF3E7BFA)),
                       const SizedBox(width: 8),
                       Text('趣玩匣 RetroEmuPouch',
                           style: theme.textTheme.titleMedium),
@@ -500,8 +508,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
           const SizedBox(height: 12),
           Card(
             margin: const EdgeInsets.symmetric(vertical: 4),
+            color: Color(0xFF4CAF50).withAlpha(31),
             child: ListTile(
-              leading: const Icon(Icons.support_agent_outlined),
+              leading: Icon(Icons.support_agent_outlined,
+                  color: const Color(0xFF4CAF50)),
               title: const Text('客服中心'),
               subtitle: Text('客服邮箱：${cfg.feedbackEmail}\n'
                   '反馈入口：${cfg.feedbackUrl}'),
@@ -512,8 +522,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
           ),
           Card(
             margin: const EdgeInsets.symmetric(vertical: 4),
+            color: Color(0xFF5C6BC0).withAlpha(31),
             child: ListTile(
-              leading: const Icon(Icons.description_outlined),
+              leading: Icon(Icons.description_outlined,
+                  color: const Color(0xFF5C6BC0)),
               title: const Text('开源许可'),
               subtitle: const Text('内嵌模拟器核心的许可证与源码出处'),
               trailing: const Icon(Icons.chevron_right),
@@ -522,8 +534,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
           ),
           Card(
             margin: const EdgeInsets.symmetric(vertical: 4),
+            color: Color(0xFFEC6B9D).withAlpha(31),
             child: ListTile(
-              leading: const Icon(Icons.privacy_tip_outlined),
+              leading: Icon(Icons.privacy_tip_outlined,
+                  color: const Color(0xFFEC6B9D)),
               title: const Text('隐私政策 / 用户协议'),
               subtitle: const Text('我们如何收集、使用与保护您的数据'),
               trailing: const Icon(Icons.chevron_right),
@@ -534,8 +548,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
           ),
           Card(
             margin: const EdgeInsets.symmetric(vertical: 4),
+            color: Color(0xFF22B8A6).withAlpha(31),
             child: ListTile(
-              leading: const Icon(Icons.language_outlined),
+              leading: Icon(Icons.language_outlined,
+                  color: const Color(0xFF22B8A6)),
               title: const Text('网页版隐私政策'),
               subtitle: Text(cfg.privacyPolicyUrl),
               trailing: const Icon(Icons.copy_outlined),
@@ -545,8 +561,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
           ),
           Card(
             margin: const EdgeInsets.symmetric(vertical: 4),
+            color: Color(0xFFB45CF6).withAlpha(31),
             child: ListTile(
-              leading: const Icon(Icons.verified_user_outlined),
+              leading: Icon(Icons.verified_user_outlined,
+                  color: const Color(0xFFB45CF6)),
               title: const Text('备案号'),
               subtitle: Text(
                 cfg.filingNumber.isEmpty
@@ -557,8 +575,10 @@ class _SettingsSheetState extends State<SettingsSheet> {
           ),
           Card(
             margin: const EdgeInsets.symmetric(vertical: 4),
+            color: Color(0xFFF5A623).withAlpha(31),
             child: ListTile(
-              leading: const Icon(Icons.people_outline),
+              leading: Icon(Icons.people_outline,
+                  color: const Color(0xFFF5A623)),
               title: const Text('官方社群'),
               subtitle: Text('QQ 群：${cfg.qqGroup}\n微信号：${cfg.wechatId}'),
             ),
@@ -698,6 +718,8 @@ class _FeedbackPageBody extends StatelessWidget {
         const SizedBox(height: 16),
         _FeedbackChannelButton(
           label: '跳转应用商店',
+          icon: Icons.store_outlined,
+          accent: const Color(0xFF4CAF50),
           onTap: () async {
             var failed = false;
             try {
@@ -712,16 +734,22 @@ class _FeedbackPageBody extends StatelessWidget {
         ),
         _FeedbackChannelButton(
           label: '发送邮件',
+          icon: Icons.mail_outlined,
+          accent: const Color(0xFF3E7BFA),
           onTap: () =>
               _copy(context, CloudConfigService.instance.feedbackEmail, '邮箱已复制，可在邮件 App 粘贴发送'),
         ),
         _FeedbackChannelButton(
           label: 'QQ群反馈',
+          icon: Icons.group_outlined,
+          accent: const Color(0xFFF5A623),
           onTap: () => _copy(
               context, CloudConfigService.instance.qqGroup, 'QQ群号已复制，可在 QQ 中搜索加群'),
         ),
         _FeedbackChannelButton(
           label: '微信反馈',
+          icon: Icons.chat_outlined,
+          accent: const Color(0xFF22B8A6),
           onTap: () => _copy(
               context, CloudConfigService.instance.wechatId, '微信号已复制，可在微信中搜索添加'),
         ),
@@ -730,31 +758,42 @@ class _FeedbackPageBody extends StatelessWidget {
   }
 }
 
-/// 反馈渠道大按钮：全宽圆角胶囊、浅灰底、居中加粗文字。
+/// 反馈渠道按钮：全宽圆角胶囊、淡彩底、彩色图标与文字，呼应设置主菜单风格。
 class _FeedbackChannelButton extends StatelessWidget {
-  const _FeedbackChannelButton({required this.label, required this.onTap});
+  const _FeedbackChannelButton({
+    required this.label,
+    required this.onTap,
+    required this.icon,
+    required this.accent,
+  });
 
   final String label;
   final VoidCallback onTap;
+  final IconData icon;
+  final Color accent;
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: accent.withAlpha(31),
         borderRadius: BorderRadius.circular(28),
         child: InkWell(
           borderRadius: BorderRadius.circular(28),
           onTap: onTap,
           child: SizedBox(
             height: 52,
-            child: Center(
-              child: Text(label,
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleMedium
-                      ?.copyWith(fontWeight: FontWeight.w700)),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, color: accent, size: 20),
+                const SizedBox(width: 10),
+                Text(label,
+                    style: theme.textTheme.titleMedium
+                        ?.copyWith(fontWeight: FontWeight.w700, color: accent)),
+              ],
             ),
           ),
         ),
@@ -1103,10 +1142,11 @@ class _MembershipPageBodyState extends State<_MembershipPageBody> {
 
 /// 「使用教程」子页面正文：从导入到联机的入门步骤。
 class _TutorialStep {
-  const _TutorialStep(this.icon, this.title, this.body);
+  const _TutorialStep(this.icon, this.title, this.body, this.accent);
   final IconData icon;
   final String title;
   final String body;
+  final Color accent;
 }
 
 class _TutorialBody extends StatelessWidget {
@@ -1114,15 +1154,20 @@ class _TutorialBody extends StatelessWidget {
 
   static const _steps = <_TutorialStep>[
     _TutorialStep(Icons.download_outlined, '导入游戏',
-        '在文件库页点「导入」，选择 ROM 压缩包或单文件（支持 NES / GB / GBA / MD / 街机等），导入后自动识别平台。'),
+        '在文件库页点「导入」，选择 ROM 压缩包或单文件（支持 NES / GB / GBA / MD / 街机等），导入后自动识别平台。',
+        const Color(0xFF3E7BFA)),
     _TutorialStep(Icons.memory_outlined, '导入 BIOS',
-        '部分平台（GBA / 街机等）需要系统 BIOS：设置 → BIOS 管理，导入对应文件（如 neogeo.zip、gba_bios）。'),
+        '部分平台（GBA / 街机等）需要系统 BIOS：设置 → BIOS 管理，导入对应文件（如 neogeo.zip、gba_bios）。',
+        const Color(0xFF5C6BC0)),
     _TutorialStep(Icons.play_circle_outline, '开始游戏',
-        '点击文件库中的游戏即可运行；横竖屏与手柄布局可随时在「控制与手柄」中调整。'),
+        '点击文件库中的游戏即可运行；横竖屏与手柄布局可随时在「控制与手柄」中调整。',
+        const Color(0xFF4CAF50)),
     _TutorialStep(Icons.bolt_outlined, '一键招式',
-        '格斗游戏可在「控制与手柄 → 招式按键」配置一键大招（如 236+P），支持按游戏加载不同方案。'),
+        '格斗游戏可在「控制与手柄 → 招式按键」配置一键大招（如 236+P），支持按游戏加载不同方案。',
+        const Color(0xFFF5A623)),
     _TutorialStep(Icons.cloud_sync_outlined, '同步与备份',
-        '账号页可绑定「我的 PC」，在局域网内同步存档与设置；游戏资源也可打包导出分享。'),
+        '账号页可绑定「我的 PC」，在局域网内同步存档与设置；游戏资源也可打包导出分享。',
+        const Color(0xFF22B8A6)),
   ];
 
   @override
@@ -1134,18 +1179,23 @@ class _TutorialBody extends StatelessWidget {
         for (final s in _steps)
           Card(
             margin: const EdgeInsets.only(bottom: 10),
+            color: s.accent.withAlpha(31),
             child: Padding(
               padding: const EdgeInsets.all(14),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(s.icon, color: theme.colorScheme.primary),
+                  Icon(s.icon, color: s.accent),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(s.title, style: theme.textTheme.titleSmall),
+                        Text(s.title,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              color: s.accent,
+                              fontWeight: FontWeight.w600,
+                            )),
                         const SizedBox(height: 4),
                         Text(s.body, style: theme.textTheme.bodySmall),
                       ],
@@ -1473,19 +1523,30 @@ class _BiosSectionHeader extends StatelessWidget {
 
 /// 合并页内的分组标题（如「个性化设置」下区分 游戏体验 / 控制与手柄 等）。
 class _SectionTitle extends StatelessWidget {
-  const _SectionTitle(this.text);
+  const _SectionTitle(this.text, {this.icon, this.accent});
   final String text;
+  final IconData? icon;
+  final Color? accent;
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final a = accent ?? theme.colorScheme.primary;
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 6),
-      child: Text(
-        text,
-        style: theme.textTheme.labelMedium?.copyWith(
-          color: theme.colorScheme.primary,
-          fontWeight: FontWeight.w600,
-        ),
+      child: Row(
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 18, color: a),
+            const SizedBox(width: 6),
+          ],
+          Text(
+            text,
+            style: theme.textTheme.labelMedium?.copyWith(
+              color: a,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

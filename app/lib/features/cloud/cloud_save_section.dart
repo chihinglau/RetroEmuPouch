@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import '../../widgets/feature_card.dart';
+
 import '../../data/cloud/cloud_client.dart'
     show CloudClient, CloudSaveSummary, CloudException;
 import '../../data/cloud/cloud_save_service.dart';
@@ -398,54 +400,69 @@ class _CloudSaveSectionState extends State<CloudSaveSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text('已加密同步 · 服务端不解密',
-                  style: Theme.of(context).textTheme.labelSmall),
-            ),
-            if (_busy)
-              const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-            else
-              IconButton(
-                tooltip: '刷新云端列表',
-                onPressed: _forceRefresh,
-                icon: const Icon(Icons.refresh, size: 18),
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                constraints: const BoxConstraints(),
+        FeatureCard(
+          icon: Icons.cloud_upload_outlined,
+          title: '库设置备份',
+          accent: const Color(0xFF22B8A6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text('已加密同步 · 服务端不解密',
+                        style: Theme.of(context).textTheme.labelSmall),
+                  ),
+                  if (_busy)
+                    const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2))
+                  else
+                    IconButton(
+                      tooltip: '刷新云端列表',
+                      onPressed: _forceRefresh,
+                      icon: const Icon(Icons.refresh, size: 18),
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      constraints: const BoxConstraints(),
+                    ),
+                ],
               ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        FilledButton.icon(
-          onPressed: _busy ? null : _upload,
-          icon: const Icon(Icons.cloud_upload_outlined),
-          label: const Text('备份当前库设置'),
-        ),
-        if (_passViaFallback)
-          const Padding(
-            padding: EdgeInsets.only(top: 6),
-            child: Text('本机无系统安全存储，云存档密码保存在应用私有目录。',
-                style: TextStyle(fontSize: 11, color: Colors.grey)),
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                onPressed: _busy ? null : _upload,
+                icon: const Icon(Icons.cloud_upload_outlined),
+                label: const Text('备份当前库设置'),
+              ),
+              if (_passViaFallback)
+                const Padding(
+                  padding: EdgeInsets.only(top: 6),
+                  child: Text('本机无系统安全存储，云存档密码保存在应用私有目录。',
+                      style: TextStyle(fontSize: 11, color: Colors.grey)),
+                ),
+              const SizedBox(height: 10),
+              if (_error != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(_error!,
+                      style: TextStyle(
+                          color: Theme.of(context).colorScheme.error)),
+                ),
+              if (_backupBlobs.isEmpty && _error == null)
+                const Text('暂无云端备份。', style: TextStyle(color: Colors.grey))
+              else
+                ..._backupBlobs.map((s) => _saveTile(s)),
+            ],
           ),
-        const SizedBox(height: 10),
-        if (_error != null)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(_error!,
-                style: TextStyle(
-                    color: Theme.of(context).colorScheme.error)),
-          ),
-        // 只列「库设置备份」等非存档类 blob；游戏存档由下面专门区块管理。
-        if (_backupBlobs.isEmpty && _error == null)
-          const Text('暂无云端备份。', style: TextStyle(color: Colors.grey))
-        else
-          ..._backupBlobs.map((s) => _saveTile(s)),
-        _gameSavesSection(),
+        ),
+        const SizedBox(height: 12),
+        FeatureCard(
+          icon: Icons.sports_esports_outlined,
+          title: '游戏存档',
+          accent: const Color(0xFF3E7BFA),
+          child: _gameSavesSection(),
+        ),
       ],
     );
   }
@@ -474,12 +491,11 @@ class _CloudSaveSectionState extends State<CloudSaveSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Divider(height: 24),
         Row(
           children: [
             Expanded(
               child: Text(
-                '游戏存档 · 本机 ${_localSaves.length} 份 · '
+                '本机 ${_localSaves.length} 份 · '
                 '云端 $cloudTotal 份',
                 style: theme.textTheme.labelLarge,
               ),

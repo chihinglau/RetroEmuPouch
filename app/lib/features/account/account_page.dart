@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import '../../pal/platform_pal.dart';
-import '../cloud/cloud_save_section.dart';
+import '../../widgets/feature_card.dart';
+import '../cloud/cloud_save_page.dart';
 import '../peer/peers_page.dart';
 import '../settings/settings_sheet.dart';
 import 'account_backend.dart';
@@ -191,39 +192,21 @@ class _AccountPageState extends State<AccountPage> {
   Widget _section(
       {required IconData icon,
       required String title,
-      required Widget child}) {
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              Icon(icon, size: 19),
-              const SizedBox(width: 8),
-              Text(title, style: Theme.of(context).textTheme.titleSmall),
-            ]),
-            const SizedBox(height: 10),
-            child,
-          ],
-        ),
-      ),
-    );
-  }
+      required Widget child,
+      required Color accent}) =>
+      FeatureCard(icon: icon, title: title, accent: accent, child: child);
 
   Widget _buildProfile() {
     return ListView(
       padding: const EdgeInsets.symmetric(vertical: 10),
       children: [
         _accountSection(),
-        _user == null
-            ? _cloudSaveSection()
-            : CloudSaveSection(userId: _user!.id, pal: widget.pal),
+        _cloudSaveEntry(),
         if (kDebugMode && _ready) _debugTile(),
         _section(
           icon: Icons.swap_horiz,
           title: '发现伙伴（手机面对面互传）',
+          accent: const Color(0xFFF5A623),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -254,6 +237,7 @@ class _AccountPageState extends State<AccountPage> {
       return _section(
         icon: Icons.account_circle_outlined,
         title: '我的账号',
+        accent: const Color(0xFF3E7BFA),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -272,6 +256,7 @@ class _AccountPageState extends State<AccountPage> {
     return _section(
       icon: Icons.account_circle,
       title: '我的账号',
+      accent: const Color(0xFF3E7BFA),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -361,19 +346,33 @@ class _AccountPageState extends State<AccountPage> {
     );
   }
 
-  /// 未登录时的云存档引导（登录后由 [CloudSaveSection] 接管真正的上传/恢复）。
-  Widget _cloudSaveSection() {
+  /// 云存档入口：聚合入口 → 独立 [CloudSavePage]，避免云存档较长的内容挤压
+  /// 同页的「发现伙伴」入口。与「发现伙伴 → PeersPage」保持一致的架构。
+  Widget _cloudSaveEntry() {
+    final locked = _user == null;
     return _section(
       icon: Icons.cloud_queue_outlined,
       title: '云存档（会员专属）',
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('登录后即可使用：把真实游戏存档（电池存档 / 自动存档 / 手动槽位 + 缩略图）'
-              '在客户端加密后同步到你的私有云，换设备输入同一密码即可恢复。'),
-          const SizedBox(height: 8),
-          _chip('先登录账号 · 云存档需会员', mono: false),
-        ],
+      accent: const Color(0xFF22B8A6),
+      child: ListTile(
+        contentPadding: EdgeInsets.zero,
+        title: Text(locked
+            ? '登录后可使用加密云同步'
+            : '端到端加密 · 换设备可恢复'),
+        subtitle: locked ? null : const Text('点击管理备份、恢复与上传'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: _openCloudSave,
+      ),
+    );
+  }
+
+  Future<void> _openCloudSave() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => CloudSavePage(
+          userId: _user?.id ?? '',
+          pal: widget.pal,
+        ),
       ),
     );
   }

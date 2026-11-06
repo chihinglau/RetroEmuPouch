@@ -7,7 +7,12 @@ import 'package:cryptography/cryptography.dart' show Sha256;
 import 'package:flutter/foundation.dart' show kDebugMode;
 
 import '../../features/account/account_backend.dart'
-    show AccountStore, effectiveBaseUrl, kAccountToken, kAccountUserId;
+    show
+        AccountStore,
+        effectiveBaseUrl,
+        kAccountToken,
+        kAccountUserId,
+        kAccountRefreshToken;
 import '../../features/cloud/cloud_crypto.dart';
 import 'cloud_save_models.dart';
 import 'security_policy.dart';
@@ -96,6 +101,29 @@ class CloudClient implements CloudSaveTransport {
   Future<String> get _base async => await effectiveBaseUrl(_store);
   String get _token => _store.getString(kAccountToken) ?? '';
 
+  /// 用 refresh_token 换新 access_token（与 [HttpAccountService] 同款逻辑）。
+  ///
+  /// 云存档走独立的 [CloudClient]，此前没有这套自动续期：access_token（15 分钟）
+  /// 过期后，云存储请求带着过期 token 直发后端被 401 拒绝，表现为"云存储连不上"。
+  /// 这里补上，并在 [_json] / [uploadSave] / [listSaves] / [downloadSave] 的 401
+  /// 分支触发它、换新后无缝重试一次。
+  Future<bool> _refresh() async {
+    final rt = _store.getString(kAccountRefreshToken) ?? '';
+    if (rt.isEmpty) return false;
+    try {
+      final j = await _json('POST', '/api/auth/refresh',
+          auth: false, body: {'refresh_token': rt});
+      final at = (j['access_token'] as String?)?.trim() ?? '';
+      if (at.isEmpty) return false;
+      await _store.setString(kAccountToken, at);
+      final nrt = (j['refresh_token'] as String?)?.trim() ?? '';
+      if (nrt.isNotEmpty) await _store.setString(kAccountRefreshToken, nrt);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   HttpClient _http() {
     final c = HttpClient()
       ..connectionTimeout = const Duration(seconds: 8)
@@ -180,6 +208,7 @@ class CloudClient implements CloudSaveTransport {
     Object? body,
     Map<String, String>? query,
     bool auth = true,
+    bool retried = false,
   }) async {
     final base = await _base;
     if (base.isEmpty) {
@@ -192,7 +221,7 @@ class CloudClient implements CloudSaveTransport {
     SecurityPolicy.assertSafe(uri);
     final client = _http();
     try {
-      return await _guard(() async {
+      final j = await _guard(() async {
         final req = await client.openUrl(method, uri);
         req.headers.set(HttpHeaders.acceptHeader, 'application/json');
         if (auth) {
@@ -222,6 +251,16 @@ class CloudClient implements CloudSaveTransport {
         }
         return j;
       });
+      return j;
+    } on CloudException catch (e) {
+      // access_token 过期：用 refresh_token 换新后无缝重试一次。
+      if (auth && !retried && e.statusCode == 401) {
+        if (await _refresh()) {
+          return _json(method, path,
+              body: body, query: query, auth: auth, retried: true);
+        }
+      }
+      rethrow;
     } finally {
       client.close(force: true);
     }
@@ -247,6 +286,7 @@ class CloudClient implements CloudSaveTransport {
     required String clientKey,
     required File file,
     required String passphrase,
+    bool retried = false,
   }) async {
     final base = await _base;
     if (base.isEmpty) throw CloudException('未配置后端地址');
@@ -300,6 +340,17 @@ class CloudClient implements CloudSaveTransport {
             .timeout(const Duration(seconds: 15));
 
         if (res.statusCode >= 400) {
+          if (!retried && res.statusCode == 401) {
+            if (await _refresh()) {
+              return uploadSave(
+                saveName: saveName,
+                clientKey: clientKey,
+                file: file,
+                passphrase: passphrase,
+                retried: true,
+              );
+            }
+          }
           Map<String, dynamic> j = const {};
           try {
             final d = jsonDecode(text);
@@ -327,15 +378,17 @@ class CloudClient implements CloudSaveTransport {
   /// 列出当前用户的全部云端存档（后端按 updated_at DESC 排序）。
   /// 后端 `GET /api/cloud/saves/list` 直接返回 JSON 数组，不走 `_json`。
   @override
-  Future<List<CloudSaveSummary>> listSaves() async {
+  Future<List<CloudSaveSummary>> listSaves({bool retried = false}) async {
     final base = await _base;
     if (base.isEmpty) throw CloudException('未配置后端地址');
     final cacheKey = '$base|${_store.getString(kAccountUserId) ?? ''}';
 
     // 1) 内存缓存：同一进程内反复打开页面直接命中。
+    // retried 时跳过缓存，强制走联网重试。
     final mem = _savesListCache;
     final memAt = _savesListCacheAt;
-    if (mem != null &&
+    if (!retried &&
+        mem != null &&
         memAt != null &&
         _savesListCacheKey == cacheKey &&
         DateTime.now().difference(memAt) < savesListTtl) {
@@ -343,7 +396,7 @@ class CloudClient implements CloudSaveTransport {
     }
     // 2) 磁盘缓存：跨冷启动命中，页面秒开、不联网。
     final disk = _readDiskCache(cacheKey);
-    if (disk != null) return disk;
+    if (!retried && disk != null) return disk;
 
     // 3) 都没命中才真正联网。
     final uri = Uri.parse('$base/api/cloud/saves/list');
@@ -363,6 +416,11 @@ class CloudClient implements CloudSaveTransport {
               .join()
               .timeout(const Duration(seconds: 15));
           if (res.statusCode >= 400) {
+            if (!retried && res.statusCode == 401) {
+              if (await _refresh()) {
+                return listSaves(retried: true);
+              }
+            }
             Map<String, dynamic> j = const {};
             try {
               final d = jsonDecode(text);
@@ -429,6 +487,7 @@ class CloudClient implements CloudSaveTransport {
     String saveId, {
     required File dest,
     required String passphrase,
+    bool retried = false,
   }) async {
     final base = await _base;
     if (base.isEmpty) throw CloudException('未配置后端地址');
@@ -443,6 +502,12 @@ class CloudClient implements CloudSaveTransport {
         req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $t');
         final res = await req.close().timeout(const Duration(seconds: 60));
         if (res.statusCode >= 400) {
+          if (!retried && res.statusCode == 401) {
+            if (await _refresh()) {
+              return downloadSave(saveId,
+                  dest: dest, passphrase: passphrase, retried: true);
+            }
+          }
           Map<String, dynamic> j = const {};
           try {
             final text = await res.transform(utf8.decoder).join();

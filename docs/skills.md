@@ -123,12 +123,15 @@ cd D:\ai\prj\trae\HuaWei\RetroEmuPouch\app
 cd D:\ai\prj\trae\HuaWei\RetroEmuPouch\app
 . ..\scripts\use-env.ps1 -Ohos -HarmonyOS
 
-# 未签名 HAP（CI/集成用，不能装真机；本地真机调试需 DevEco 自动签名或 AGC 发布证书）
-flutter build hap --debug --no-codesign
-# 产物： build\ohos\hap\entry-default-unsigned.hap
-
-# 签名版：需 DevEco 自动签名 material 或本地脚本（见下）
+# 本地真机调试的正确方法：本机已固化 DevEco 自动签名 material，
+# 下面一条命令直接产出可装真机的签名 HAP（无需手动打开 DevEco，也无需跑自签脚本）
 flutter build hap --debug
+# 产物： build\ohos\hap\entry-default-signed.hap
+
+# 仅 CI / 集成用（产出 unsigned，不能装真机，设备报 no signature file 9568320）：
+# flutter build hap --debug --no-codesign
+
+hdc install -r build\ohos\hap\entry-default-signed.hap
 ```
 
 - `scripts/build-hap.ps1` 封装上述（点源 `use-env.ps1 -Ohos -HarmonyOS` 后调 `flutter build hap`）。
@@ -138,7 +141,9 @@ flutter build hap --debug
 - 包名（bundleName）：鸿蒙侧与 Android 已统一为 `com.retroemupouch.app`（两端同包名，账号/数据可互通）；
   改包名须先在 DevEco/AGC 为新包名生成调试 profile，否则 `SignHap` 报 bundleName mismatch。
 
-### 签名（debug，本地可装）
+### 签名（本机已自动，通常无需手动）
+
+> 本机 `app/ohos/build-profile.json5` 已固化 DevEco 自动签名 material，`flutter build hap --debug` 由 hvigor 直接产出签名 HAP（见上「构建」），**正常不需要任何手动签名步骤**。下面两条仅作历史 / 回退参考。
 
 未签名 HAP 用 `hdc install` 报 `no signature file`（code 9568320），**必须签名**。两条路：
 
@@ -1470,6 +1475,23 @@ hdc shell -b com.retroemupouch.app "cat /data/app/el2/100/base/com.retroemupouch
   `privacy_policy_url` / `terms_url` 两个法律页 URL（共 10 条默认项）。
 - **验证**：`flutter analyze` 0 error（回到既有 14 个 issue，无新增）；
   `flutter test` 19/19 绿；APK 构建安装成功、真机启动正常。真机 UI 走查待装包验证。
+
+### 15.5 彩色功能卡片体系（多色彩区分功能区块，2026-11-06）
+
+参照设置主菜单 `_MenuRow` 的 iOS 风格彩色圆角入口，把"功能分区卡片"统一为**同一套视觉语言**：卡片淡彩底 `accent.withAlpha(31)` + 同色图标 + 同色加粗标题，深浅色模式都清晰。
+
+- **共享组件**：`app/lib/widgets/feature_card.dart` 的 `FeatureCard(icon, title, accent, child)`；`account_page._section` 已收敛为它的转发（网络页三块卡片即由它渲染）。
+- **统一色板**（取自 `_MenuRow`，新增彩色卡片直接复用以保持一致性）：
+  蓝 `0xFF3E7BFA` / 紫 `0xFFB45CF6` / 青 `0xFF22B8A6` / 橙 `0xFFF5A623` / 绿 `0xFF4CAF50` / 靛 `0xFF5C6BC0` / 粉 `0xFFEC6B9D`。
+- **已覆盖页面与配色**：
+  - 网络页 `account_page`：我的账号(蓝) / 云存档(青) / 发现伙伴(橙)
+  - 使用教程 `_TutorialBody`：导入游戏(蓝) / 导入BIOS(靛) / 开始游戏(绿) / 一键招式(橙) / 同步备份(青)
+  - 个性化设置：5 个分区彩色标题（游戏体验橙 / 控制与手柄紫 / 云存档青 / 系统文件靛 / 通用蓝）+ 招式按键卡(橙)
+  - 意见反馈 `_FeedbackChannelButton`：应用商店(绿) / 邮件(蓝) / QQ群(橙) / 微信(青)，淡彩底 + 彩色图标 + 彩色文字的胶囊卡片
+  - 关于与支持：7 块（App info蓝 / 客服绿 / 开源许可靛 / 隐私政策粉 / 网页隐私青 / 备案号紫 / 官方社群橙）
+  - 云存储 `CloudSaveSection`：库设置备份(青) / 游戏存档(蓝) 两块 `FeatureCard`
+- **未改造**：列表型页面（发现伙伴 `peers_page`、文件库 `library_page`）保持列表风格，硬上 accent 会打乱信息层级；`_SettingTile` 自身已是 Card，未整体再套；预留但未接入的 `MembershipSection` / `MyPcSection` 未动。
+- **验证**：`flutter analyze` 0 error；HAP 构建安装真机 OK。
 
 ---
 
