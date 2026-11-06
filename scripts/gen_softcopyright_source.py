@@ -81,9 +81,8 @@ def main():
 body { font-family: "Courier New", Consolas, monospace; font-size: 8.2pt; line-height: 1.18; color: #000; }
 .page { page-break-after: always; }
 .page:last-child { page-break-after: auto; }
-.head { border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 4px; font-size: 8pt; }
-.head .name { float: left; }
-.head .pg { float: right; }
+.head { display: flex; justify-content: space-between; align-items: baseline;
+  border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 4px; font-size: 8pt; }
 pre { white-space: pre; margin: 0; font-family: inherit; }
 </style></head><body>""" % html.escape(SOFT_NAME))
 
