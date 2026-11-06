@@ -230,8 +230,12 @@ hdc shell snapshot_display -f /data/local/tmp/x.jpeg     # 截图
 hdc file recv /data/local/tmp/x.jpeg ./x.jpeg           # 取回本机
 hdc shell "uitest uiInput click 2742 186"              # 坐标点按（用实际分辨率）
 hdc shell "uitest uiInput swipe x1 y1 x2 y2 ms"
+hdc shell uitest screenCap -p /data/local/tmp/x.jpeg   # 原分辨率截图（推荐，见下）
 ```
 > Pura70 无 `input` 命令、`power-shell wakeup` 只点亮到锁屏页；解锁/防锁前置见下「Pura70 调试前置要求」。
+> **看图定坐标**：`snapshot_display` 出的是缩略图；`uitest screenCap -p` 出 1260×2844 原图。OHOS jpeg 末尾有多余字节，
+> 直接读图会报 `unrecognised content at end of stream`，先 `py -c "from PIL import Image; im=Image.open('x.jpeg'); im.load(); im.convert('RGB').save('x.png')"` 转 PNG；
+> 看图工具按 630×1422 显示时，**图上坐标 ×2 = 设备坐标**。点击前务必先截图确认当前界面，勿盲点。
 
 #### 真机运行：首屏白屏排查（已踩坑）
 
@@ -332,10 +336,16 @@ Pura70（SN `2MN0224730027764`）是**开发者模式 + 指纹/密码锁**。锁
    `need connect-key? please confirm a device`（`list targets -v` 状态 `Connected/unknown`）。
    依次试：`hdc kill` → `hdc start` → 重试；轮询 2 分钟；仍不行=设备端 hdcd 卡死，**需物理重插 USB**
    （设备无 input 命令，无法远程恢复）。
-4. **鸿蒙功能自动化路径**：`uitest uiInput` 对 Flutter 内容无效（DOWN 到达、UP 丢失，hilog 可见
-   `VoteTouchValue TOUCH_UP timeout`），点 ArkUI 覆盖层（模拟器 ✕、系统弹窗）有效。Flutter 层功能用
-   `GP_OHOS_SELFTEST` 探针自动化（build-hap.ps1 -DartDefine），报告在
-   `<filesDir>/selftest.txt`，用 `hdc shell -b com.retroemupouch.app cat /data/app/el2/100/base/com.retroemupouch.app/files/selftest.txt` 读取。
+4. **鸿蒙功能自动化路径**：Flutter 层的无 UI 自动化用 `GP_OHOS_SELFTEST` 探针（build-hap.ps1 -DartDefine），
+   报告在 `<filesDir>/selftest.txt`，用 `hdc shell -b com.retroemupouch.app cat /data/app/el2/100/base/com.retroemupouch.app/files/selftest.txt` 读取；
+   点 ArkUI 覆盖层（模拟器 ✕、系统弹窗）用 `uitest uiInput` 一直有效。
+   ⚠️ **2026-11-06 实测修正**：此前记「`uitest uiInput` 对 Flutter 内容无效」并不普遍成立——
+   竖屏 Flutter 页（文件库 / 设置主菜单 / 各子页）的坐标点击**有效**：点右上角齿轮 `(1180,156)` 打开设置、
+   点菜单行进「使用教程 / 关于与支持 / 个性化设置」、点左上返回 `(90,220)` 全部成功，可全程脚本化截图。
+   之前误判"无效"是**坐标算错**：看图工具把 1260×2844 原图缩成 630×1422 显示，**图上坐标须 ×2 才是设备坐标**，
+   盲点缩略图像素自然全部落空。可靠流程：`uitest screenCap -p` + `hdc file recv` → PIL 转干净 PNG →
+   读图确认界面与控件位置 → 图上坐标 ×2 → `uitest uiInput click` → 再截图确认跳转。
+   另外 `dumpLayout` 在空态页命不中文本不代表页面没变，**判页以截图为准**。
 
 #### 已知问题与修复记录（netplay 对端退出卡死，2026-10-31）
 
