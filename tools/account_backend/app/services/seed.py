@@ -22,8 +22,8 @@ def seed_app_configs(db: Session) -> int:
     defaults: list[tuple[str, str, str]] = [
         ("filing_number", "", "工信部 APP 备案号"),
         ("feedback_url", "https://github.com/chihinglau/RetroEmuPouch/issues", "用户反馈入口"),
-        ("feedback_email", "support@retroemupouch.cn", "客服邮箱"),
-        ("qq_group", "123456789", "官方 QQ 群号"),
+        ("feedback_email", "251266110@qq.com", "客服邮箱"),
+        ("qq_group", "251266110", "客服 QQ 号（与 AGC 客服QQ 一致）"),
         ("wechat_id", "RetroEmuPouch", "官方微信号 / 公众号"),
         ("share_message", "趣玩匣 RetroEmuPouch —— 手机上的复古游戏机，重拾时光里的欢喜！", "分享应用文案"),
         ("privacy_policy_url", "https://api.gamepouch.cn/privacy", "隐私政策网页版 URL（应用商店提交 / 应用内跳转）"),
@@ -58,7 +58,7 @@ def seed_cms_documents(db: Session) -> int:
 
 > **运营主体**：【请填写运营主体全称，例如：XX 科技有限公司】
 > **注册地址**：【请填写】
-> **联系邮箱**：support@retroemupouch.cn（亦可从应用内"设置 → 关于"获取）
+> **联系邮箱**：251266110@qq.com（亦可从应用内"设置 → 关于"获取）
 > **应用备案号**：【请填写，对应后台 AppConfig.filing_number】
 
 ## 一、我们收集的信息
@@ -117,7 +117,7 @@ def seed_cms_documents(db: Session) -> int:
 
 ## 九、联系方式
 
-如对本政策有任何疑问，请通过邮箱 support@retroemupouch.cn 联系我们。
+如对本政策有任何疑问，请通过邮箱 251266110@qq.com 联系我们。
 
 ## 十、法律适用
 
@@ -133,7 +133,7 @@ Thank you for using RetroEmuPouch ("this App" or "we"). We highly value your pri
 
 > **Operator**: [fill in the full legal entity name]
 > **Registered address**: [fill in]
-> **Contact email**: support@retroemupouch.cn
+> **Contact email**: 251266110@qq.com
 > **Filing number**: [fill in, corresponds to AppConfig.filing_number]
 
 ## 1. Information We Collect
@@ -170,7 +170,7 @@ This App may integrate: Google Play Billing / Huawei IAP (membership purchase & 
 
 ## 6. Your Rights
 
-You control your personal data: review/correct your profile; delete cloud saves or **delete your account** (which also removes server-side personal data); withdraw previously given consent; contact us at support@retroemupouch.cn for any concern.
+You control your personal data: review/correct your profile; delete cloud saves or **delete your account** (which also removes server-side personal data); withdraw previously given consent; contact us at 251266110@qq.com for any concern.
 
 ## 7. Minors
 
@@ -182,7 +182,7 @@ We may update this policy. Material changes will be notified in-app; core change
 
 ## 9. Contact
 
-Questions? Email support@retroemupouch.cn.
+Questions? Email 251266110@qq.com.
 
 ## 10. Governing Law
 
@@ -197,7 +197,7 @@ This policy is governed by the laws of mainland China; disputes are resolved by 
 欢迎使用「趣玩匣 RetroEmuPouch」（以下简称"本应用"）。在使用前，请您仔细阅读并理解本协议。
 
 > **运营主体**：【请填写运营主体全称】
-> **联系邮箱**：support@retroemupouch.cn
+> **联系邮箱**：251266110@qq.com
 
 ## 一、软件许可
 
@@ -245,7 +245,7 @@ This policy is governed by the laws of mainland China; disputes are resolved by 
 
 ## 九、联系方式
 
-如有疑问，请联系 support@retroemupouch.cn。
+如有疑问，请联系 251266110@qq.com。
 """
 
     EULA_EN = """# End-User License Agreement
@@ -256,7 +256,7 @@ Last updated: 2026-11-04
 Welcome to RetroEmuPouch ("this App"). Please read and understand this agreement before use.
 
 > **Operator**: [fill in the full legal entity name]
-> **Contact email**: support@retroemupouch.cn
+> **Contact email**: 251266110@qq.com
 
 ## 1. License Grant
 
@@ -295,7 +295,7 @@ This agreement is governed by the laws of mainland China; unresolved disputes ar
 
 ## 9. Contact
 
-Questions? Email support@retroemupouch.cn.
+Questions? Email 251266110@qq.com.
 """
 
     docs = [

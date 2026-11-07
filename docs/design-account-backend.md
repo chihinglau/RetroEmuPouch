@@ -269,7 +269,7 @@ class AppConfigService {
 }
 ```
 
-> **现行本地默认值（2026-11-04）**：`privacyPolicyUrl = 'https://api.gamepouch.cn/privacy'`、`feedbackEmail = 'support@retroemupouch.cn'`（原 GitHub Pages URL 与 `example.com` 占位邮箱已废弃）；`filingNumber` 仍为空表示"备案中"。这些值只在云端拉取失败时兜底，正常路径以 `/api/cms/config` 下发为准。
+> **现行本地默认值（2026-11-04）**：`privacyPolicyUrl = 'https://api.gamepouch.cn/privacy'`、`feedbackEmail = '251266110@qq.com'`（原 GitHub Pages URL 与 `example.com` 占位邮箱已废弃）；`filingNumber` 仍为空表示"备案中"。这些值只在云端拉取失败时兜底，正常路径以 `/api/cms/config` 下发为准。
 
 ### 4.2 `ConsentGate` 升级：**版本号感知**
 
@@ -530,7 +530,7 @@ PC (peer_host)  ──一次性 code──►  App
 - [x] ORM：`CmsDocument`（多版本多语言，draft/published/archived 三态）、`AppConfig`（替代全部 LegalConstants）
 - [x] 公开路由（无 auth）：`GET /api/cms/docs/{doc_key}?lang=zh`、`GET /api/cms/doc-meta/{doc_key}`、`GET /api/cms/config`
 - [x] Admin 路由：`POST /admin/docs`（草稿）、`PUT /admin/docs/{id}`（编辑）、`POST /admin/docs/{id}/publish`（发布，自动归档旧 published）、`GET /admin/docs`、`GET /admin/config`、`PUT /admin/config/{key}`、`POST /admin/seed`
-- [x] Seed 数据：4 篇默认已发布文档（privacy_policy zh/en + eula zh/en，版本号 1）、10 条 AppConfig 默认值（filing_number / feedback_url / feedback_email / qq_group / wechat_id / share_message / **privacy_policy_url** / **terms_url** / enable_consent_gate / ad_sdk_consent_required）；`feedback_email` 默认 `support@retroemupouch.cn`，两个 URL 默认 `https://api.gamepouch.cn/privacy` 与 `/terms`（2026-11-04 新增）
+- [x] Seed 数据：4 篇默认已发布文档（privacy_policy zh/en + eula zh/en，版本号 1）、10 条 AppConfig 默认值（filing_number / feedback_url / feedback_email / qq_group / wechat_id / share_message / **privacy_policy_url** / **terms_url** / enable_consent_gate / ad_sdk_consent_required）；`feedback_email` 默认 `251266110@qq.com`，两个 URL 默认 `https://api.gamepouch.cn/privacy` 与 `/terms`（2026-11-04 新增）
 - [x] 冒烟测试：Admin seed → cms/config 拉 10 条 → cms/docs 拉中文隐私政策 → cms/doc-meta 查版本号 → Admin update config → 公开 config 验证已更新
 
 ### ✅ Phase 2.5：应用商店合规网页（2026-11-04）
@@ -924,7 +924,7 @@ App 访问地址：`http://<PC局域网IP>:8000`
 
 | 文件 | 改什么 |
 |---|---|
-| `features/legal/legal_constants.dart` | 全部静态项退化为本地默认值；启动时调 `GET /api/cms/config` 拉取最新值；现行默认 `privacyPolicyUrl=https://api.gamepouch.cn/privacy`、`feedbackEmail=support@retroemupouch.cn` |
+| `features/legal/legal_constants.dart` | 全部静态项退化为本地默认值；启动时调 `GET /api/cms/config` 拉取最新值；现行默认 `privacyPolicyUrl=https://api.gamepouch.cn/privacy`、`feedbackEmail=251266110@qq.com` |
 | `features/legal/consent_gate.dart` | 加版本号比对：启动时调 `GET /api/consent/status`；版本号不一致或从未同意才弹门禁；点"同意"时 `POST /api/consent/accept`；内嵌 `MaterialApp` 挂 `navigatorKey`，两个「查看」按钮经 `_navKey.currentState!.push()` 导航 |
 | `features/legal/privacy_policy_page.dart` / `eula_page.dart` | `CloudConfigService.fetchDoc()` 从公网 `/api/cms/docs/{doc_key}?lang=zh` 拉 Markdown，用 `SelectableText` 展示，失败回退文件内硬编码模板 |
 
@@ -2510,7 +2510,7 @@ start "" /MIN cloudflared.exe tunnel --retries 9999 run --token <token> retroemu
 | `features/cloud/cloud_save_section.dart` | **新增（2026-11-04 第二波）** | 账号页云存档 UI：会员门控 / 设密码 / 列表 / 上传 / 下载解密 / 删除 |
 | `pubspec.yaml` | **修改（2026-11-04 第二波）** | 加 `cryptography` 依赖 |
 | `features/legal/cloud_config_service.dart` | **修改（2026-11-04 第三波）** | `load()` / `fetchDoc()` 从 `effectiveBaseUrl(store)` 改为 `kDefaultBackendUrl`，公开内容硬走公网 |
-| `features/legal/legal_constants.dart` | **修改（第三波）** | `privacyPolicyUrl` → `https://api.gamepouch.cn/privacy`；`feedbackEmail` → `support@retroemupouch.cn` |
+| `features/legal/legal_constants.dart` | **修改（第三波）** | `privacyPolicyUrl` → `https://api.gamepouch.cn/privacy`；`feedbackEmail` → `251266110@qq.com` |
 | `features/legal/consent_gate.dart` | **修改（第三波）** | 内嵌 `MaterialApp` 加 `navigatorKey`，两个「查看」按钮改 `_navKey.currentState!.push()` 修复点击无响应 |
 | `features/account/account_backend.dart` | **修改（第三波）** | 真实后端模式始终 `HttpAccountService`；`createAccountBackend()` 内 `svc.load()` 包 try/catch |
 | `features/account/account_page.dart` | **修改（第三波）** | 新增 `_ready` 守卫修复首帧 `LateInitializationError` 红屏；调试入口地址默认 `kDefaultBackendUrl` |

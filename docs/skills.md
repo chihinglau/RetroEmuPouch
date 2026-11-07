@@ -1483,7 +1483,7 @@ hdc shell -b com.retroemupouch.app "cat /data/app/el2/100/base/com.retroemupouch
   等**仅作拉取失败时的本地兜底**，正常值由后端 AppConfig 经
   `CloudConfigService` 下发，在管理后台改即可（App「关于与支持」页打开时刷新）。
   现行兜底值：`privacyPolicyUrl = https://api.gamepouch.cn/privacy`、
-  `feedbackEmail = support@retroemupouch.cn`；AppConfig 另含
+  `feedbackEmail = 251266110@qq.com`；AppConfig 另含
   `privacy_policy_url` / `terms_url` 两个法律页 URL（共 10 条默认项）。
 - **验证**：`flutter analyze` 0 error（回到既有 14 个 issue，无新增）；
   `flutter test` 19/19 绿；APK 构建安装成功、真机启动正常。真机 UI 走查待装包验证。
@@ -1757,6 +1757,53 @@ AGC「应用分类标签」页据此填写：
   回到主机后 PnP 应出现 `HDC Interface`（`USB\VID_12D1&PID_1101`）与 `HUAWEI Pura 70 Pro`。
   可用 `Get-PnpDevice -PresentOnly | ? InstanceId -match 'VID_12D1|VID_0E0F'` 快速判因。
 - 同时插着 Android 机时（如 HONOR V30 PRO，adb 可见），`hdc` 命令加 `-t 2MN0224730027764` 明确指定。
+
+#### 客服联系方式与官网（2026-11-07 实测）
+
+AGC「应用信息 → 客服信息」页共 5 个字段，填写口径：
+
+| 字段 | 值 | 说明 |
+|---|---|---|
+| 官网 | `https://api.gamepouch.cn` | 可达（`/privacy` `/terms` 均 200）；见下方「官网可达性」 |
+| 客服电话号码 | **留空** | 会公开展示在应用详情页；填个人手机号有骚扰风险，留空不阻塞（已有邮箱 + QQ） |
+| 客服邮箱 | `251266110@qq.com` | AGC 账号自动带出（浅蓝底），以它为准 |
+| 客服QQ | `251266110` | 与 App 内「客服QQ反馈」一致 |
+| App内问题反馈路径 | 见下 | **不是联系方式**，填邮箱会被判无效 |
+
+「App内问题反馈路径」要填的是用户怎么在 App 里点到反馈入口（100 字上限），直接复制：
+
+```
+设置 → 意见反馈 → 选择「发送邮件 / 客服QQ / 微信 / 跳转应用商店」提交问题；也可在 设置 → 关于与支持 → 客服中心 查看客服邮箱与反馈链接
+```
+
+路径对应 `settings_sheet.dart`：主菜单「意见反馈」→ `_FeedbackPageBody` 四个渠道按钮；
+另一入口「关于与支持」→「客服中心」卡片显示 `cfg.feedbackEmail` / `cfg.feedbackUrl`。
+
+**官网可达性（2026-11-07 复测）**：`/` 200（后端元数据 JSON）、`/healthz` 200
+`{"ok":true}`、`/privacy` 与 `/terms` 均 200 且 CMS 渲染正文正常。域名 / HTTPS / Tunnel 链路
+本身没问题。当天首次探测曾短暂返回 Cloudflare **530**，是**后端服务 / cloudflared 当时没起来**
+的边缘错误（服务启动后立即恢复 200），不是 DNS 未切或证书配置缺陷——遇到 530 先查服务进程，
+别去改 DNS 或重签证书。提审前用手机 4G（非内网）复核这几条即可。
+⚠️ 但根路径返回的是 `{"app":"RetroEmuPouch-AccountBackend","version":...,"docs":"/docs"}` 这类
+API 元数据，不是面向用户的官网首页。AGC「官网」填它虽能打开，审核点开只看到一段 JSON；
+建议给 `/` 加一个简单落地页，或暂填 `https://github.com/chihinglau/RetroEmuPouch`。
+
+**客服邮箱统一（2026-11-07）**：AGC 带出的是 `251266110@qq.com`，而项目原先 6 处写的是
+`support@retroemupouch.cn`（域名邮箱，需确认 MX 已配置且能收信；AGC 带出的 QQ 邮箱确定可达），
+会出现「商店一个邮箱、隐私政策另一个邮箱」。已统一改为 QQ 邮箱，涉及
+`app/lib/features/legal/legal_constants.dart`、`tools/account_backend/app/services/seed.py`
+（AppConfig 默认值 + 中英文隐私政策 / EULA 模板）、`docs/privacy.md`、
+`docs/design-account-*.md`、`docs/skills.md`。
+⚠️ 生产库已迁移，App 内实际显示 `CloudConfigService` 云端下发值，**还必须在管理后台
+把 AppConfig `feedback_email` 改成同一值**，只改代码仅影响拉取失败时的兜底。
+
+**假 QQ 群号已修**：`LegalConstants.qqGroup` / seed `qq_group` 原为占位 `123456789`，
+用户复制了加不了群，会被视为无效反馈渠道。现改为客服 QQ `251266110`，UI 文案
+「QQ群反馈 → 客服QQ反馈」「搜索加群 → 搜索添加」同步改；字段名 `qqGroup` 与后端 key
+`qq_group` 保留以免破坏云端配置兼容。`wechatId = 'RetroEmuPouch'` 仍未核验，
+若非真实微信号，建议删掉「微信反馈」渠道或换成真号。
+
+**备案号**：`filing_number` 仍为空，ICP 备案在短信核验阶段、APP 备案未做，最终提审的硬门槛。
 
 ---
 
@@ -2376,7 +2423,7 @@ Invoke-RestMethod -Uri "https://api.gamepouch.cn/api/cloud/saves/list" -Headers 
 |---|---|
 | `features/legal/cloud_config_service.dart` | `load()` / `fetchDoc()` 改用 `kDefaultBackendUrl`，CMS 公开内容与账号后端地址解耦 |
 | `features/legal/consent_gate.dart` | `navigatorKey: _navKey` + `_navKey.currentState!.push()`，修复两个「查看」按钮点击无响应 |
-| `features/legal/legal_constants.dart` | 兜底 URL / 邮箱改为 `https://api.gamepouch.cn/privacy`、`support@retroemupouch.cn` |
+| `features/legal/legal_constants.dart` | 兜底 URL / 邮箱改为 `https://api.gamepouch.cn/privacy`、`251266110@qq.com` |
 | `features/account/account_backend.dart` | 真实后端始终 Http；`createAccountBackend()` 内 `svc.load()` 包 try/catch |
 | `features/account/account_page.dart` | `_ready` 守卫修红屏；调试入口地址默认公网域名 |
 | `features/account/http_account.dart` | `_baseUrl` 空值回退 `kDefaultBackendUrl` |

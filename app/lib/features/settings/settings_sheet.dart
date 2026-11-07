@@ -225,7 +225,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
                   icon: Icons.mail_outline,
                   iconColor: const Color(0xFF4CAF50),
                   title: '意见反馈',
-                  subtitle: '应用商店 · 邮件 · QQ群 · 微信',
+                  subtitle: '应用商店 · 邮件 · 客服QQ · 微信',
                   onTap: _openFeedback,
                 ),
                 _MenuRow(
@@ -580,7 +580,7 @@ class _SettingsSheetState extends State<SettingsSheet> {
               leading: Icon(Icons.people_outline,
                   color: const Color(0xFFF5A623)),
               title: const Text('官方社群'),
-              subtitle: Text('QQ 群：${cfg.qqGroup}\n微信号：${cfg.wechatId}'),
+              subtitle: Text('客服QQ：${cfg.qqGroup}\n微信号：${cfg.wechatId}'),
             ),
           ),
           Padding(
@@ -694,7 +694,7 @@ class _MenuRow extends StatelessWidget {
 }
 
 /// 「意见反馈」子页面正文：多渠道选择（参照 iOS 反馈弹窗风格）。
-/// 零依赖实现：应用商店走 `PlatformPal.openStore()`；邮件 / QQ群 / 微信复制
+/// 零依赖实现：应用商店走 `PlatformPal.openStore()`；邮件 / 客服QQ / 微信复制
 /// 账号到剪贴板（无 url_launcher / share 插件），发布时替换 `LegalConstants`。
 class _FeedbackPageBody extends StatelessWidget {
   const _FeedbackPageBody({required this.pal});
@@ -740,11 +740,11 @@ class _FeedbackPageBody extends StatelessWidget {
               _copy(context, CloudConfigService.instance.feedbackEmail, '邮箱已复制，可在邮件 App 粘贴发送'),
         ),
         _FeedbackChannelButton(
-          label: 'QQ群反馈',
+          label: '客服QQ反馈',
           icon: Icons.group_outlined,
           accent: const Color(0xFFF5A623),
           onTap: () => _copy(
-              context, CloudConfigService.instance.qqGroup, 'QQ群号已复制，可在 QQ 中搜索加群'),
+              context, CloudConfigService.instance.qqGroup, '客服QQ号已复制，可在 QQ 中搜索添加'),
         ),
         _FeedbackChannelButton(
           label: '微信反馈',

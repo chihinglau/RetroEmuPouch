@@ -26,10 +26,13 @@ class LegalConstants {
       '趣玩匣 RetroEmuPouch —— 手机上的复古游戏机，重拾时光里的欢喜！';
 
   /// 客服邮箱（意见反馈 → 发送邮件；无 url_launcher，复制给用户去邮箱发送）。
-  static const String feedbackEmail = 'support@retroemupouch.cn';
+  /// 与 AGC 应用信息页「客服邮箱」一致（2026-11-07 统一）。
+  static const String feedbackEmail = '251266110@qq.com';
 
-  /// 官方 QQ 群号（意见反馈 → QQ群反馈；复制后加群）。
-  static const String qqGroup = '123456789';
+  /// 客服 QQ 号（意见反馈 → 客服QQ反馈；复制后添加）。
+  /// 与 AGC「客服QQ」一致；字段名沿用 qqGroup 以兼容后端 AppConfig key `qq_group`。
+  /// 旧值 `123456789` 是未建群时的占位假群号，已废弃。
+  static const String qqGroup = '251266110';
 
   /// 官方微信号 / 公众号（意见反馈 → 微信反馈；复制后添加）。
   static const String wechatId = 'RetroEmuPouch';

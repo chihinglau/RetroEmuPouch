@@ -61,7 +61,7 @@
 
 行使上述权利或对本政策有疑问，请通过以下方式联系我们：
 
-- 邮箱：`support@retroemupouch.cn`（与后端 AppConfig `feedback_email` / App 内 `LegalConstants.feedbackEmail` 兜底一致；后台可改并实时下发到 App「关于与支持」页）
+- 邮箱：`251266110@qq.com`（与 AGC 应用信息页「客服邮箱」、后端 AppConfig `feedback_email` / App 内 `LegalConstants.feedbackEmail` 兜底一致；后台可改并实时下发到 App「关于与支持」页）
 
 ## 9. 政策变更
 

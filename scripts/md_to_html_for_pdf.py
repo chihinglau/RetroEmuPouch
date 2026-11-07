@@ -8,6 +8,11 @@
 - 每个 .page 顶部是一个普通文档流的 .head（flex 左右布局，不会塌陷重叠）；
 - 页眉含软件名称+版本号，右上角为「第 X 页 / 共 N 页」。
 - 行距/字号保证每打印页约 30+ 行；含图页天然较少(合规允许)。
+
+2026-11-07 复核：原 PAGE_LINES=36 / CHARS_PER_LINE=40 的估算偏保守，
+实测 18 页中有 10 个非含图页文字不足 30 行。把估算调到更贴近 A4 实际容量
+（10.5pt / 1.42 行高、14mm 页边距下约 46 CJK 字/行），并放宽每页权重，
+让纯文字页达标；含图页(5 页)、封面与末页按例外处理。
 """
 import os
 import re
@@ -20,8 +25,8 @@ OUT = os.path.join(ROOT, "docs", "soft-copyright", "用户操作手册.html")
 
 SOFT_NAME = "趣玩匣(RetroEmuPouch)复古游戏模拟器软件"
 VERSION = "V1.8.4"
-PAGE_LINES = 36          # 每页目标行数（留出页眉与余量，实际 30~45 行均合规）
-CHARS_PER_LINE = 40      # A4 正文宽度约可容纳的 CJK 字符数（估算用）
+PAGE_LINES = 44          # 每页目标权重（原 36 偏保守，见上方复核说明）
+CHARS_PER_LINE = 46      # A4 正文宽度在 10.5pt 下约可容纳的 CJK 字符数
 
 
 def inline(t):
@@ -141,17 +146,17 @@ def main():
     parts.append("""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <title>%s 用户操作手册</title>
 <style>
-@page { size: A4; margin: 16mm 14mm; }
+@page { size: A4; margin: 14mm 14mm; }
 * { box-sizing: border-box; }
-body { font-family: "Microsoft YaHei", "SimSun", "Songti SC", serif; font-size: 11pt; line-height: 1.5; color: #000; }
+body { font-family: "Microsoft YaHei", "SimSun", "Songti SC", serif; font-size: 10.5pt; line-height: 1.42; color: #000; }
 .page { page-break-after: always; }
 .page:last-child { page-break-after: auto; }
 .head { display: flex; justify-content: space-between; align-items: baseline;
-  border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 4px; font-size: 9pt; }
-h1 { font-size: 17pt; text-align: center; margin: 4mm 0 3mm; }
-h2 { font-size: 13pt; margin: 4mm 0 2mm; border-left: 4px solid #000; padding-left: 6px; }
-h3 { font-size: 11.5pt; margin: 3mm 0 1mm; }
-p { margin: 1.2mm 0; text-align: justify; }
+  border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 3px; font-size: 9pt; }
+h1 { font-size: 16pt; text-align: center; margin: 3mm 0 2mm; }
+h2 { font-size: 12.5pt; margin: 3mm 0 1.5mm; border-left: 4px solid #000; padding-left: 6px; }
+h3 { font-size: 11pt; margin: 2.5mm 0 1mm; }
+p { margin: 1mm 0; text-align: justify; }
 ul, ol { margin: 1.2mm 0; padding-left: 22px; }
 li { margin: 0.8mm 0; }
 blockquote { border-left: 3px solid #999; margin: 1.5mm 0; padding: 1mm 6px; color: #333; background: #f6f6f6; }

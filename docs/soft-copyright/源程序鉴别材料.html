@@ -10,7 +10,7 @@ body { font-family: "Courier New", Consolas, monospace; font-size: 8.2pt; line-h
   border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 4px; font-size: 8pt; }
 pre { white-space: pre; margin: 0; font-family: inherit; }
 </style></head><body>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 1 页 / 共 60 页（源程序实际 794 页）</span></div><pre>// ===== FILE: app/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java =====
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 1 页 / 共 60 页（源程序实际 661 页）</span></div><pre>// ===== FILE: app/android/app/src/main/java/io/flutter/plugins/GeneratedPluginRegistrant.java =====
 package io.flutter.plugins;
 
 import androidx.annotation.Keep;
@@ -59,8 +59,8 @@ public final class GeneratedPluginRegistrant {
       Log.e(TAG, &quot;Error registering plugin webview_flutter_android, io.flutter.plugins.webviewflutter.WebViewFlutterPlugin&quot;, e);
     }
   }
-}</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 2 页 / 共 60 页（源程序实际 794 页）</span></div><pre>
+}
+
 // ===== FILE: app/android/app/src/main/kotlin/com/gamepouch/app/CheatStore.kt =====
 package com.retroemupouch.app
 
@@ -69,8 +69,8 @@ import org.json.JSONObject
 import java.io.File
 
 /** A selectable value inside a [ChoiceCheat] (e.g. 装备=剑 → its code). */
-data class CheatOption(val label: String, val code: String)
-
+data class CheatOption(val label: String, val code: String)</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 2 页 / 共 60 页（源程序实际 661 页）</span></div><pre>
 /**
  * A user-facing cheat command. Commands are authored on the PC manager and
  * synced to the phone; the emulator never asks the player to type codes.
@@ -109,8 +109,8 @@ sealed class CheatCommand {
 
         override fun toJson() = JSONObject()
             .put(&quot;name&quot;, name).put(&quot;kind&quot;, &quot;choice&quot;)
-            .put(&quot;selected&quot;, selected)</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 3 页 / 共 60 页（源程序实际 794 页）</span></div><pre>            .put(&quot;options&quot;, JSONArray().apply {
+            .put(&quot;selected&quot;, selected)
+            .put(&quot;options&quot;, JSONArray().apply {
                 options.forEach { put(JSONObject().put(&quot;label&quot;, it.label).put(&quot;code&quot;, it.code)) }
             })
     }
@@ -129,8 +129,8 @@ sealed class CheatCommand {
                         val p = arr.optJSONObject(i) ?: return@mapNotNull null
                         val code = p.optString(&quot;code&quot;).trim()
                         if (code.isEmpty()) return@mapNotNull null
-                        CheatOption(
-                            p.optString(&quot;label&quot;).trim().ifEmpty { code }, code)
+                        CheatOption(</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 3 页 / 共 60 页（源程序实际 661 页）</span></div><pre>                            p.optString(&quot;label&quot;).trim().ifEmpty { code }, code)
                     }.toMutableList()
                     if (opts.isEmpty()) return null
                     val sel = o.optInt(&quot;selected&quot;, -1).let { if (it in opts.indices) it else -1 }
@@ -159,8 +159,8 @@ sealed class CheatCommand {
  * picks options and writes that state back. A non-empty local entry wins for
  * its CRC (it carries the player&#x27;s toggle state); otherwise the cloud
  * snapshot is used — mirroring RomLibrary._applyCheats on the Dart side.
- */</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 4 页 / 共 60 页（源程序实际 794 页）</span></div><pre>object CheatStore {
+ */
+object CheatStore {
     private const val DIR = &quot;library&quot;
     private const val FILE = &quot;cheats.json&quot;
     private const val CLOUD_FILE = &quot;cloud_cheats.json&quot;
@@ -189,8 +189,8 @@ sealed class CheatCommand {
             null
         }
     }
-
-    /** Loads commands for [romRel]; empty list when none / unreadable. */
+</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 4 页 / 共 60 页（源程序实际 661 页）</span></div><pre>    /** Loads commands for [romRel]; empty list when none / unreadable. */
     fun load(filesDir: File, romRel: String): MutableList&lt;CheatCommand&gt; {
         val key = crcKey(filesDir, romRel) ?: return mutableListOf()
         // Local (PC/ADB-synced or toggled in-game) wins when it actually has
@@ -209,8 +209,8 @@ sealed class CheatCommand {
         if (!f.exists()) return null
         return try {
             val byCrc = JSONObject(f.readText()).optJSONObject(&quot;byCrc&quot;) ?: return null
-            val arr = byCrc.optJSONArray(key) ?: return null</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 5 页 / 共 60 页（源程序实际 794 页）</span></div><pre>            (0 until arr.length()).mapNotNull { i -&gt;
+            val arr = byCrc.optJSONArray(key) ?: return null
+            (0 until arr.length()).mapNotNull { i -&gt;
                 arr.optJSONObject(i)?.let(CheatCommand::fromJson)
             }.toMutableList()
         } catch (_: Exception) {
@@ -249,8 +249,8 @@ import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
+import android.graphics.Bitmap</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 5 页 / 共 60 页（源程序实际 661 页）</span></div><pre>import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.StateListDrawable
@@ -259,8 +259,8 @@ import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import android.os.Bundle
 import android.util.Log
-import android.view.Gravity</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 6 页 / 共 60 页（源程序实际 794 页）</span></div><pre>import android.view.View
+import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
 import android.view.WindowManager
@@ -310,7 +310,7 @@ import javax.microedition.khronos.opengles.GL10
  *  - [sp] control sizes (icons, knobs) — the shorter of width/height so
  *    a landscape phone and a portrait phone get the same visual size.
  *</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 7 页 / 共 60 页（源程序实际 794 页）</span></div><pre> * Every input is expected in 0..1; values outside that range are passed
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 6 页 / 共 60 页（源程序实际 661 页）</span></div><pre> * Every input is expected in 0..1; values outside that range are passed
  * through as-is, so callers can also express &quot;0.5dp above safeTopPx&quot; by
  * mixing fractions and pixel offsets at the call site.
  */
@@ -359,8 +359,8 @@ class EmulatorActivity : Activity() {
     // onDestroy so the plaintext is gone as soon as the activity tears
     // down.
     private var plainRom: java.io.File? = null
-    private var speedButton: Button? = null</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 8 页 / 共 60 页（源程序实际 794 页）</span></div><pre>    private val speedSteps = intArrayOf(1, 2, 4, 6, 8)
+    private var speedButton: Button? = null
+    private val speedSteps = intArrayOf(1, 2, 4, 6, 8)
     private var speedIndex = 0
     // Corner toolbar (≡ top-left, ✕ top-right, expanding pill panel).
     // Stored as fields so the WindowInsets listener (see onCreate) can
@@ -369,8 +369,8 @@ class EmulatorActivity : Activity() {
     // (e.g. Xiaomi / MIUI).
     private var menuIconLp: FrameLayout.LayoutParams? = null
     private var exitIconLp: FrameLayout.LayoutParams? = null
-    private var menuPanelLp: FrameLayout.LayoutParams? = null
-    private var menuIcon: View? = null
+    private var menuPanelLp: FrameLayout.LayoutParams? = null</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 7 页 / 共 60 页（源程序实际 661 页）</span></div><pre>    private var menuIcon: View? = null
     private var exitIcon: View? = null
     private var menuPanel: View? = null
 
@@ -409,8 +409,8 @@ class EmulatorActivity : Activity() {
 
     // Netplay-safe one-button special moves: the macro is replayed frame by
     // frame into the SAME local-mask channel the pad uses (renderer.buttonMask,
-    // pushed per frame via nativeNetplayLocalMask), so the sequence is just</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 9 页 / 共 60 页（源程序实际 794 页）</span></div><pre>    // ordinary local input and cannot desync the pair — unlike
+    // pushed per frame via nativeNetplayLocalMask), so the sequence is just
+    // ordinary local input and cannot desync the pair — unlike
     // nativePlayMacro, which bypasses the per-frame bitmask.
     @Volatile private var npPadMask = 0
     @Volatile private var npMacroMask = 0
@@ -429,8 +429,8 @@ class EmulatorActivity : Activity() {
     // Guest gate wait runs from the frame loop (never inside
     // onSurfaceCreated): buffers swapped during that callback are not shown
     // and the system keeps the white starting window up, so the parked guest
-    // would stare at a blank white screen for the whole SRAM sync.
-    @Volatile private var npBootDeferred = false
+    // would stare at a blank white screen for the whole SRAM sync.</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 8 页 / 共 60 页（源程序实际 661 页）</span></div><pre>    @Volatile private var npBootDeferred = false
     @Volatile private var npBootDeadlineNs = 0L
 
     /**
@@ -459,8 +459,8 @@ class EmulatorActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
         // Capture screen dimensions *once* per onCreate. Resources.displayMetrics
-        // is updated by Android on rotation / fold / multi-window before onCreate</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 10 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        // fires, so the values already reflect the current orientation; every
+        // is updated by Android on rotation / fold / multi-window before onCreate
+        // fires, so the values already reflect the current orientation; every
         // later percentage (icon size, corner margin, panel button, HUD gap, …)
         // is a fraction of these pixels and stays in proportion on every phone.
         sizing = Sizing(
@@ -489,8 +489,8 @@ class EmulatorActivity : Activity() {
                 Log.e(&quot;GS-Rom&quot;, &quot;decrypt failed: ${e.message}&quot;); finish(); return
             }
         } else null
-        val saveDir = File(filesDir, &quot;saves&quot;).apply { mkdirs() }.absolutePath
-        val sysDir = File(filesDir, &quot;system&quot;).apply { mkdirs() }.absolutePath
+        val saveDir = File(filesDir, &quot;saves&quot;).apply { mkdirs() }.absolutePath</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 9 页 / 共 60 页（源程序实际 661 页）</span></div><pre>        val sysDir = File(filesDir, &quot;system&quot;).apply { mkdirs() }.absolutePath
         val logDir = File(filesDir, &quot;logs&quot;).apply { mkdirs() }
         val logPath = File(logDir, &quot;run-${System.currentTimeMillis()}.log&quot;).absolutePath
         NpLog.init(logDir)
@@ -509,8 +509,8 @@ class EmulatorActivity : Activity() {
         // CRC32 so different games can never share a save file; fall back to
         // the file base name for unindexed ROMs (benchmark / sideloaded).
         val crcKey = CheatStore.crcKey(filesDir, romRel)
-        val baseName = romFile.nameWithoutExtension</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 11 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        saveKey = crcKey ?: baseName
+        val baseName = romFile.nameWithoutExtension
+        saveKey = crcKey ?: baseName
         // Netplay sessions always key saves by the signaling CRC. A malformed
         // config is rejected before touching the runner.
         npCfg = NetplaySessionCfg.from(intent)
@@ -549,8 +549,8 @@ class EmulatorActivity : Activity() {
         if (!benchMode &amp;&amp; npCfg == null) {
             romRelPath = romRel
             cheats = CheatStore.load(filesDir, romRel)
-        }
-        // Safe insets are derived from the surface size in onSurfaceChanged():
+        }</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 10 页 / 共 60 页（源程序实际 661 页）</span></div><pre>        // Safe insets are derived from the surface size in onSurfaceChanged():
         // every platform plays on the same reserved &quot;stage&quot; (at least the NES
         // 8:7 side bars, enlarged where a profile&#x27;s controls need more room),
         // so the picture never slides under the pad / corner menu. Benchmark
@@ -559,8 +559,8 @@ class EmulatorActivity : Activity() {
         renderer.onFatal = { msg -&gt; runOnUiThread {
             // A plain Toast disappears before the user can read it (the
             // activity finishes immediately), which reads as a silent crash.
-            // Keep a modal dialog up so the concrete reason is visible.</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 12 页 / 共 60 页（源程序实际 794 页）</span></div><pre>            AlertDialog.Builder(this)
+            // Keep a modal dialog up so the concrete reason is visible.
+            AlertDialog.Builder(this)
                 .setTitle(&quot;游戏无法启动&quot;)
                 .setMessage(msg)
                 .setCancelable(false)
@@ -610,7 +610,7 @@ class EmulatorActivity : Activity() {
                 pad.setMacros(cfg.activeProfile().moves.map {
                     it.label to runCatching { ScriptCompiler.compile(it.script) }
                         .getOrElse { IntArray(0) }</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 13 页 / 共 60 页（源程序实际 794 页）</span></div><pre>                })
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 11 页 / 共 60 页（源程序实际 661 页）</span></div><pre>                })
                 Log.i(&quot;GS-Emu&quot;,
                     &quot;moves loaded active=${cfg.activeProfileId} &quot; +
                     &quot;moves=${cfg.activeProfile().moves.size}&quot;)
@@ -659,8 +659,8 @@ class EmulatorActivity : Activity() {
                     cancelNpMacro()
                 }
             }
-            root.addView(pad, FrameLayout.LayoutParams(</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 14 页 / 共 60 页（源程序实际 794 页）</span></div><pre>                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+            root.addView(pad, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             ))
             // Corner toolbar (功能/✕/pop-out panel) is installed lazily by
             // installChrome() once the root view reports real pixels — see
@@ -669,8 +669,8 @@ class EmulatorActivity : Activity() {
             pad = VirtualPadView(this) // unused, keeps renderer contract simple
         }
 
-        // Netplay phase overlay + live session HUD.
-        npCfg?.let { cfg -&gt;
+        // Netplay phase overlay + live session HUD.</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 12 页 / 共 60 页（源程序实际 661 页）</span></div><pre>        npCfg?.let { cfg -&gt;
             npOverlay = TextView(this).apply {
                 text = &quot;正在建立联机…&quot;
                 setTextColor(Color.WHITE)
@@ -709,8 +709,8 @@ class EmulatorActivity : Activity() {
                 }
             }
         }
-</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 15 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        renderer.onStageChanged = { runOnUiThread { layoutHud() } }
+
+        renderer.onStageChanged = { runOnUiThread { layoutHud() } }
 
         // ----- apply persisted settings (see AppSettings on the Dart side) -----
         applyPersistedSettings()
@@ -729,8 +729,8 @@ class EmulatorActivity : Activity() {
         // re-anchors the lazily-installed toolbar (or just remembers the
         // value until installChrome runs).
         root.setOnApplyWindowInsetsListener { _, insets -&gt;
-            // Chrome row only needs the top (status bar / cutout).
-            val statusBar = insets.getInsets(
+            // Chrome row only needs the top (status bar / cutout).</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 13 页 / 共 60 页（源程序实际 661 页）</span></div><pre>            val statusBar = insets.getInsets(
                 android.view.WindowInsets.Type.statusBars()
                     or android.view.WindowInsets.Type.displayCutout()
             )
@@ -759,8 +759,8 @@ class EmulatorActivity : Activity() {
         root.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -&gt;
             if (benchMode) return@addOnLayoutChangeListener
             val w = root.width
-            val h = root.height</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 16 页 / 共 60 页（源程序实际 794 页）</span></div><pre>            if (w &lt;= 0 || h &lt;= 0) return@addOnLayoutChangeListener
+            val h = root.height
+            if (w &lt;= 0 || h &lt;= 0) return@addOnLayoutChangeListener
             root.post {
                 if (!chromeInstalled) installChrome(w, h)
                 else onChromeSizeChanged(w, h)
@@ -789,8 +789,8 @@ class EmulatorActivity : Activity() {
     /**
      * Build and attach the corner toolbar (功能 opener · ✕ exit · pop-out
      * panel) sized from the window&#x27;s real laid-out pixels [w]×[h]. Runs
-     * exactly once, on the first valid layout pass. Pill pixel sizes only
-     * depend on the short side, which is identical before/after a
+     * exactly once, on the first valid layout pass. Pill pixel sizes only</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 14 页 / 共 60 页（源程序实际 661 页）</span></div><pre>     * depend on the short side, which is identical before/after a
      * portrait&lt;-&gt;landscape swap of a fullscreen window, so later swaps are
      * handled by [onChromeSizeChanged] without rebuilding the pills.
      */
@@ -809,8 +809,8 @@ class EmulatorActivity : Activity() {
         val pillH    = sizing.sp(0.077f)
         // Pills are shorter than the legacy circular icon; nudge the whole
         // top row down by half the difference so the row stays centred on
-        // the same band it used to occupy.</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 17 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        val rowNudge = (sizing.sp(0.10f) - pillH) / 2
+        // the same band it used to occupy.
+        val rowNudge = (sizing.sp(0.10f) - pillH) / 2
 
         // Top-left: &quot;功能&quot; opener pill.
         val menuLp = FrameLayout.LayoutParams(
@@ -849,8 +849,8 @@ class EmulatorActivity : Activity() {
             val lp = it.layoutParams as FrameLayout.LayoutParams
             lp.topMargin = sizing.hp(0.045f)
             it.layoutParams = lp
-        }
-        root.requestApplyInsets()
+        }</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 15 页 / 共 60 页（源程序实际 661 页）</span></div><pre>        root.requestApplyInsets()
         layoutHud()
     }
 
@@ -859,8 +859,8 @@ class EmulatorActivity : Activity() {
      * Short-side is unchanged by a 90° swap, so pill sizes stay valid;
      * only width/height-fraction margins and the inter-pill gaps move.
      */
-    private fun onChromeSizeChanged(w: Int, h: Int) {</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 18 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        if (!chromeInstalled || w &lt;= 0 || h &lt;= 0) return
+    private fun onChromeSizeChanged(w: Int, h: Int) {
+        if (!chromeInstalled || w &lt;= 0 || h &lt;= 0) return
         if (w == chromeW &amp;&amp; h == chromeH) return
         chromeW = w
         chromeH = h
@@ -910,7 +910,7 @@ class EmulatorActivity : Activity() {
         val top = chromeInsetTop + sizing.hp(0.017f) +
             (sizing.sp(0.10f) - sizing.sp(0.077f)) / 2f
         // root is fullscreen at window-Y 0, so local Y == window Y here.</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 19 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        pad.setTopChromeBottom(top + sizing.sp(0.077f))
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 16 页 / 共 60 页（源程序实际 661 页）</span></div><pre>        pad.setTopChromeBottom(top + sizing.sp(0.077f))
     }
 
     /**
@@ -959,8 +959,8 @@ class EmulatorActivity : Activity() {
                 &quot;STICK&quot; -&gt; VirtualPadView.StickMode.STICK
                 &quot;DPAD4&quot; -&gt; VirtualPadView.StickMode.DPAD4
                 else -&gt; VirtualPadView.StickMode.DPAD8
-            }</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 20 页 / 共 60 页（源程序实际 794 页）</span></div><pre>            val dz = prefs.getString(&quot;flutter.stickDeadzone&quot;, &quot;0.18&quot;)
+            }
+            val dz = prefs.getString(&quot;flutter.stickDeadzone&quot;, &quot;0.18&quot;)
                 ?.toFloatOrNull() ?: 0.18f
             pad.deadzone = dz
             pad.useDpadUi = prefs.getBoolean(&quot;flutter.useDpadUi&quot;, false)
@@ -969,8 +969,8 @@ class EmulatorActivity : Activity() {
                 ?.toFloatOrNull()?.coerceIn(0.5f, 2.5f) ?: 1.0f
             pad.padOffsetX = prefs.getString(&quot;flutter.padOffsetX&quot;, &quot;0.0&quot;)
                 ?.toFloatOrNull()?.coerceIn(-0.45f, 0.45f) ?: 0.0f
-            pad.padOffsetY = prefs.getString(&quot;flutter.padOffsetY&quot;, &quot;0.0&quot;)
-                ?.toFloatOrNull()?.coerceIn(-0.45f, 0.45f) ?: 0.0f
+            pad.padOffsetY = prefs.getString(&quot;flutter.padOffsetY&quot;, &quot;0.0&quot;)</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 17 页 / 共 60 页（源程序实际 661 页）</span></div><pre>                ?.toFloatOrNull()?.coerceIn(-0.45f, 0.45f) ?: 0.0f
             // 布局变化需要重算几何, 否则下一帧 onSizeChanged 才会生效。
             pad.requestLayout()
         }
@@ -1009,8 +1009,8 @@ class EmulatorActivity : Activity() {
      * centre, so it never overlaps the L shoulder or the stick; clamped to
      * stay below the top-left menu bar. In portrait (no side bar) it falls
      * back to the top strip under the shoulder row.
-     */</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 21 页 / 共 60 页（源程序实际 794 页）</span></div><pre>    private fun layoutHud() {
+     */
+    private fun layoutHud() {
         if (!::hud.isInitialized || hud.visibility != View.VISIBLE) return
         hud.post {
             val parentW = (hud.parent as? View)?.width ?: 0
@@ -1029,8 +1029,8 @@ class EmulatorActivity : Activity() {
             lp.marginStart = (picCx - hud.measuredWidth / 2f).toInt()
             hud.layoutParams = lp
         }
-    }
-
+    }</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 18 页 / 共 60 页（源程序实际 661 页）</span></div><pre>
     /**
      * Ask the panel for its highest refresh mode (120 Hz when available). The
      * emulated Dendy/PAL core produces 50 fps: at 60 Hz each frame is held for
@@ -1059,8 +1059,8 @@ class EmulatorActivity : Activity() {
     /**
      * Build the floating corner toolbar as two corner icons + one
      * horizontal popup panel.
-     *</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 22 页 / 共 60 页（源程序实际 794 页）</span></div><pre>     *  - Top-left: a single 36dp &quot;≡&quot; circle icon. Tapping expands a pill
+     *
+     *  - Top-left: a single 36dp &quot;≡&quot; circle icon. Tapping expands a pill
      *  panel to the **right** of the icon (same Y, no second row below)
      *  containing five commands: 加速 · 重开 · 金手 · 存档 · 读档.
      *  - Top-right: a dedicated &quot;✕&quot; exit circle icon, always on, with a
@@ -1089,8 +1089,8 @@ class EmulatorActivity : Activity() {
 
         // ---------- panel + button factories (same look as before) ----------
 
-        fun panel() = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
+        fun panel() = LinearLayout(this).apply {</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 19 页 / 共 60 页（源程序实际 661 页）</span></div><pre>            orientation = LinearLayout.HORIZONTAL
             // No backing plate and no padding: like the virtual pad&#x27;s
             // expanded action row, the five commands are free-floating
             // individual pills. The opener-to-panel gap (below) compensates
@@ -1109,8 +1109,8 @@ class EmulatorActivity : Activity() {
                 if (ev.actionMasked == android.view.MotionEvent.ACTION_UP) {
                     val hitBtn = (0 until childCount).any { i -&gt;
                         getChildAt(i).let { c -&gt;
-                            ev.x &gt;= c.left &amp;&amp; ev.x &lt;= c.right &amp;&amp;</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 23 页 / 共 60 页（源程序实际 794 页）</span></div><pre>                            ev.y &gt;= c.top &amp;&amp; ev.y &lt;= c.bottom
+                            ev.x &gt;= c.left &amp;&amp; ev.x &lt;= c.right &amp;&amp;
+                            ev.y &gt;= c.top &amp;&amp; ev.y &lt;= c.bottom
                         }
                     }
                     if (!hitBtn) v.visibility = View.GONE
@@ -1149,8 +1149,8 @@ class EmulatorActivity : Activity() {
                 text = label
                 setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX,
                             sizing.sp(0.042f).toFloat())
-                setTextColor(android.content.res.ColorStateList(
-                    arrayOf(intArrayOf(android.R.attr.state_pressed), intArrayOf()),
+                setTextColor(android.content.res.ColorStateList(</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 20 页 / 共 60 页（源程序实际 661 页）</span></div><pre>                    arrayOf(intArrayOf(android.R.attr.state_pressed), intArrayOf()),
                     intArrayOf(Color.rgb(45, 32, 0), accent)
                 ))
                 typeface = android.graphics.Typeface.DEFAULT
@@ -1159,8 +1159,8 @@ class EmulatorActivity : Activity() {
                 stateListAnimator = null
                 setPadding(0, 0, 0, 0)
                 isAllCaps = false
-                includeFontPadding = false</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 24 页 / 共 60 页（源程序实际 794 页）</span></div><pre>                background = StateListDrawable().apply {
+                includeFontPadding = false
+                background = StateListDrawable().apply {
                     addState(intArrayOf(android.R.attr.state_pressed), pillDrawable(accent, true))
                     addState(intArrayOf(), pillDrawable(accent, false))
                 }
@@ -1210,7 +1210,7 @@ class EmulatorActivity : Activity() {
         exitIcon.contentDescription = &quot;退出到文件库&quot;
         menuIcon.contentDescription = &quot;功能菜单&quot;
 </pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 25 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        panel.visibility = View.GONE
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 21 页 / 共 60 页（源程序实际 661 页）</span></div><pre>        panel.visibility = View.GONE
         return Triple(menuIcon, exitIcon, panel)
     }
 
@@ -1259,8 +1259,8 @@ class EmulatorActivity : Activity() {
         pad.stickMode = next
         // Persist so the Flutter SettingsSheet and applyPersistedSettings stay
         // in lockstep with this in-emulator toggle.
-        getSharedPreferences(&quot;FlutterSharedPreferences&quot;, MODE_PRIVATE)</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 26 页 / 共 60 页（源程序实际 794 页）</span></div><pre>            .edit().putString(&quot;flutter.stickMode&quot;, next.name).apply()
+        getSharedPreferences(&quot;FlutterSharedPreferences&quot;, MODE_PRIVATE)
+            .edit().putString(&quot;flutter.stickMode&quot;, next.name).apply()
         val name = when (next) {
             VirtualPadView.StickMode.STICK -&gt; &quot;模拟摇杆&quot;
             VirtualPadView.StickMode.DPAD8 -&gt; &quot;十字键(八向)&quot;
@@ -1269,8 +1269,8 @@ class EmulatorActivity : Activity() {
         Toast.makeText(this, &quot;摇杆模式：$name&quot;, Toast.LENGTH_SHORT).show()
     }
 
-    // ------------------------------------------------------------- cheats UI
-
+    // ------------------------------------------------------------- cheats UI</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 22 页 / 共 60 页（源程序实际 661 页）</span></div><pre>
     // ------------------------------------------------- save slots / load UI
 
     /** Automatic background snapshot; distinct CRC keys isolate games. */
@@ -1309,8 +1309,8 @@ class EmulatorActivity : Activity() {
         if (existing.size &lt; SLOT_COUNT) {
             val used = existing.map { it.index }.toSet()
             return (0 until SLOT_COUNT).first { it !in used }
-        }</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 27 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        return existing.minByOrNull { it.time }!!.index
+        }
+        return existing.minByOrNull { it.time }!!.index
     }
 
     private fun fmtSlotTime(t: Long): String {
@@ -1329,8 +1329,8 @@ class EmulatorActivity : Activity() {
         }
     }
 
-    /**
-     * Deterministic light dialog context. The activity runs a legacy
+    /**</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 23 页 / 共 60 页（源程序实际 661 页）</span></div><pre>     * Deterministic light dialog context. The activity runs a legacy
      * Theme.Black/Theme.Light theme (dark window for the emulator), and EMUI
      * renders AlertDialog surfaces light while views inflated with the activity
      * context keep a white-ish textColorPrimary in dark mode — producing
@@ -1359,8 +1359,8 @@ class EmulatorActivity : Activity() {
                 Gravity.CENTER))
             setPadding(0, sizing.hp(0.03f).toInt(), 0, sizing.hp(0.03f).toInt())
         }
-        val loading = dialogBuilder()</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 28 页 / 共 60 页（源程序实际 794 页）</span></div><pre>            .setTitle(&quot;读取存档&quot;)
+        val loading = dialogBuilder()
+            .setTitle(&quot;读取存档&quot;)
             .setView(holder)
             .setNegativeButton(&quot;取消&quot;, null)
             .create()
@@ -1389,8 +1389,8 @@ class EmulatorActivity : Activity() {
                 .setPositiveButton(&quot;知道了&quot;, null)
                 .show()
             return
-        }
-
+        }</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 24 页 / 共 60 页（源程序实际 661 页）</span></div><pre>
         // All dialog dimensions are screen-relative percentages of the
         // activity&#x27;s captured `sizing` (see [Sizing]). Reference: HBN-AL00
         // 360dp-wide landscape; percentages reproduce the prior dp values
@@ -1409,8 +1409,8 @@ class EmulatorActivity : Activity() {
             .setView(scroll)
             .setNegativeButton(&quot;取消&quot;, null)
             .create()
-</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 29 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        slots.forEachIndexed { ordinal, slot -&gt;
+
+        slots.forEachIndexed { ordinal, slot -&gt;
             val row = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -1449,8 +1449,8 @@ class EmulatorActivity : Activity() {
             val texts = LinearLayout(ctx).apply {
                 orientation = LinearLayout.VERTICAL
             }
-            texts.addView(TextView(ctx).apply {
-                text = &quot;存档 ${ordinal + 1} · 槽位 ${slot.index + 1}&quot;
+            texts.addView(TextView(ctx).apply {</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 25 页 / 共 60 页（源程序实际 661 页）</span></div><pre>                text = &quot;存档 ${ordinal + 1} · 槽位 ${slot.index + 1}&quot;
                 setTextColor(Color.rgb(0x1F, 0x23, 0x29))
                 textSize = 15f
                 typeface = android.graphics.Typeface.DEFAULT_BOLD
@@ -1459,8 +1459,8 @@ class EmulatorActivity : Activity() {
                 text = fmtSlotTime(slot.time)
                 setTextColor(Color.rgb(0x5F, 0x66, 0x70))
                 textSize = 12.5f
-                setPadding(0, sizing.hp(0.0083f), 0, 0)</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 30 页 / 共 60 页（源程序实际 794 页）</span></div><pre>            })
+                setPadding(0, sizing.hp(0.0083f), 0, 0)
+            })
             row.addView(texts, LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
 
@@ -1510,7 +1510,650 @@ class EmulatorActivity : Activity() {
 
         dialog.show()
         dialog.window?.setLayout(</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 31 页 / 共 60 页（源程序实际 794 页）</span></div><pre>      }
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 26 页 / 共 60 页（源程序实际 661 页）</span></div><pre>            (sizing.w * 0.82f).toInt(),
+            ViewGroup.LayoutParams.WRAP_CONTENT)
+        // Three rows + title + button can exceed the screen height; cap the
+        // scroll area at 58% so the action button is always reachable.
+        scroll.post {
+            val maxH = (sizing.h * 0.58f).toInt()
+            if (list.height &gt; maxH) {
+                scroll.layoutParams = scroll.layoutParams.apply { height = maxH }
+            }
+        }
+    }
+
+    /** Restart from the title screen: drop the auto snapshot so restore skips. */
+    private fun confirmRestart() {
+        dialogBuilder()
+            .setTitle(&quot;重新开始&quot;)
+            .setMessage(&quot;将清除自动存档并回到游戏开头。\n手动保存的存档位与游戏内电池存档不受影响。&quot;)
+            .setNegativeButton(&quot;取消&quot;, null)
+            .setPositiveButton(&quot;重新开始&quot;) { _, _ -&gt;
+                restarting = true
+                try { stateFile().delete() } catch (_: Throwable) { }
+                recreate()
+            }
+            .show()
+    }
+
+    /** Active codes in core syntax; called on the GL thread during init. */
+    private fun activeCheatCodes(): Array&lt;String&gt; = synchronized(cheatLock) {
+        cheats?.let { CheatStore.activeCodes(it).toTypedArray() } ?: emptyArray()
+    }
+
+    /** Pushes the current command state to the core (thread-safe via GL queue). */
+    private fun applyCheats() {
+        if (handle == 0L) return
+        val codes = activeCheatCodes()
+        glView.queueEvent {
+            if (handle != 0L) NativeBridge.nativeSetCheats(handle, codes)
+        }
+    }
+
+    private fun persistCheats() {
+        val rel = romRelPath ?: return
+        val list = cheats ?: return
+        try {
+            CheatStore.save(filesDir, rel, list)
+        } catch (e: Exception) {
+            Toast.makeText(this, &quot;金手指保存失败：${e.message}&quot;, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    /**
+     * Command-style cheat panel: players only flip named switches (无限生命)
+     * and pick named values/equipment (武力值=100, 装备=剑). Codes are authored
+     * on the PC manager and synced; there is deliberately no code entry here.
+     */
+    private fun openCheatsDialog() {
+        val ctx = dialogCtx
+        val list = cheats
+        if (list == null) {
+            Toast.makeText(this, &quot;未找到该游戏的索引记录，无法关联金手指&quot;, Toast.LENGTH_LONG).show()</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 27 页 / 共 60 页（源程序实际 661 页）</span></div><pre>            return
+        }
+        // Screen-relative pad: ~12dp on the 360dp-min reference device
+        // (12 / 360 = 0.033). Scaling with the screen keeps the dialog
+        // rows looking the same on every phone.
+        val padPx = sizing.sp(0.033f).toInt()
+        val listBox = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(padPx, padPx / 2, padPx, 0)
+        }
+
+        fun rerender() {
+            listBox.removeAllViews()
+            if (list.isEmpty()) {
+                listBox.addView(TextView(ctx).apply {
+                    text = &quot;暂无金手指命令。\n\n&quot; +
+                        &quot;请在电脑端文件库为本游戏添加命令（如「无限生命」开关、&quot; +
+                        &quot;「武力值」选 10/50/100、「装备」选 剑/枪），同步后即可在此直接开关。&quot;
+                    textSize = 13f
+                    setPadding(0, padPx / 2, 0, padPx / 2)
+                })
+            }
+            synchronized(cheatLock) {
+                list.forEach { c -&gt;
+                    when (c) {
+                        is CheatCommand.Switch -&gt; {
+                            val cb = CheckBox(ctx).apply {
+                                text = c.name
+                                textSize = 15f
+                                isChecked = c.enabled
+                                setOnCheckedChangeListener { _, checked -&gt;
+                                    synchronized(cheatLock) { c.enabled = checked }
+                                    persistCheats()
+                                    applyCheats()
+                                }
+                            }
+                            listBox.addView(cb)
+                        }
+                        is CheatCommand.Choice -&gt; {
+                            val row = LinearLayout(ctx).apply {
+                                orientation = LinearLayout.HORIZONTAL
+                                gravity = Gravity.CENTER_VERTICAL
+                                setPadding(0, padPx / 3, 0, padPx / 3)
+                            }
+                            val name = TextView(ctx).apply {
+                                text = c.name
+                                textSize = 15f
+                                layoutParams = LinearLayout.LayoutParams(
+                                    0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+                            }
+                            val current = c.options.getOrNull(c.selected)?.label ?: &quot;关&quot;
+                            val pick = Button(ctx).apply {
+                                text = current
+                                textSize = 13f
+                                minWidth = 0
+                                minimumWidth = sizing.wp(0.267f)
+                                setOnClickListener {
+                                    val labels =
+                                        listOf(&quot;关闭&quot;) + c.options.map { it.label }
+                                    val checked = intArrayOf(c.selected + 1)</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 28 页 / 共 60 页（源程序实际 661 页）</span></div><pre>                                    dialogBuilder()
+                                        .setTitle(c.name)
+                                        .setSingleChoiceItems(
+                                            labels.toTypedArray(), checked[0]
+                                        ) { dlg, which -&gt;
+                                            synchronized(cheatLock) { c.selected = which - 1 }
+                                            persistCheats()
+                                            applyCheats()
+                                            dlg.dismiss()
+                                            rerender()
+                                        }
+                                        .setNegativeButton(&quot;取消&quot;, null)
+                                        .show()
+                                }
+                            }
+                            row.addView(name)
+                            row.addView(pick)
+                            listBox.addView(row)
+                        }
+                    }
+                }
+            }
+        }
+        rerender()
+
+        val scroll = ScrollView(ctx).apply { addView(listBox) }
+        val dialog = dialogBuilder()
+            .setTitle(&quot;金手指&quot;)
+            .setView(scroll)
+            .setPositiveButton(&quot;关闭&quot;, null)
+            .create()
+        dialog.show()
+        // Keep the list area compact in landscape (dialog grows to content by
+        // default; cap height to 62% of the screen).
+        dialog.window?.setLayout(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            (sizing.h * 0.62f).toInt())
+    }
+
+    /**
+     * Leave the emulator for the Flutter library. Both activities now share
+     * one task (taskAffinity=&quot;&quot;), so finish() normally lands on
+     * MainActivity — but aggressive background-task cleanup (EMUI memory
+     * pressure, recents swipe, installer hand-off) can leave nothing below
+     * this activity, in which case plain finish() drops the user onto the
+     * launcher. Routing back with CLEAR_TOP/SINGLE_TOP (re)creates the
+     * library instead. Bench runs (adb-driven) finish cleanly to the shell.
+     */
+    private fun exitToLibrary() {
+        if (benchMode) {
+            finish()
+            return
+        }
+        // Clean netplay teardown (BYE + host SRAM flush) is async; it calls
+        // exitToLibrary again on the UI thread once done.
+        if (npCfg != null &amp;&amp; !npEnded) {
+            endNetplay(clean = true)
+            return
+        }
+        val intent = Intent(this, MainActivity::class.java).apply {</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 29 页 / 共 60 页（源程序实际 661 页）</span></div><pre>            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        }
+        startActivity(intent)
+        finish()
+    }
+
+    @Deprecated(&quot;Deprecated in Java; back must return to the library, never the launcher&quot;)
+    override fun onBackPressed() {
+        exitToLibrary()
+    }
+
+    // ----------------------------------------------------- netplay lifecycle
+
+    private fun npSramFile(cfg: NetplaySessionCfg) =
+        File(filesDir, &quot;saves/${cfg.saveKey}.sav&quot;)
+
+    private fun acquireNetplayWifiLock() {
+        try {
+            val wifi = applicationContext
+                .getSystemService(Context.WIFI_SERVICE) as android.net.wifi.WifiManager
+            @Suppress(&quot;DEPRECATION&quot;)
+            val lock = wifi.createWifiLock(
+                android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                &quot;GamePouch-netplay&quot;)
+            lock.setReferenceCounted(false)
+            lock.acquire()
+            npWifiLock = lock
+        } catch (t: Throwable) {
+            Log.w(&quot;GS-Netplay&quot;, &quot;wifi lock unavailable: ${t.message}&quot;)
+        }
+    }
+
+    private fun releaseNetplayWifiLock() {
+        try { if (npWifiLock?.isHeld == true) npWifiLock?.release() } catch (_: Throwable) {}
+        npWifiLock = null
+    }
+
+    /** Run [action] on the GL thread and wait for it (native core calls). */
+    private fun runOnGlBlocking(action: () -&gt; Unit) {
+        val latch = CountDownLatch(1)
+        var err: Throwable? = null
+        glView.queueEvent {
+            try { action() } catch (t: Throwable) { err = t } finally { latch.countDown() }
+        }
+        if (!latch.await(15, TimeUnit.SECONDS)) {
+            throw com.retroemupouch.app.netplay.BootstrapException(&quot;native timeout&quot;)
+        }
+        err?.let { throw it }
+    }
+
+    /**
+     * Netplay-safe macro playback: pump the compiled per-frame mask sequence
+     * into [renderer.buttonMask] (OR-ed over the live pad mask) on the same
+     * ~50 ms/step cadance VirtualPadView uses (3 frames @ 60 fps). The GL
+     * loop pushes buttonMask into nativeNetplayLocalMask every frame, so each
+     * step reaches the lockstep gate exactly like a finger press — no
+     * bypass, no desync.
+     */
+    /**
+     * Netplay-safe macro playback: pump the compiled per-frame mask sequence</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 30 页 / 共 60 页（源程序实际 661 页）</span></div><pre>     * into [renderer.buttonMask] (OR-ed over the live pad mask) so the move is
+     * just ordinary local input and cannot desync the pair. Cadence: every
+     * [ScriptCompiler.framesPerStep] entries (one logical direction) is held for
+     * 50 ms — the same &quot;~3 frames @ 60fps&quot; the HarmonyOS JS replay uses, so a
+     * quarter-circle / dragon-punch latches on both platforms and the buttons
+     * ALWAYS release (the trailing tick emits a zero mask, matching OHOS
+     * cancelMacro). Used for BOTH solo and netplay now that the old native
+     * nativePlayMacro path (which held the last frame and stuck the input —
+     * &quot;组合按键释放不出来&quot;) is gone.
+     */
+    private fun startNpMacro(seq: IntArray) {
+        cancelNpMacro()
+        val stepMs = 50L
+        val stepFrames = ScriptCompiler.framesPerStep
+        var i = 0
+        val tick = object : Runnable {
+            override fun run() {
+                npMacroPending = null
+                if (npEnded) {
+                    npMacroMask = 0
+                    renderer.buttonMask = npPadMask
+                    return
+                }
+                if (i &gt;= seq.size) {
+                    // Trailing release frame: let every button go (matches
+                    // HarmonyOS playMove — the move fires, then the input
+                    // releases so the next press isn&#x27;t stuck).
+                    npMacroMask = 0
+                    renderer.buttonMask = npPadMask
+                    return
+                }
+                // Collapse framesPerStep entries into one logical step so each
+                // direction is held ~stepMs — identical to the HarmonyOS replay.
+                var m = 0
+                repeat(stepFrames) { if (i &lt; seq.size) m = seq[i++] }
+                npMacroMask = m
+                renderer.buttonMask = npPadMask or npMacroMask
+                npMacroPending = this
+                npMacroHandler.postDelayed(this, stepMs)
+            }
+        }
+        tick.run()
+    }
+
+    private fun cancelNpMacro() {
+        npMacroPending?.let { npMacroHandler.removeCallbacks(it) }
+        npMacroPending = null
+        if (npMacroMask != 0) {
+            npMacroMask = 0
+            renderer.buttonMask = npPadMask
+        }
+    }
+
+    private fun setNpOverlay(text: String?) {
+        runOnUiThread {
+            val v = npOverlay ?: return@runOnUiThread
+            if (text == null) {
+                v.visibility = View.GONE
+            } else {
+                v.text = text</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 31 页 / 共 60 页（源程序实际 661 页）</span></div><pre>      }
+      if (low.includes(&#x27;qsound&#x27;)) {
+        biosHint = &#x27;\n\n已安装的 qsound.zip 不完整或缺失（缺少 &#x27; + m +
+          &#x27;），请重新导入完整的 Q-Sound BIOS（设置 → 系统文件（BIOS））。&#x27;
+        break
+      }
+      if (low.includes(&#x27;pgm&#x27;)) {
+        biosHint = &#x27;\n\n缺少 IGS PGM 基板 BIOS（pgm.zip），请导入 pgm.zip（设置 → 系统文件（BIOS））。&#x27;
+        break
+      }
+      if (_neogeoBiosFiles.indexOf(low) &gt;= 0) {
+        biosHint = &#x27;\n\n已安装的 neogeo.zip 不完整或版本不符（缺少 &#x27; + m +
+          &#x27;），请重新导入完整的 neogeo.zip（设置 → 系统文件（BIOS））。&#x27;
+        break
+      }
+    }
+    s += biosHint
+    if (biosHint.length === 0) {
+      s += &#x27;\n常见原因：该 zip 多为 FBA / WinKawaks 风格的加密 CPS2 集（含 .key 文件），&#x27; +
+        &#x27;MAME 不支持，请换用 MAME 0.289 对应版本的 ROM 集；只含 clone 的合集需同时有 &#x27; +
+        &#x27;parent（如 1943j 需 1943.zip）。&#x27;
+    }
+    return s
+  }
+
+  // ---- settings persistence (settings.json next to the ROMs) ----
+
+  /// Directory holding app-level config (`settings.json`, `library/moves.json`).
+  ///
+  /// MUST be the same dir the Flutter plugin (GamePouchPlugin) uses, because
+  /// that is where the Settings sheet&#x27;s values are stamped and where the Dart
+  /// `SpecialMovesEditor` writes `moves.json`. `getFilesDir()` (NAPI) points at
+  /// a *different* sandbox dir on real devices, which silently severed the
+  /// Settings sheet from the emulator. GamePouchPlugin passes the authoritative
+  /// path through router params; NAPI is only a fallback for the bench page.
+  private configDir(): string {
+    if (this.cfgDir.length &gt; 0) return this.cfgDir
+    const d = getFilesDir() as string
+    return d ? d : &#x27;&#x27;
+  }
+
+  private loadSettings(): void {
+    try {
+      const dir = this.configDir()
+      if (!dir) return
+      const path = dir + &#x27;/settings.json&#x27;
+      if (!fs.accessSync(path)) {
+        console.info(&#x27;[EmulatorSpike] loadSettings: no &#x27; + path)
+        return
+      }
+      const data = fs.readTextSync(path)
+      const j: Settings = JSON.parse(data) as Settings
+      console.info(&#x27;[EmulatorSpike] loadSettings dir=&#x27; + dir + &#x27; raw=&#x27; + data)
+      if (j.stickMode === &#x27;STICK&#x27; || j.stickMode === &#x27;DPAD8&#x27; || j.stickMode === &#x27;DPAD4&#x27;) {
+        this.stickMode = j.stickMode
+      }
+      if (typeof j.padScale === &#x27;number&#x27; &amp;&amp; j.padScale &gt; 0) {
+        this.padScale = j.padScale
+      }
+      if (typeof j.stickDeadzone === &#x27;number&#x27; &amp;&amp; j.stickDeadzone &gt;= 0 &amp;&amp; j.stickDeadzone &lt;= 1) {</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 32 页 / 共 60 页（源程序实际 661 页）</span></div><pre>        this.stickDeadzone = j.stickDeadzone
+      }
+      if (typeof j.useDpadUi === &#x27;boolean&#x27;) {
+        this.useDpadUi = j.useDpadUi
+      }
+      if (typeof j.padOffsetX === &#x27;number&#x27; &amp;&amp; j.padOffsetX &gt;= -0.45 &amp;&amp; j.padOffsetX &lt;= 0.45) {
+        this.padOffsetX = j.padOffsetX
+      }
+      if (typeof j.padOffsetY === &#x27;number&#x27; &amp;&amp; j.padOffsetY &gt;= -0.45 &amp;&amp; j.padOffsetY &lt;= 0.45) {
+        this.padOffsetY = j.padOffsetY
+      }
+      if (typeof j.showFpsHud === &#x27;boolean&#x27;) this.showFpsHud = j.showFpsHud
+      if (typeof j.highRefreshRate === &#x27;boolean&#x27;) this.highRefreshRate = j.highRefreshRate
+      if (typeof j.fastForwardAudio === &#x27;boolean&#x27;) this.fastForwardAudio = j.fastForwardAudio
+      // Load user-configured 招式 presets (overrides the built-in defaults so the
+      // SettingsSheet editor&#x27;s moves take effect on the native surface).
+      this.loadMoves()
+    } catch (e) {
+      console.warn(&#x27;[EmulatorSpike] loadSettings failed: &#x27; + JSON.stringify(e))
+    }
+  }
+
+  // Reads &lt;filesDir&gt;/library/moves.json (same file the Flutter SpecialMovesEditor
+  // writes) and replaces the built-in 招式 presets with the active profile&#x27;s moves.
+  // Falls back to the built-in defaults when the file is missing/empty/invalid.
+  private loadMoves(): void {
+    try {
+      const dir = this.configDir()
+      if (!dir) return
+      const path = dir + &#x27;/library/moves.json&#x27;
+      if (!fs.accessSync(path)) return
+      const data = fs.readTextSync(path)
+      const j: MovesJson = JSON.parse(data) as MovesJson
+      const profs = j.profiles
+      const id = j.activeProfileId
+      if (!profs || !id) return
+      const prof: MoveProfile | undefined = profs[id]
+      const list = prof ? prof.moves : undefined
+      if (!list || !Array.isArray(list)) return
+      const moves: MovePreset[] = []
+      for (const m of list) {
+        if (m &amp;&amp; typeof m.script === &#x27;string&#x27; &amp;&amp; m.script.length &gt; 0) {
+          const label: string = (typeof m.label === &#x27;string&#x27; &amp;&amp; m.label.length &gt; 0) ? m.label : m.script
+          moves.push({ label: label, script: m.script })
+        }
+      }
+      console.info(`[EmulatorSpike] loadMoves dir=${dir} profile=${id} n=${moves.length}` +
+        (moves.length &gt; 0 ? ` first=${moves[0].label}|${moves[0].script}` : &#x27;&#x27;))
+      if (moves.length &gt; 0) this.movesPresets = moves
+    } catch (e) {
+      console.warn(&#x27;[EmulatorSpike] loadMoves failed: &#x27; + JSON.stringify(e))
+    }
+  }
+
+  // Applies the &quot;高刷新率&quot; toggle. NOTE: the OHOS public SDK (API 26) exposes no
+  // per-window refresh-rate setter (Window only has setPreferredOrientation and
+  // @ohos.display is read-only), and Android&#x27;s implementation is likewise
+  // unconditional — so this keeps the toggle stored/consistent (a logged no-op)
+  // until a supported API lands.
+  private applyDisplayRate(): void {</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 33 页 / 共 60 页（源程序实际 661 页）</span></div><pre>    console.info(`[EmulatorSpike] highRefreshRate=${this.highRefreshRate} ` +
+      &#x27;(OHOS SDK: no per-window refresh-rate API; toggle stored only)&#x27;)
+  }
+
+  // &quot;加速时同步音频&quot;: mute the renderer while fast-forwarding when the toggle is
+  // OFF; otherwise keep audio running.
+  private applyFastForwardAudio(): void {
+    try {
+      const mute: boolean = this.speedMult &gt; 1 &amp;&amp; !this.fastForwardAudio
+      setAudioMuted(mute)
+    } catch (e) {
+      // setAudioMuted may be absent on older host builds — ignore.
+    }
+  }
+
+  private saveSettings(): void {
+    try {
+      const dir = this.configDir()
+      if (!dir) return
+      const path = dir + &#x27;/settings.json&#x27;
+      const j: Settings = {
+        stickMode: this.stickMode,
+        padScale: this.padScale,
+        stickDeadzone: this.stickDeadzone,
+        useDpadUi: this.useDpadUi,
+        padOffsetX: this.padOffsetX,
+        padOffsetY: this.padOffsetY,
+        showFpsHud: this.showFpsHud,
+        highRefreshRate: this.highRefreshRate,
+        fastForwardAudio: this.fastForwardAudio,
+      }
+      const file: fs.File = fs.openSync(path, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC)
+      fs.writeSync(file.fd, JSON.stringify(j))
+      fs.closeSync(file.fd)
+    } catch (e) {
+      console.warn(&#x27;[EmulatorSpike] saveSettings failed: &#x27; + JSON.stringify(e))
+    }
+  }
+
+  // ---- 3-slot load dialog ----
+  private openLoadDialog(): void {
+    try {
+      // Sizing mirrors Android renderLoadDialog: thumbnail wp(0.267)×hp(0.20),
+      // scroll area capped at 58% of the screen height so 3 rows + title +
+      // button always fit.
+      this.slotTw = this.winW * 0.267
+      this.slotTh = this.winH * 0.20
+      this.slotScrollH = this.winH * 0.58
+      const json = listSaves()
+      const arr = JSON.parse(json) as SaveSlotInfo[]
+      const savesDir = (getSavesDir() as string)
+      const crc = (getRomCrc() as string)
+      // Android listSlots(): only slots with a .state file exist, sorted by
+      // mtime newest first — the picker ordinal (存档 N) is the position in
+      // that order, not the raw slot index.
+      const filled = arr.filter((s: SaveSlotInfo) =&gt; s.exists)
+        .sort((a: SaveSlotInfo, b: SaveSlotInfo) =&gt; b.time - a.time)
+      this.dbgLoad(&#x27;=== openLoadDialog crc=&#x27; + crc + &#x27; dir=&#x27; + savesDir +
+        &#x27; filled=&#x27; + filled.map((x) =&gt; &#x27;[&#x27; + x.slot + &#x27;,&#x27; + x.time + &#x27;,&#x27; + x.w + &#x27;x&#x27; + x.h + &#x27;]&#x27;).join(&#x27;,&#x27;))
+      if (filled.length === 0) {</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 34 页 / 共 60 页（源程序实际 661 页）</span></div><pre>        this.loadDialog = false
+        AlertDialog.show({
+          title: &#x27;读取存档&#x27;,
+          message: &#x27;还没有手动存档。\n游戏中点菜单「存档」即可保存当前进度，最近 3 个存档会自动保留。&#x27;,
+          primaryButton: {
+            value: &#x27;知道了&#x27;,
+            action: () =&gt; {
+            }
+          }
+        })
+        return
+      }
+      // Android: thumbnails are JPEGs (saves/&lt;saveKey&gt;.slotN.jpg) decoded with
+      // BitmapFactory.decodeFile — the JPEG carries its own dimensions, so no
+      // .meta w/h is needed (imported slots have none, which is why the old
+      // w&gt;0 guard skipped them). Legacy local saves may only have the raw
+      // .rgba (+ .meta w/h); decode that as a fallback.
+      // Decode every thumbnail BEFORE opening the dialog: the picker builds its
+      // rows once, so PixelMaps must be ready at first render (a thumb that
+      // arrives later never re-renders the ForEach item).
+      const decodeSlot = (s: SaveSlotInfo): Promise&lt;void&gt; =&gt; {
+        return new Promise&lt;void&gt;((resolve) =&gt; {
+          if (!savesDir) {
+            resolve()
+            return
+          }
+          const jpgPath = savesDir + &#x27;/&#x27; + crc + &#x27;.slot&#x27; + s.slot + &#x27;.jpg&#x27;
+          const rgbaPath = savesDir + &#x27;/&#x27; + crc + &#x27;.slot&#x27; + s.slot + &#x27;.rgba&#x27;
+          let jpgOk = false
+          try { jpgOk = fs.accessSync(jpgPath) } catch (e) { jpgOk = false }
+          this.dbgLoad(&#x27;slot&#x27; + s.slot + &#x27; jpgExists=&#x27; + jpgOk)
+          const tryRgba = () =&gt; {
+            if (!(s.w &gt; 0 &amp;&amp; s.h &gt; 0)) {
+              this.dbgLoad(&#x27;slot&#x27; + s.slot + &#x27; rgbaSkip (no w/h)&#x27;)
+              resolve()
+              return
+            }
+            try {
+              const rf: fs.File = fs.openSync(rgbaPath, fs.OpenMode.READ_ONLY)
+              const st = fs.statSync(rgbaPath)
+              const buf: ArrayBuffer = new ArrayBuffer(st.size)
+              fs.readSync(rf.fd, buf)
+              fs.closeSync(rf.fd)
+              const opts: image.InitializationOptions = {
+                pixelFormat: image.PixelMapFormat.RGBA_8888,
+                size: { width: s.w, height: s.h }
+              }
+              image.createPixelMap(buf, opts).then((pm: image.PixelMap) =&gt; {
+                this.dbgLoad(&#x27;slot&#x27; + s.slot + &#x27; rgbaOk&#x27;)
+                s.thumb = pm
+                resolve()
+              }).catch((e: object) =&gt; {
+                this.dbgLoad(&#x27;slot&#x27; + s.slot + &#x27; rgbaFail &#x27; + JSON.stringify(e))
+                resolve()
+              })
+            } catch (e) {
+              this.dbgLoad(&#x27;slot&#x27; + s.slot + &#x27; rgbaReadFail &#x27; + JSON.stringify(e))
+              resolve()
+            }
+          }</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 35 页 / 共 60 页（源程序实际 661 页）</span></div><pre>          if (!jpgOk) {
+            tryRgba()
+            return
+          }
+          try {
+            const jf: fs.File = fs.openSync(jpgPath, fs.OpenMode.READ_ONLY)
+            const st = fs.statSync(jpgPath)
+            const buf: ArrayBuffer = new ArrayBuffer(st.size)
+            const n = fs.readSync(jf.fd, buf)
+            fs.closeSync(jf.fd)
+            this.dbgLoad(&#x27;slot&#x27; + s.slot + &#x27; jpgReadBytes=&#x27; + n + &#x27; size=&#x27; + st.size)
+            const src: image.ImageSource = image.createImageSource(buf)
+            src.createPixelMap().then((pm: image.PixelMap) =&gt; {
+              this.dbgLoad(&#x27;slot&#x27; + s.slot + &#x27; pmOk&#x27;)
+              s.thumb = pm
+              resolve()
+            }).catch((e: object) =&gt; {
+              this.dbgLoad(&#x27;slot&#x27; + s.slot + &#x27; pmFail &#x27; + JSON.stringify(e))
+              tryRgba()
+            }).finally(() =&gt; { try { src.release() } catch (er) { } })
+          } catch (e) {
+            this.dbgLoad(&#x27;slot&#x27; + s.slot + &#x27; jpgSyncFail &#x27; + JSON.stringify(e))
+            tryRgba()
+          }
+        })
+      }
+      Promise.all(filled.map((s: SaveSlotInfo) =&gt; decodeSlot(s))).then(() =&gt; {
+        this.dbgLoad(&#x27;dialog open, thumbs=&#x27; + filled.map((x) =&gt; (x.thumb ? 1 : 0)).join(&#x27;&#x27;))
+        this.saveList = filled
+        this.loadDialog = true
+      })
+    } catch (e) {
+      this.showToast(&#x27;读档列表失败&#x27;)
+    }
+  }
+
+  // Diagnostics: append to &lt;savesDir&gt;/load_dbg.txt (immune to hilog buffer churn).
+  private dbgLoad(msg: string): void {
+    try {
+      const dir = (getSavesDir() as string)
+      if (!dir) {
+        return
+      }
+      const p = dir + &#x27;/load_dbg.txt&#x27;
+      let prev = &#x27;&#x27;
+      try {
+        const rf: fs.File = fs.openSync(p, fs.OpenMode.READ_ONLY)
+        const st = fs.statSync(p)
+        const b: ArrayBuffer = new ArrayBuffer(st.size)
+        fs.readSync(rf.fd, b)
+        fs.closeSync(rf.fd)
+        prev = String.fromCharCode(...new Uint8Array(b))
+      } catch (e) { prev = &#x27;&#x27; }
+      const wf: fs.File = fs.openSync(p, fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC)
+      fs.writeSync(wf.fd, prev + msg + &#x27;\n&#x27;)
+      fs.closeSync(wf.fd)
+    } catch (e) { /* ignore */ }
+  }
+
+  private loadSlot(slot: number): void {</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 36 页 / 共 60 页（源程序实际 661 页）</span></div><pre>    if (loadStateSlot(slot)) {
+      this.showToast(&#x27;已读档 槽 &#x27; + (slot + 1))
+    } else {
+      this.showToast(&#x27;读档失败&#x27;)
+    }
+    this.loadDialog = false
+  }
+
+  private deleteSave(slot: number): void {
+    const savesDir = (getSavesDir() as string)
+    const crc = (getRomCrc() as string)
+    if (savesDir) {
+      try { fs.unlinkSync(savesDir + &#x27;/&#x27; + crc + &#x27;.slot&#x27; + slot + &#x27;.state&#x27;) } catch (e) {}
+      try { fs.unlinkSync(savesDir + &#x27;/&#x27; + crc + &#x27;.slot&#x27; + slot + &#x27;.rgba&#x27;) } catch (e) {}
+      try { fs.unlinkSync(savesDir + &#x27;/&#x27; + crc + &#x27;.slot&#x27; + slot + &#x27;.meta&#x27;) } catch (e) {}
+      try { fs.unlinkSync(savesDir + &#x27;/&#x27; + crc + &#x27;.slot&#x27; + slot + &#x27;.jpg&#x27;) } catch (e) {}
+    }
+    this.openLoadDialog() // refresh
+  }
+
+  // Android parity: every manual save carries a JPEG thumbnail
+  // (saves/&lt;saveKey&gt;.slotN.jpg, quality 85 — grabThumbnail + compress(JPEG)).
+  // The native SaveStateSlot emits the raw down-scaled .rgba plus a .meta
+  // (&quot;w h&quot;); convert it to a real JPEG here so the on-disk layout matches
+  // Android and the load picker can decode it like BitmapFactory does.
+  private writeSlotJpg(slot: number): void {
+    try {
+      const savesDir = (getSavesDir() as string)
+      const crc = (getRomCrc() as string)
+      if (!savesDir) {
+        return
+      }
+      const base = savesDir + &#x27;/&#x27; + crc + &#x27;.slot&#x27; + slot
+      const mf: fs.File = fs.openSync(base + &#x27;.meta&#x27;, fs.OpenMode.READ_ONLY)
+      const ms = fs.statSync(base + &#x27;.meta&#x27;)
+      const mb: ArrayBuffer = new ArrayBuffer(ms.size)
+      fs.readSync(mf.fd, mb)
+      fs.closeSync(mf.fd)
+      const parts = String.fromCharCode(...new Uint8Array(mb)).trim().split(/\s+/)
+      const w = Number(parts[0])
+      const h = Number(parts[1])
+      if (!(w &gt; 0 &amp;&amp; h &gt; 0)) {
+        return
+      }
       const rf: fs.File = fs.openSync(base + &#x27;.rgba&#x27;, fs.OpenMode.READ_ONLY)
       const rs = fs.statSync(base + &#x27;.rgba&#x27;)
       const buf: ArrayBuffer = new ArrayBuffer(rs.size)
@@ -1526,8 +2169,8 @@ class EmulatorActivity : Activity() {
         packer.packToData(pm, popts).then((data: ArrayBuffer) =&gt; {
           const jf = fs.openSync(base + &#x27;.jpg&#x27;,
             fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.TRUNC)
-          fs.writeSync(jf.fd, data)
-          fs.closeSync(jf.fd)
+          fs.writeSync(jf.fd, data)</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 37 页 / 共 60 页（源程序实际 661 页）</span></div><pre>          fs.closeSync(jf.fd)
           try { packer.release() } catch (e) { }
         }).catch(() =&gt; { try { packer.release() } catch (e) { } })
       }).catch(() =&gt; { })
@@ -1559,8 +2202,8 @@ class EmulatorActivity : Activity() {
       message: this.fmtSlotTime(timeSecs) + &#x27; 的存档将被删除，此操作不可撤销。&#x27;,
       primaryButton: {
         value: &#x27;取消&#x27;,
-        action: () =&gt; {</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 32 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        }
+        action: () =&gt; {
+        }
       },
       secondaryButton: {
         value: &#x27;删除&#x27;,
@@ -1586,8 +2229,8 @@ class EmulatorActivity : Activity() {
         value: &#x27;重新开始&#x27;,
         fontColor: &#x27;#C62828&#x27;,
         action: () =&gt; {
-          resetEmu()
-          this.panelOpen = false
+          resetEmu()</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 38 页 / 共 60 页（源程序实际 661 页）</span></div><pre>          this.panelOpen = false
         }
       }
     })
@@ -1609,8 +2252,8 @@ class EmulatorActivity : Activity() {
       const rows: CheatRow[] = list.map((c: CheatInfo): CheatRow =&gt; {
         const hasChoice = !!(c.options &amp;&amp; c.options.length &gt; 0)
         const sel = c.selected ?? 0
-        let code = c.code</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 33 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        const labels: string[] = []
+        let code = c.code
+        const labels: string[] = []
         const codes: string[] = []
         if (hasChoice) {
           for (const o of c.options!) {
@@ -1646,8 +2289,8 @@ class EmulatorActivity : Activity() {
     const out: Array&lt;[string, boolean]&gt; = []
     for (const r of this.cheatRows) {
       if (r.enabled &amp;&amp; r.code.length &gt; 0) {
-        out.push([r.code, true])
-      }
+        out.push([r.code, true])</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 39 页 / 共 60 页（源程序实际 661 页）</span></div><pre>      }
     }
     setCheats(JSON.stringify(out))
     if (persist) this.persistCheats()
@@ -1659,8 +2302,8 @@ class EmulatorActivity : Activity() {
   private persistCheats(): void {
     try {
       const crc = getRomCrc() as string
-      if (!crc || crc === &#x27;00000000&#x27;) return</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 34 页 / 共 60 页（源程序实际 794 页）</span></div><pre>      const path = this.configDir() + &#x27;/library/cheats.json&#x27;
+      if (!crc || crc === &#x27;00000000&#x27;) return
+      const path = this.configDir() + &#x27;/library/cheats.json&#x27;
       let byCrc: Record&lt;string, CheatInfo[]&gt; = {}
       if (fs.accessSync(path)) {
         const obj = JSON.parse(fs.readTextSync(path)) as CheatStore
@@ -1706,11 +2349,11 @@ class EmulatorActivity : Activity() {
   // The core finishes loading on a render thread, so wait for it to be live
   // (mirrors the netplay bootstrap gate) before seeding.
   private seedCheatsWhenReady(deadline: number): void {
-    let ready = false
-    try { ready = isCoreReady() as boolean } catch (e) { ready = false }
+    let ready = false</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 40 页 / 共 60 页（源程序实际 661 页）</span></div><pre>    try { ready = isCoreReady() as boolean } catch (e) { ready = false }
     if (ready) {
-      this.seedCheats()</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 35 页 / 共 60 页（源程序实际 794 页）</span></div><pre>      return
+      this.seedCheats()
+      return
     }
     if (Date.now() &gt; deadline) return
     setTimeout((): void =&gt; { this.seedCheatsWhenReady(deadline) }, 100)
@@ -1759,15 +2402,15 @@ class EmulatorActivity : Activity() {
       console.warn(&#x27;[EmulatorSpike] persistLastSave failed: &#x27; + (e as ESObject)?.message)
     }
   }
-</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 36 页 / 共 60 页（源程序实际 794 页）</span></div><pre>  private clearLastSaveFile(): void {
+
+  private clearLastSaveFile(): void {
     const dir = (this.cfgDir &amp;&amp; this.cfgDir.length &gt; 0) ? this.cfgDir : (getFilesDir() as string)
     const path = dir + &#x27;/last_slot.json&#x27;
     try { fs.unlinkSync(path) } catch (e) { /* not present */ }
   }
 
-  @Builder
-  cheatsDialogView() {
+  @Builder</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 41 页 / 共 60 页（源程序实际 661 页）</span></div><pre>  cheatsDialogView() {
     Column() {
       Text(&#x27;金手指&#x27;)
         .fontSize((this.ref() * 0.05) + &#x27;px&#x27;)
@@ -1809,8 +2452,8 @@ class EmulatorActivity : Activity() {
                       .onClick(() =&gt; {
                         this.cheatRows[i].choiceSel = oi
                         this.cheatRows[i].code = this.cheatRows[i].choiceCodes[oi] ?? &#x27;&#x27;
-                        this.cheatRows = this.cheatRows.slice()</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 37 页 / 共 60 页（源程序实际 794 页）</span></div><pre>                        this.applyCheats(true)
+                        this.cheatRows = this.cheatRows.slice()
+                        this.applyCheats(true)
                       })
                   }, (lab: string, oi: number) =&gt; &#x27;opt&#x27; + i + &#x27;_&#x27; + oi)
                 }
@@ -1826,8 +2469,8 @@ class EmulatorActivity : Activity() {
             .width(&#x27;100%&#x27;)
             .padding(this.ref() * 0.01)
             .margin({ bottom: this.ref() * 0.01 })
-            .backgroundColor(&#x27;rgba(255,255,255,0.92)&#x27;)
-            .borderRadius(this.ref() * 0.02)
+            .backgroundColor(&#x27;rgba(255,255,255,0.92)&#x27;)</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 42 页 / 共 60 页（源程序实际 661 页）</span></div><pre>            .borderRadius(this.ref() * 0.02)
           }, (r: CheatRow, i: number) =&gt; &#x27;cheat&#x27; + i)
         }
         .width(&#x27;100%&#x27;)
@@ -1859,8 +2502,8 @@ class EmulatorActivity : Activity() {
   }
 }
 
-interface XComponentLoadEvent {</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 38 页 / 共 60 页（源程序实际 794 页）</span></div><pre>  value: object
+interface XComponentLoadEvent {
+  value: object
 }
 
 // ===== FILE: app/ohos/entry/src/main/ets/pages/Index.ets =====
@@ -1886,8 +2529,8 @@ struct Index {
   onBackPress(): boolean {
     this.context.eventHub.emit(EVENT_BACK_PRESS)
     return true
-  }
-}
+  }</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 43 页 / 共 60 页（源程序实际 661 页）</span></div><pre>}
 
 // ===== FILE: app/ohos/entry/src/main/ets/plugins/GamePouchPlugin.ets =====
 import {
@@ -1909,8 +2552,8 @@ import router from &#x27;@ohos.router&#x27;;
 import { setEmulatorTarget, getRomCrc, getLoadError, getBiosWarnings, getFps, isCoreReady } from &#x27;libgpretro.so&#x27;;
 import type { NetplaySession } from &#x27;../netplay_session&#x27;;
 
-/// Return shapes mirrored from the Dart side (`ImportedRom`, `ImportedPackage`,</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 39 页 / 共 60 页（源程序实际 794 页）</span></div><pre>/// `ImportedMovesConfig`/`ImportedPadConfig`). ArkTS strict mode forbids inline
+/// Return shapes mirrored from the Dart side (`ImportedRom`, `ImportedPackage`,
+/// `ImportedMovesConfig`/`ImportedPadConfig`). ArkTS strict mode forbids inline
 /// object types, so they are declared as named interfaces.
 interface NameSize {
   name: string;
@@ -1946,8 +2589,8 @@ interface JsonInfo {
 interface StagedFile {
   /// Absolute path of the staged copy.
   path: string;
-  /// File name actually used on disk (sanitised / de-duplicated).
-  name: string;
+  /// File name actually used on disk (sanitised / de-duplicated).</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 44 页 / 共 60 页（源程序实际 661 页）</span></div><pre>  name: string;
   /// File name as reported by the picker — kept for `ImportedRom.originalName`.
   originalName: string;
   size: number;
@@ -1959,8 +2602,8 @@ interface ImportOpts {
   unique?: boolean;
   /// Prefix prepended to the name (Android&#x27;s `moves-&lt;ts&gt;-` / `pad-&lt;ts&gt;-`).
   prefix?: string;
-  /// Append `.json` when the picked name has no (or another) extension.</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 40 页 / 共 60 页（源程序实际 794 页）</span></div><pre>  ensureJsonExt?: boolean;
+  /// Append `.json` when the picked name has no (or another) extension.
+  ensureJsonExt?: boolean;
   /// Overwrite an existing file with the same name instead of de-duplicating
   /// (Android&#x27;s `importBios` deletes the previous copy first).
   overwrite?: boolean;
@@ -2006,11 +2649,11 @@ interface LaunchArgs {
 }
 
 /// Virtual-pad config pushed from the Flutter SettingsSheet (AppSettings) at
-/// launch, mirroring Android&#x27;s `applyPersistedSettings()`. All fields optional
-/// so a missing key leaves the existing settings.json value untouched.
+/// launch, mirroring Android&#x27;s `applyPersistedSettings()`. All fields optional</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 45 页 / 共 60 页（源程序实际 661 页）</span></div><pre>/// so a missing key leaves the existing settings.json value untouched.
 interface PadArgs {
-  stickMode?: string;</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 41 页 / 共 60 页（源程序实际 794 页）</span></div><pre>  stickDeadzone?: number;
+  stickMode?: string;
+  stickDeadzone?: number;
   useDpadUi?: boolean;
   padScale?: number;
   padOffsetX?: number;
@@ -2059,15 +2702,15 @@ export class GamePouchPlugin implements FlutterPlugin {
   }
   private ctxForPicker(): common.UIAbilityContext | undefined {
     return this.uiCtx ?? GamePouchPlugin.abilityCtx;
-  }</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 42 页 / 共 60 页（源程序实际 794 页）</span></div><pre>  private channels: MethodChannel[] = [];
+  }
+  private channels: MethodChannel[] = [];
   private netplayCh?: MethodChannel;
   // Singleton handle so EmulatorSpike can fire the reverse netplay callback.
   private static instance?: GamePouchPlugin;
   // NetplaySession reference set by EmulatorSpike on init and cleared on
   // exit. Allows the Dart→ArkTS &#x27;stop&#x27; method to trigger a real teardown.
-  private static netplayRef?: NetplaySession;
-
+  private static netplayRef?: NetplaySession;</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 46 页 / 共 60 页（源程序实际 661 页）</span></div><pre>
   constructor(uiCtx?: common.UIAbilityContext) {
     this.uiCtx = uiCtx;
   }
@@ -2109,8 +2752,8 @@ export class GamePouchPlugin implements FlutterPlugin {
   }
 
   private filesDir(): string {
-    return this.appCtx?.filesDir ?? &#x27;&#x27;;</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 43 页 / 共 60 页（源程序实际 794 页）</span></div><pre>  }
+    return this.appCtx?.filesDir ?? &#x27;&#x27;;
+  }
 
   private dispatch(channel: string, call: MethodCall, result: MethodResult): void {
     const method: string = call.method;
@@ -2126,8 +2769,8 @@ export class GamePouchPlugin implements FlutterPlugin {
       this.onStorage(method, args, rawArgs, result);
     } else if (channel === &#x27;gs/updater&#x27;) {
       this.onUpdater(method, args, rawArgs, result);
-    } else if (channel === &#x27;gs/netplay&#x27;) {
-      this.onNetplay(method, args, result);
+    } else if (channel === &#x27;gs/netplay&#x27;) {</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 47 页 / 共 60 页（源程序实际 661 页）</span></div><pre>      this.onNetplay(method, args, result);
     } else {
       result.notImplemented();
     }
@@ -2159,8 +2802,8 @@ export class GamePouchPlugin implements FlutterPlugin {
     if (n) {
       try { n.stop() } catch (e) { console.warn(&#x27;[GamePouchPlugin] netplay.stop() threw: &#x27; + JSON.stringify(e)) }
       return;
-    }</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 44 页 / 共 60 页（源程序实际 794 页）</span></div><pre>    // No live session: still emit, with a room id that matches nothing, so a
+    }
+    // No live session: still emit, with a room id that matches nothing, so a
     // Dart caller waiting on this channel gets an answer instead of silence.
     this.emitPlayEnded(0, true);
   }
@@ -2186,8 +2829,8 @@ export class GamePouchPlugin implements FlutterPlugin {
         // Mirrors Android&#x27;s `&quot;$MANUFACTURER $MODEL&quot;` so 「发现伙伴」 renders a
         // human-friendly default name (e.g. &quot;HUAWEI Pura70&quot;) instead of a bare
         // model code; falls back to &quot;OpenHarmony&quot; like Android&#x27;s &quot;Android&quot;.
-        try {
-          const model: string = deviceInfo.productModel ?? &#x27;&#x27;;
+        try {</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 48 页 / 共 60 页（源程序实际 661 页）</span></div><pre>          const model: string = deviceInfo.productModel ?? &#x27;&#x27;;
           const maker: string = deviceInfo.manufacture ?? &#x27;&#x27;;
           const parts: string[] = [];
           if (maker.trim().length &gt; 0) parts.push(maker.trim());
@@ -2209,8 +2852,8 @@ export class GamePouchPlugin implements FlutterPlugin {
         return;
       // NOTE: the Dart side calls this `getRunningSaveKey` (see
       // AndroidPal/OhosPal.runningSaveKey) — the case label must match exactly
-      // or the call silently drops into `notImplemented()`.</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 45 页 / 共 60 页（源程序实际 794 页）</span></div><pre>      case &#x27;getRunningSaveKey&#x27;: {
+      // or the call silently drops into `notImplemented()`.
+      case &#x27;getRunningSaveKey&#x27;: {
         // Report the CRC of the ROM currently loaded by the in-process native
         // emulator (gpretro.getRomCrc returns an 8-hex-char string), so peer
         // import can lock saves for the running game — mirroring Android&#x27;s
@@ -2246,8 +2889,8 @@ export class GamePouchPlugin implements FlutterPlugin {
             return {
               name: f.name,
               originalName: f.originalName,
-              relativePath: `roms/${f.name}`,
-              size: f.size,
+              relativePath: `roms/${f.name}`,</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 49 页 / 共 60 页（源程序实际 661 页）</span></div><pre>              size: f.size,
               crc32: crc,
               ines: sniffInes(f.path),
             };
@@ -2259,8 +2902,8 @@ export class GamePouchPlugin implements FlutterPlugin {
       case &#x27;importPackageViaSaf&#x27;:
         this.importFile&lt;PkgInfo&gt;(&#x27;import_cache&#x27;, &#x27;*/*&#x27;, { unique: true },
           (f: StagedFile): PkgInfo =&gt; {
-            return { path: `import_cache/${f.name}`, name: f.name, size: f.size };</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 46 页 / 共 60 页（源程序实际 794 页）</span></div><pre>          })
+            return { path: `import_cache/${f.name}`, name: f.name, size: f.size };
+          })
           .then((m: PkgInfo | null) =&gt; result.success(m))
           .catch((e: Error) =&gt; result.error(&#x27;IMPORT_FAILED&#x27;, e.message, &#x27;&#x27;));
         return;
@@ -2306,11 +2949,11 @@ export class GamePouchPlugin implements FlutterPlugin {
 
   // --------------------------------------------------------------------------
   // gs/emulator
-  // --------------------------------------------------------------------------
-  // Resolve the libretro core id from a ROM file extension (mirrors the
+  // --------------------------------------------------------------------------</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 50 页 / 共 60 页（源程序实际 661 页）</span></div><pre>  // Resolve the libretro core id from a ROM file extension (mirrors the
   // Android platform-&gt;core map). Used when Dart does not pass an explicit core.
-  private coreForRom(rom: string): string {</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 47 页 / 共 60 页（源程序实际 794 页）</span></div><pre>    const n = rom.toLowerCase()
+  private coreForRom(rom: string): string {
+    const n = rom.toLowerCase()
     if (n.endsWith(&#x27;.nes&#x27;) || n.endsWith(&#x27;.unf&#x27;) || n.endsWith(&#x27;.unif&#x27;) || n.endsWith(&#x27;.fds&#x27;)) return &#x27;fceumm&#x27;
     if (n.endsWith(&#x27;.gb&#x27;) || n.endsWith(&#x27;.gbc&#x27;)) return &#x27;gambatte&#x27;
     if (n.endsWith(&#x27;.gba&#x27;)) return &#x27;mgba&#x27;
@@ -2359,15 +3002,15 @@ export class GamePouchPlugin implements FlutterPlugin {
     if (method === &#x27;launch&#x27;) {
       // M1: open the native emulator surface page with the chosen ROM. The ROM
       // path may be relative to the app files dir (e.g. &quot;roms/yx.nes&quot;); resolve
-      // it against filesDir so the native dlopen host receives an absolute path.</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 48 页 / 共 60 页（源程序实际 794 页）</span></div><pre>      const la = this.parseLaunch(argJson)
+      // it against filesDir so the native dlopen host receives an absolute path.
+      const la = this.parseLaunch(argJson)
       const romRel: string = la.rom || &#x27;roms/&#x27; + decodeURIComponent(&#x27;%E5%8F%A3%E8%A2%8B%E5%A6%96%E6%80%AA%E5%8F%B6%E7%BB%BF.gba&#x27;);
       const core: string = la.core || this.coreForRom(romRel);
       const platform: string = la.platform
       console.info(`[GamePouchPlugin] onEmulator romRel=${romRel} core=${core} platform=${platform}`);
       let romAbs = romRel;
-      if (romRel.length &gt; 0 &amp;&amp; !romRel.startsWith(&#x27;/&#x27;)) {
-        romAbs = `${this.filesDir()}/${romRel}`;
+      if (romRel.length &gt; 0 &amp;&amp; !romRel.startsWith(&#x27;/&#x27;)) {</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 51 页 / 共 60 页（源程序实际 661 页）</span></div><pre>        romAbs = `${this.filesDir()}/${romRel}`;
       }
       console.info(`[GamePouchPlugin] onEmulator.launch rom=${romAbs} core=${core}`);
       try {
@@ -2409,8 +3052,8 @@ export class GamePouchPlugin implements FlutterPlugin {
           params[&#x27;netplay&#x27;] = la.netplay
           console.info(`[GamePouchPlugin] onEmulator.launch netplay role=${(la.netplay[&#x27;role&#x27;] as number) ?? -1}`);
         }
-        router.pushUrl({ url: &#x27;pages/EmulatorSpike&#x27;, params: params });</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 49 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        console.info(&#x27;[GamePouchPlugin] router.pushUrl(EmulatorSpike) ok&#x27;);
+        router.pushUrl({ url: &#x27;pages/EmulatorSpike&#x27;, params: params });
+        console.info(&#x27;[GamePouchPlugin] router.pushUrl(EmulatorSpike) ok&#x27;);
         result.success(true);
       } catch (e) {
         console.error(&#x27;[GamePouchPlugin] router.pushUrl failed: &#x27; + (e as ESObject)?.message);
@@ -2426,8 +3069,8 @@ export class GamePouchPlugin implements FlutterPlugin {
     // Headless arcade BIOS compatibility probe (built with
     // --dart-define=GP_BIOS_PROBE=true, see docs/freeroms/VALIDATION.md):
     // expose the native core&#x27;s own boot diagnostics to Dart so an A/B run
-    // (with/without qsound.zip, or with a PrivaBIOS neogeo.zip) can be fully
-    // scripted from the host. All three are read-only NAPI getters.
+    // (with/without qsound.zip, or with a PrivaBIOS neogeo.zip) can be fully</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 52 页 / 共 60 页（源程序实际 661 页）</span></div><pre>    // scripted from the host. All three are read-only NAPI getters.
     if (method === &#x27;getLoadError&#x27;) {
       try {
         result.success(getLoadError());
@@ -2459,8 +3102,8 @@ export class GamePouchPlugin implements FlutterPlugin {
         result.success(0);
       }
       return;
-    }</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 50 页 / 共 60 页（源程序实际 794 页）</span></div><pre>    result.notImplemented();
+    }
+    result.notImplemented();
   }
 
   /// Native -&gt; Dart reverse callback for netplay session end (mirrors Android&#x27;s
@@ -2486,8 +3129,8 @@ export class GamePouchPlugin implements FlutterPlugin {
 
   /// EmulatorSpike registers its NetplaySession here so the Dart→ArkTS
   /// `stop` handler can trigger a real teardown (closing UDP sockets,
-  /// sending BYE to peer, flushing SRAM). Pass `undefined` on exit.
-  public static setNetplayRef(netplay: NetplaySession | undefined): void {
+  /// sending BYE to peer, flushing SRAM). Pass `undefined` on exit.</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 53 页 / 共 60 页（源程序实际 661 页）</span></div><pre>  public static setNetplayRef(netplay: NetplaySession | undefined): void {
     GamePouchPlugin.netplayRef = netplay;
   }
 
@@ -2509,8 +3152,8 @@ export class GamePouchPlugin implements FlutterPlugin {
     if (method === &#x27;installApk&#x27;) {
       // OHOS installs .hap, not .apk. No-op (returns false).
       result.success(false);
-      return;</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 51 页 / 共 60 页（源程序实际 794 页）</span></div><pre>    }
+      return;
+    }
     if (method === &#x27;openStore&#x27;) {
       // Best-effort: no equivalent store intent on OHOS.
       result.success(null);
@@ -2546,8 +3189,8 @@ export class GamePouchPlugin implements FlutterPlugin {
       fs.writeSync(file.fd, JSON.stringify(obj));
       fs.closeSync(file.fd);
     } catch (e) {
-      console.warn(&#x27;[GamePouchPlugin] writePadSettings failed: &#x27; + (e as Error)?.message);
-    }
+      console.warn(&#x27;[GamePouchPlugin] writePadSettings failed: &#x27; + (e as Error)?.message);</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 54 页 / 共 60 页（源程序实际 661 页）</span></div><pre>    }
   }
 
   /// `yyyyMMdd_HHmmss` stamp used for exported documents (mirrors Android&#x27;s
@@ -2559,8 +3202,8 @@ export class GamePouchPlugin implements FlutterPlugin {
       `_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
   }
 
-  private ensureDir(rel: string): string {</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 52 页 / 共 60 页（源程序实际 794 页）</span></div><pre>    const dir = `${this.filesDir()}/${rel}`;
+  private ensureDir(rel: string): string {
+    const dir = `${this.filesDir()}/${rel}`;
     try {
       fs.mkdirSync(dir, true);
     } catch (e) {
@@ -2606,11 +3249,11 @@ export class GamePouchPlugin implements FlutterPlugin {
     return `${base}_${i}${ext}`;
   }
 
-  private applyNameOpts(dir: string, raw: string, opts: ImportOpts): string {
-    let n: string = this.safeName(raw);
+  private applyNameOpts(dir: string, raw: string, opts: ImportOpts): string {</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 55 页 / 共 60 页（源程序实际 661 页）</span></div><pre>    let n: string = this.safeName(raw);
     if (opts.prefix !== undefined &amp;&amp; opts.prefix.length &gt; 0) {
-      n = `${opts.prefix}-${Date.now()}-${n}`;</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 53 页 / 共 60 页（源程序实际 794 页）</span></div><pre>    }
+      n = `${opts.prefix}-${Date.now()}-${n}`;
+    }
     if (opts.ensureJsonExt === true &amp;&amp; !n.toLowerCase().endsWith(&#x27;.json&#x27;)) {
       n = `${n}.json`;
     }
@@ -2659,15 +3302,15 @@ export class GamePouchPlugin implements FlutterPlugin {
       const tmp = this.copyUriTo(uri, `${dir}/_tmp_${idx}`);
       // Android&#x27;s importBios() replaces an existing copy with the same name
       // (BIOS blobs are matched by exact name, so de-duplicating `_1` variants
-      // would make the core fail to find them).</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 54 页 / 共 60 页（源程序实际 794 页）</span></div><pre>      const destPath = `${dir}/${this.safeName(tmp.name)}`;
+      // would make the core fail to find them).
+      const destPath = `${dir}/${this.safeName(tmp.name)}`;
       if (fs.accessSync(destPath)) {
         fs.unlinkSync(destPath);
       }
       fs.renameSync(`${dir}/_tmp_${idx}`, destPath);
       names.push(this.safeName(tmp.name));
-      idx++;
-    }
+      idx++;</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 56 页 / 共 60 页（源程序实际 661 页）</span></div><pre>    }
     return names;
   }
 
@@ -2709,8 +3352,8 @@ export class GamePouchPlugin implements FlutterPlugin {
   /// entries have been flushed by unrelated system logs.
   private traceExport(line: string): void {
     try {
-      const dir = `${this.filesDir()}/export_cache`;</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 55 页 / 共 60 页（源程序实际 794 页）</span></div><pre>      try { fs.mkdirSync(dir, true); } catch (_) { /* exists */ }
+      const dir = `${this.filesDir()}/export_cache`;
+      try { fs.mkdirSync(dir, true); } catch (_) { /* exists */ }
       const f = fs.openSync(
         `${dir}/_export_trace.txt`,
         fs.OpenMode.READ_WRITE | fs.OpenMode.CREATE | fs.OpenMode.APPEND,
@@ -2726,8 +3369,8 @@ export class GamePouchPlugin implements FlutterPlugin {
   }
 
   private async exportFile(sourcePath: string, suggestedName?: string): Promise&lt;boolean&gt; {
-    this.traceExport(`=== exportFile src=${sourcePath} suggested=${suggestedName ?? &#x27;&#x27;}`);
-    const ctx = this.ctxForPicker();
+    this.traceExport(`=== exportFile src=${sourcePath} suggested=${suggestedName ?? &#x27;&#x27;}`);</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 57 页 / 共 60 页（源程序实际 661 页）</span></div><pre>    const ctx = this.ctxForPicker();
     this.traceExport(&#x27;ctx=&#x27; + (ctx ? &#x27;OK&#x27; : &#x27;NULL&#x27;));
     if (!ctx || !sourcePath || !fs.accessSync(sourcePath)) {
       this.traceExport(&#x27;early return false (missing ctx/src or no source file)&#x27;);
@@ -2759,8 +3402,8 @@ export class GamePouchPlugin implements FlutterPlugin {
       // `file://` URI string is rejected on OpenHarmony, so copy fd→fd instead.
       const dst = fs.openSync(
         destUri,
-        fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.TRUNC,</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 56 页 / 共 60 页（源程序实际 794 页）</span></div><pre>      );
+        fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.TRUNC,
+      );
       try {
         fs.copyFileSync(src.fd, dst.fd);
       } finally {
@@ -2786,8 +3429,8 @@ export class GamePouchPlugin implements FlutterPlugin {
     let removed = false;
     const target = `${base}/${name}`;
     if (fs.accessSync(target)) {
-      fs.unlinkSync(target);
-      removed = true;
+      fs.unlinkSync(target);</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 58 页 / 共 60 页（源程序实际 661 页）</span></div><pre>      removed = true;
     }
     // Also remove any per-core mirror (LockedRom step on Android).
     try {
@@ -2809,8 +3452,8 @@ export class GamePouchPlugin implements FlutterPlugin {
   /// back up their BIOS set. Mirrors Android `exportBiosZipViaSaf`.
   private async exportBiosZip(): Promise&lt;boolean&gt; {
     const ctx = this.ctxForPicker();
-    if (!ctx) {</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 57 页 / 共 60 页（源程序实际 794 页）</span></div><pre>      return false;
+    if (!ctx) {
+      return false;
     }
     const systemDir = `${this.filesDir()}/system`;
     if (!fs.accessSync(systemDir)) {
@@ -2846,8 +3489,8 @@ export class GamePouchPlugin implements FlutterPlugin {
       fs.closeSync(src);
     }
     try {
-      fs.unlinkSync(tmpZip);
-    } catch (e) {
+      fs.unlinkSync(tmpZip);</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 59 页 / 共 60 页（源程序实际 661 页）</span></div><pre>    } catch (e) {
       // best-effort cleanup
     }
     return true;
@@ -2859,8 +3502,8 @@ export class GamePouchPlugin implements FlutterPlugin {
 // --------------------------------------------------------------------------
 
 /// The `@ohos.file.fileuri` helper is not exported in this SDK version, so we
-/// derive the display name from the picked document URI&#x27;s last path segment.</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 58 页 / 共 60 页（源程序实际 794 页）</span></div><pre>function fileNameFromUri(uri: string): string {
+/// derive the display name from the picked document URI&#x27;s last path segment.
+function fileNameFromUri(uri: string): string {
   let name = uri;
   const slash = uri.lastIndexOf(&#x27;/&#x27;);
   if (slash &gt;= 0) {
@@ -2906,11 +3549,11 @@ function sniffInes(path: string): boolean {
     return false;
   }
 }
-
-function buildCrcTable(): number[] {
+</pre></div>
+<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 60 页 / 共 60 页（源程序实际 661 页）</span></div><pre>function buildCrcTable(): number[] {
   const table: number[] = [];
-  for (let n = 0; n &lt; 256; n++) {</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 59 页 / 共 60 页（源程序实际 794 页）</span></div><pre>    let c = n;
+  for (let n = 0; n &lt; 256; n++) {
+    let c = n;
     for (let k = 0; k &lt; 8; k++) {
       c = (c &amp; 1) ? (0xEDB88320 ^ (c &gt;&gt;&gt; 1)) : (c &gt;&gt;&gt; 1);
     }
@@ -2959,8 +3602,8 @@ export class GeneratedPluginRegistrant {
     try {
     } catch (e) {
       Log.e(
-        TAG,</pre></div>
-<div class="page"><div class="head"><span class="name">趣玩匣(RetroEmuPouch)复古游戏模拟器软件  V1.8.4</span><span class="pg">第 60 页 / 共 60 页（源程序实际 794 页）</span></div><pre>        &quot;Tried to register plugins with FlutterEngine (&quot;
+        TAG,
+        &quot;Tried to register plugins with FlutterEngine (&quot;
           + flutterEngine
           + &quot;) failed.&quot;);
       Log.e(TAG, &quot;Received exception while registering&quot;, e);
