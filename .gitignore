@@ -44,6 +44,10 @@ keystore.properties
 *.p8
 *.pem
 
+# ===== AGC 应用配置（含 client_secret / api_key，虽为 AGC 3.0 的 [!…] 加密串仍不入库）=====
+# 从 AppGallery Connect 控制台下载后放本地即可；勿提交到公开仓库。
+/app/ohos/agconnect-services.json
+
 # ===== 根目录调试产物（截图 / 一次性日志 / PowerShell 重定向 bug 文件）=====
 # 仅根目录匹配，docs/ 里的 PNG（文档截图）不受影响
 /*.png
