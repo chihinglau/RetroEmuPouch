@@ -336,6 +336,8 @@ Pura70（SN `2MN0224730027764`）是**开发者模式 + 指纹/密码锁**。锁
    `need connect-key? please confirm a device`（`list targets -v` 状态 `Connected/unknown`）。
    依次试：`hdc kill` → `hdc start` → 重试；轮询 2 分钟；仍不行=设备端 hdcd 卡死，**需物理重插 USB**
    （设备无 input 命令，无法远程恢复）。
+   ⚠️ 另一种常见成因是 **VMware 把手机 USB 直通进虚拟机**（PnP 出现 `VID_0E0F`），以及设备刚插上
+   处于 `Offline` 需等握手；取真机 UDID 与完整排查见 §16.5「真机 UDID 与 hdc 连接坑」。
 4. **鸿蒙功能自动化路径**：Flutter 层的无 UI 自动化用 `GP_OHOS_SELFTEST` 探针（build-hap.ps1 -DartDefine），
    报告在 `<filesDir>/selftest.txt`，用 `hdc shell -b com.retroemupouch.app cat /data/app/el2/100/base/com.retroemupouch.app/files/selftest.txt` 读取；
    点 ArkUI 覆盖层（模拟器 ✕、系统弹窗）用 `uitest uiInput` 一直有效。
@@ -1652,6 +1654,93 @@ apply(plugin = "com.huawei.agconnect")
 >
 > 工具链仍依赖兄弟项目 **MyLangLean**（见 16.3），它不在本次清理范围内；
 > 若要完全自包含，需把 `MyLangLean\.tools` 实体化到本项目 `.tools`。
+
+### 16.5 华为商城（AGC）HarmonyOS 应用上架准备（2026-11-07）
+
+#### 登记信息（已与 `app/ohos/agconnect-services.json` 核对一致）
+
+| 项 | 值 |
+|---|---|
+| APP ID | `6917621153127542704` |
+| 包名 / bundleName | `com.retroemupouch.app` |
+| OAuth 2.0 客户端 ID | `6917621153127542704`（`oauth_client.client_id`） |
+| 应用名称（简中默认） | **趣玩匣** |
+| 版本状态 | 准备提交 |
+
+#### 应用名称必须与包内一致（已修）
+
+AGC「可本地化基础信息」页要求名称与软件包一致。原包内 `app_name` / `EntryAbility_label` 均为
+`RetroEmuPouch`，而 AGC 填「趣玩匣」会被校验驳回。已把以下 4 处统一改为「趣玩匣」
+（Android 侧 `AndroidManifest.xml` 原本就是「趣玩匣」）：
+
+- `app/ohos/AppScope/resources/base/element/string.json` → `app_name`
+  （`AppScope/app.json5` 的 `label: "$string:app_name"`，**AGC 校验的就是这一处**）
+- `app/ohos/entry/src/main/resources/{base,zh_CN,en_US}/element/string.json` → `EntryAbility_label`
+
+改完必须重建 HAP（`flutter build hap --debug`）。**验证新名称确实进包**：HAP 是 zip，用 `zipfile`
+搜 `resources.index` 是否含 UTF-8 的「趣玩匣」；`module.json` 里残留的 `RetroEmuPouch` 是
+`vendor` 字段 / `bundleName`，不是显示名，无需改。改 4 个 JSON 时注意保持 UTF-8 无 BOM
+（可用 `json.load(open(p, encoding='utf-8'))` + 码点 `0x8da3 0x73a9 0x5323` 复核；
+PowerShell 控制台首行中文偶发显示乱码，不代表文件编码有问题）。
+
+#### 应用图标
+
+AGC 要求 **216×216 或 1024×1024 正方形 PNG、≤3 MB**，且必须「上传直角图标」——平台自己套
+Mask 蒙层，**不要**自行切圆角或加透明边距；图案须与包内图标一致。
+包内 `app/ohos/entry/src/main/resources/base/media/icon.png` 是 192×192 RGBA（alpha 全 255，
+深蓝底 + 白色手柄，已是方形铺满）。由它 LANCZOS 放大生成两个合规文件（已入库）：
+
+- `docs/agc/app_icon_1024.png`（163 KB，推荐上传）
+- `docs/agc/app_icon_216.png`（15 KB）
+
+#### 「添加调试 Profile」页填写
+
+| 字段 | 值 |
+|---|---|
+| Profile 名称 | 自定义，建议 `retroemupouch_debug_<日期>`（仅界面标识） |
+| 类型 | 调试（上架另需「发布」类型，但要先建发布证书） |
+| 选择证书 | 步骤 2 创建的调试证书，**必须与本机 `.p12` 私钥配对**（云端生成的证书要连私钥一起下载） |
+| 选择设备 | UDID `E54B6326…80C7` 对应的 Pura 70 Pro |
+| 申请权限 | **不勾**「受限ACL权限」：`entry/src/main/module.json5` 只申请 `ohos.permission.INTERNET`（普通权限） |
+
+> 调试 Profile 对当前本机调试并非必需：DevEco 自动签名三件套里已含有效 `.p7b`。
+> 网页再建一个主要给其他机器 / CI 用，或替换设备变更后的 Profile。
+> 「选择设备」是从步骤 3 已登记的列表里勾选，不需要现场查 UDID；UDID 只用于确认没勾错。
+
+#### 证书指纹（现状，启用 AGC 服务前务必核对）
+
+- AGC 应用详情页登记的 SHA256 证书/公钥指纹 `87:12:95:B7:…:10:89`
+- 本机 DevEco 自动签名 `.cer`（`C:\Users\liuzhixing\.ohos\config\default_ohos_*.cer`，3 套）实测均 `DF:21:A3:C0:…:3A:37`
+- `app/ohos/signing/` 自签 CA 链 `7C:68:AF:FB:…` / `B8:D8:43:8D:…`
+
+三者互不相同。现阶段 App 不接 AGC SDK，不影响 debug 包；将来启用 AGC 服务或切发布签名时，
+指纹对不上会导致服务端校验失败，需先统一证书。**发布链路（创建发布证书 / 发布 Profile）仍未完成**，
+目前只能产 `flutter build hap --debug` 的 DevEco 自动签名调试包；发布包签名不同，装真机前先
+`hdc uninstall com.retroemupouch.app`。
+
+#### `agconnect-services.json`（OHOS 侧）
+
+- 位置 `app/ohos/agconnect-services.json`，`configuration_version: 3.0`，`client_secret` / `api_key`
+  是 AGC 3.0 的 `[!…]` 加密串；**Android 侧是另一份**（`app/android/app/agconnect-services.json`，
+  `app_id=119542361`、明文 secret），不可互相覆盖。
+- 全工程无 `@hw-agconnect/*` 依赖（`oh-package.json5` 的 `dependencies` 为空）、无代码引用，且放在
+  工程根（不是 `entry/src/main/resources/base/profile/`）→ **当前不会被打进 HAP，也不生效**。
+  App 的账号/云存档走自建后端，暂不需要它。
+- 含密钥材料，已加入 `.gitignore`（`/app/ohos/agconnect-services.json`）**不入库**，本地保留；
+  换机器从 AGC 控制台重新下载。
+
+#### 真机 UDID 与 hdc 连接坑
+
+- Pura70（SN `2MN0224730027764`）UDID：`E54B6326DF58B5AFE837B3DEB82792C03157A70920218A03C8BA3244E7CB80C7`
+- 命令：`hdc shell "bm get --udid"` → `udid of current device is : <UDID>`。
+- **设备刚插上常先显示 `Offline`**：轮询 `hdc list targets -v` 等几秒变 `Connected` 再执行命令；
+  `Offline` 时所有 shell 报 `need connect-key? please confirm a device by help info`。
+- **VMware 抢占 USB**：`vmware-usbarbitrator64` / `VMUSBArbService` 把手机直通进虚拟机，
+  PnP 显示 `VMware USB Device  USB\VID_0E0F&PID_0001\<SN>`，宿主机 `hdc list targets` 为空。
+  解决：VMware 菜单 → 虚拟机 → 可移动设备 → 华为设备 → 断开连接（或关虚拟机 / 停用仲裁服务）；
+  回到主机后 PnP 应出现 `HDC Interface`（`USB\VID_12D1&PID_1101`）与 `HUAWEI Pura 70 Pro`。
+  可用 `Get-PnpDevice -PresentOnly | ? InstanceId -match 'VID_12D1|VID_0E0F'` 快速判因。
+- 同时插着 Android 机时（如 HONOR V30 PRO，adb 可见），`hdc` 命令加 `-t 2MN0224730027764` 明确指定。
 
 ---
 
